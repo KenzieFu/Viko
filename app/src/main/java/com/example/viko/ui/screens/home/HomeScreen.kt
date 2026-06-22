@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
@@ -35,6 +34,8 @@ import com.example.viko.ui.components.*
 import com.example.viko.ui.theme.*
 import kotlinx.coroutines.delay
 import com.example.viko.R // Replace with your actual package name
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +133,10 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     val workers = appState.workersForChannel(channel.id)
                     val onlineCount = workers.count { it.isOnline }
                     val isActive = onlineCount > 0
-                    val workerSpeaking = workers.any { it.status == WorkerStatus.SPEAKING }
+                    val workerSpeaking = workers.any {
+                        it.status == WorkerStatus.SPEAKING
+                    }
+
                     val isManagerTalking = talkingChannelId == channel.id
                     val audioMode = when {
                         isManagerTalking -> ChannelAudioMode.Talking
@@ -722,71 +726,204 @@ fun TeamSheetContent(
     onManageMembers: () -> Unit
 ) {
     val channel = appState.channels.find { it.id == channelId }
-    val workers = appState.workersForChannel(channelId)
 
-    Column(
+    var isEditMode by remember { mutableStateOf(false) }
+    var workerToDelete by remember { mutableStateOf<Worker?>(null) }
+    var isTalking by remember { mutableStateOf(false) }
+    var isAddMode by remember { mutableStateOf(false) }
+
+    val workers = appState.workers.filter { it.channelId == channelId }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(bottom = 20.dp)
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = channel?.name ?: "Team",
-                    style = MaterialTheme.typography.headlineLarge
-                )
-                Text(
-                    text = "${workers.count { it.isOnline }}/${workers.size} online",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VOnSurfaceSecondary
-                )
-            }
-            TextButton(onClick = onManageMembers) {
-                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Manage")
-            }
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
+
+        // ===== SPEAK ANIMATION BACKGROUND =====
+        if (isTalking) {
+            AnnouncementWaveBackground(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(240.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        SectionDivider()
+        Column {
 
-        if (workers.isEmpty()) {
-            Box(
+            // ===== HEADER =====
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(40.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+
+                Text(
+                    text = "${channel?.name ?: "Team"} (${workers.count { it.isOnline }}/${workers.size})",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (!isEditMode) {
+                    IconButton(
+                        onClick = { isEditMode = true }
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            isEditMode = false
+                        }
+                    ) {
+                        Text("Save")
+                    }
+                }
+
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ===== CONTENT =====
+            if (!isEditMode) {
+
+                workers.forEach { worker ->
+                    MemberListItem(
+                        worker = worker,
+                        onDirectCall = { onDirectCall(worker.id) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // ===== TALK BUTTON =====
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (isTalking) VAccentBlue else VSurface)
+                        .clickable { isTalking = !isTalking },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Text("No members in this channel", color = VOnSurfaceSecondary)
-                    OutlinedButton(onClick = onManageMembers, shape = RoundedCornerShape(12.dp)) {
-                        Text("Add Member")
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_mic),
+                        contentDescription = null,
+                        tint = if (isTalking) Color.White else VAccentBlue
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = "Talk to Team",
+                        color = if (isTalking) Color.White else VOnSurface
+                    )
+                }
+
+            } else {
+
+                Column {
+
+                    workers.forEach { worker ->
+                        EditableMemberListItem(
+                            worker = worker,
+                            onDelete = { workerToDelete = worker },
+                            onNameChange = { }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isAddMode = true }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(VBackground),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null,
+                                tint = VAccentBlue
+                            )
+                        }
+
+                        Text(
+                            text = "Add member",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = VOnSurface
+                        )
+                    }
+
+                    if (isAddMode) {
+                        LazyColumn {
+                            items(
+                                appState.workers.filter { it.channelId != channelId },
+                                key = { it.id }
+                            ) { worker ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            appState.assignWorkerToChannel(worker.id, channelId)
+                                            isAddMode = false
+                                        }
+                                        .padding(20.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(worker.name)
+                                }
+                            }
+                        }
                     }
                 }
             }
-        } else {
-            workers.forEach { worker ->
-                MemberListItem(
-                    worker = worker,
-                    onDirectCall = { onDirectCall(worker.id) }
-                )
-                SectionDivider()
-            }
         }
+    }
+
+    // ===== DELETE DIALOG =====
+    workerToDelete?.let { worker ->
+
+        AlertDialog(
+            onDismissRequest = { workerToDelete = null },
+            title = { Text("Delete member?") },
+            text = {
+                Text("Your paired devices data will be deleted and has to setup a new one later.")
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { workerToDelete = null }) {
+                    Text("Cancel")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        appState.removeWorker(worker.id)
+                        workerToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red
+                    )
+                ) {
+                    Text("Delete")
+                }
+            }
+        )
     }
 }
 
@@ -861,6 +998,41 @@ fun MemberListItem(
     }
 }
 
+@Composable
+fun EditableMemberListItem(
+    worker: Worker,
+    onDelete: () -> Unit,
+    onNameChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = 20.dp,
+                vertical = 6.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        OutlinedTextField(
+            value = worker.name,
+            onValueChange = onNameChange,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        IconButton(
+            onClick = onDelete
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Delete",
+                tint = Color.Red
+            )
+        }
+    }
+}
 @Composable
 private fun WorkerStatusIndicator(worker: Worker) {
     val animatedColor = when (worker.status) {
