@@ -54,4 +54,18 @@ class AppState {
     fun addMessage(msg: TranslationMessage) {
         messages.add(0, msg)
     }
+
+    fun assignWorkerToChannel(workerId: String, channelId: String) {
+        val idx = workers.indexOfFirst { it.id == workerId }
+        if (idx >= 0) {
+            workers[idx] = workers[idx].copy(channelId = channelId)
+        }
+    }
+
+    fun unassignWorkerFromChannel(workerId: String) {
+        val idx = workers.indexOfFirst { it.id == workerId }
+        if (idx >= 0) {
+            workers[idx] = workers[idx].copy(channelId = "")
+        }
+    }
 }
