@@ -1,5 +1,6 @@
 package com.example.viko.ui.screens.home
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -168,7 +170,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.Campaign,
+                        painter = painterResource(id = R.drawable.ic_announce),
                         contentDescription = null,
                         tint = VAccentBlue,
                         modifier = Modifier.size(24.dp)
@@ -208,8 +210,8 @@ fun HomeScreen(appState: AppState, navController: NavController) {
         ModalBottomSheet(
             onDismissRequest = { showAnnouncementSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = VSurface,
-            dragHandle = { VikoDragHandle() }
+            containerColor = Color.Transparent,
+            dragHandle = null
         ) {
             AnnouncementSheetContent(
                 appState = appState,
@@ -556,120 +558,135 @@ fun AnnouncementSheetContent(
     onClose: () -> Unit
 ) {
     var isSpeaking by remember { mutableStateOf(false) }
-    var countdown by remember { mutableStateOf(0) }
+    val sheetBackground = if (isSpeaking) Color(0xFFF2F5FD) else VSurface
 
-    LaunchedEffect(isSpeaking) {
-        if (isSpeaking) {
-            countdown = 3
-            repeat(3) {
-                delay(1000)
-                countdown--
-            }
-            isSpeaking = false
-        }
-    }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .height(384.dp)
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(sheetBackground)
             .navigationBarsPadding()
-            .padding(bottom = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-
-                text = "Announce",
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.weight(1f)
+        if (isSpeaking) {
+            AnnouncementWaveBackground(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(236.dp)
             )
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            VikoDragHandle()
+            Spacer(modifier = Modifier.height(20.dp))
 
-        // Ripple + Mic button
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(180.dp)) {
-            if (isSpeaking) {
-                SpeakingRipple(size = 180.dp, color = VAccentBlue)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Announce",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.Black,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = if (isSpeaking) "Speaking..." else "From Lee Suyeon (수연이)",
+                style = MaterialTheme.typography.headlineMedium,
+                color = VOnSurface,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(if (isSpeaking) 64.dp else 66.dp))
+
             Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(if (isSpeaking) VAccentBlue else VSurfaceVariant)
-                    .border(1.dp, VBorder, CircleShape)
-                    .clickable { isSpeaking = !isSpeaking },
+                modifier = Modifier.size(if (isSpeaking) 118.dp else 120.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_mic),
-                    contentDescription = if (isSpeaking) "Stop" else "Announce",
-                    tint = if (isSpeaking) Color.White else VOnSurface,
-                    modifier = Modifier.size(32.dp) // Sets custom sizing
-                )
+                if (!isSpeaking) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .shadow(2.dp, CircleShape, spotColor = VShadow)
+                            .clip(CircleShape)
+                            .background(VSurface)
+                    )
+                }
 
+                Box(
+                    modifier = Modifier
+                        .size(if (isSpeaking) 118.dp else 120.dp)
+                        .clip(CircleShape)
+                        .background(if (isSpeaking) VAccentBlue else VSurface)
+                        .border(
+                            width = if (isSpeaking) 0.dp else 1.dp,
+                            color = VBorder,
+                            shape = CircleShape
+                        )
+                        .clickable { isSpeaking = !isSpeaking },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_announce),
+                        contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
+                        tint = if (isSpeaking) Color.White else VAccentBlue,
+                        modifier = Modifier.size(46.dp)
+                    )
+                }
+            }
+
+            if (!isSpeaking) {
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
+@Composable
+private fun AnnouncementWaveBackground(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "announcementWave")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1700, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "waveProgress"
+    )
 
-        if (isSpeaking) {
-            Text(
-                text = "Speaking...",
-                style = MaterialTheme.typography.titleMedium,
-                color = VOnSurface
+    Canvas(modifier = modifier) {
+        val center = Offset(size.width / 2f, size.height * 1.24f)
+        val baseRadii = listOf(0.39f, 0.56f, 0.72f)
+        baseRadii.forEachIndexed { index, baseRadius ->
+            val shiftedProgress = (progress + index * 0.22f) % 1f
+            val alpha = (0.08f * (1f - shiftedProgress)).coerceAtLeast(0.02f)
+            drawCircle(
+                color = VAccentBlue.copy(alpha = alpha),
+                radius = size.width * (baseRadius + shiftedProgress * 0.09f),
+                center = center
             )
-            Text(
-                text = "Broadcasting to all channels",
-                style = MaterialTheme.typography.bodySmall,
-                color = VOnSurfaceSecondary
-            )
-        } else {
-            Text(
-                text = "Hold to Announce",
-                style = MaterialTheme.typography.titleMedium,
-                color = VOnSurface
-            )
-            Text(
-                text = "Broadcast to all workers",
-                style = MaterialTheme.typography.bodySmall,
-                color = VOnSurfaceSecondary
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Target selection
-        Text(
-            text = "Send to",
-            style = MaterialTheme.typography.bodyMedium,
-            color = VOnSurfaceSecondary,
-            modifier = Modifier.padding(horizontal = 20.dp).align(Alignment.Start)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf("All", "Operations", "Maintenance").forEach { target ->
-                FilterChip(
-                    selected = target == "All",
-                    onClick = {},
-                    label = { Text(target, fontSize = 12.sp) },
-                    shape = RoundedCornerShape(8.dp)
-                )
-            }
         }
     }
 }
@@ -790,7 +807,7 @@ fun MemberListItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                StatusDot(isOnline = worker.isOnline)
+                WorkerStatusIndicator(worker = worker)
                 Text(
                     text = when (worker.status) {
                         WorkerStatus.SPEAKING -> "Speaking..."
@@ -819,5 +836,44 @@ fun MemberListItem(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun WorkerStatusIndicator(worker: Worker) {
+    val animatedColor = when (worker.status) {
+        WorkerStatus.SPEAKING -> VAccentRed
+        WorkerStatus.LISTENING -> VAccentBlue
+        else -> null
+    }
+
+    if (animatedColor == null || !worker.isOnline) {
+        StatusDot(isOnline = worker.isOnline)
+        return
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "workerStatus")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "workerStatusProgress"
+    )
+
+    Canvas(modifier = Modifier.size(14.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(
+            color = animatedColor.copy(alpha = 0.22f * (1f - progress)),
+            radius = size.minDimension * (0.25f + progress * 0.25f),
+            center = center
+        )
+        drawCircle(
+            color = animatedColor,
+            radius = size.minDimension * 0.24f,
+            center = center
+        )
     }
 }
