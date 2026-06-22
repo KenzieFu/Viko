@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Settings
@@ -52,8 +53,8 @@ fun HomeScreen(appState: AppState, navController: NavController) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top= 20.dp)
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 44.dp)
                     .height(48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -122,10 +123,10 @@ fun HomeScreen(appState: AppState, navController: NavController) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(
-                    start = 20.dp, end = 20.dp, top = 8.dp, bottom = 100.dp
+                    start = 24.dp, end = 24.dp, top = 28.dp, bottom = 100.dp
                 ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 items(appState.channels) { channel ->
@@ -137,13 +138,17 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     }
 
                     val isManagerTalking = talkingChannelId == channel.id
-                    //val isSpeaking = isActive && (workerSpeaking || isManagerTalking)
+                    val audioMode = when {
+                        isManagerTalking -> ChannelAudioMode.Talking
+                        workerSpeaking -> ChannelAudioMode.Listening
+                        else -> ChannelAudioMode.Idle
+                    }
                     ChannelCard(
                         channel = channel,
                         onlineCount = onlineCount,
                         totalCount = workers.size,
                         isActive = isActive,
-                        isSpeaking = isManagerTalking,
+                        audioMode = audioMode,
                         onMicTap = {
                             if (isActive) {
                                 talkingChannelId = if (isManagerTalking) null else channel.id
@@ -159,7 +164,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(VBackground)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
                     .navigationBarsPadding()
             ) {
                 Row(
@@ -249,26 +254,33 @@ fun HomeScreen(appState: AppState, navController: NavController) {
     }
 }
 
+enum class ChannelAudioMode {
+    Idle,
+    Talking,
+    Listening
+}
+
 @Composable
 fun ChannelCard(
     channel: com.example.viko.data.Channel,
     onlineCount: Int,
     totalCount: Int,
     isActive: Boolean,
-    isSpeaking: Boolean,
+    audioMode: ChannelAudioMode,
     onMicTap: () -> Unit,
     onChipTap: () -> Unit
 ) {
     val contentAlpha = if (isActive) 1f else 0.35f
+    val isSpeaking = audioMode != ChannelAudioMode.Idle
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(210.dp)
+            .height(236.dp)
             .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
             .background(VSurface)
-            .padding(12.dp)
+            .padding(14.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -282,7 +294,7 @@ fun ChannelCard(
                     .background(VSurfaceVariant)
                     .border(1.dp, VBorder, RoundedCornerShape(20.dp))
                     .clickable(enabled = isActive, onClick = onChipTap)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -307,7 +319,7 @@ fun ChannelCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Mic + name area (tap mic → talk). Active state shows a blue panel,
             // a filled blue mic with ripple rings, and a blue channel name.
@@ -317,7 +329,8 @@ fun ChannelCard(
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isSpeaking) VActivePanel else Color.Transparent)
-                    .clickable(enabled = isActive, onClick = onMicTap),
+                    .clickable(enabled = isActive, onClick = onMicTap)
+                    .padding(vertical = 6.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -337,12 +350,21 @@ fun ChannelCard(
                                 .background(VAccentBlue),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_mic),
-                                contentDescription = "Talking to ${channel.name}",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
+                            if (audioMode == ChannelAudioMode.Listening) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "Listening to ${channel.name}",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_mic),
+                                    contentDescription = "Talking to ${channel.name}",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
                         }
                     } else {
                         // Outlined mic
@@ -368,7 +390,7 @@ fun ChannelCard(
 
                 Text(
                     text = channel.name,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineLarge,
                     color = if (isSpeaking) VAccentBlue else VOnSurface.copy(alpha = contentAlpha),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
