@@ -2,21 +2,23 @@ package com.example.viko.ui.screens.team
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,178 +55,142 @@ fun MemberPairingScreen(
         scannedDevices = mockNearbyDevices
     }
 
-    // BLE spin animation
+    // Spinner rotation for scanning indicator
     val rotation by rememberInfiniteTransition(label = "scan").animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
         label = "rot"
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(VBackground)
-    ) {
-        Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+    // Bottom sheet layout: dark scrim on top, white sheet below
+    Box(modifier = Modifier.fillMaxSize()) {
 
-        // Header
-        Row(
+        // Scrim — dark area at top (status bar region)
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text("SETUP DEVICE", style = MaterialTheme.typography.titleSmall, color = VOnSurfaceSecondary)
-                Text("Nearby Device", style = MaterialTheme.typography.headlineSmall)
-            }
-        }
+                .fillMaxHeight(0.12f)
+                .background(Color(0xFF1A1A1A))
+        )
 
-        HorizontalDivider(color = VBorder)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // BLE scan status
-        Row(
+        // White bottom sheet panel
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .fillMaxHeight(0.92f)
+                .align(Alignment.BottomCenter)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(VBackground)
         ) {
+            // Drag handle
             Box(
                 modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(VOnSurface.copy(alpha = 0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Bluetooth,
-                    null,
-                    tint = VOnSurface,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .rotate(if (pairingState == PairingState.SCANNING) rotation else 0f)
-                )
-            }
-            Column {
-                Text(
-                    text = when (pairingState) {
-                        PairingState.SCANNING -> "Scanning for devices..."
-                        PairingState.FOUND -> "${scannedDevices.size} device(s) found"
-                        PairingState.PAIRING -> "Pairing with ${pairingDevice?.name}..."
-                        PairingState.SUCCESS -> "Paired successfully!"
-                        PairingState.NO_DEVICES -> "No devices found"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = VOnSurface
-                )
-                Text(
-                    text = "Pair your device to add a new member.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VOnSurfaceSecondary
-                )
-            }
-        }
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 12.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(VBorder)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-        if (pairingState == PairingState.SUCCESS) {
-            // Success state
-            Box(
+            // Header row: title + spinner + X
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(40.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // Title + inline spinner
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(CircleShape)
-                            .background(VOnline.copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            null,
-                            tint = VOnline,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
                     Text(
-                        "Device Paired!",
-                        style = MaterialTheme.typography.headlineSmall,
+                        text = "Nearby Device",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
                         color = VOnSurface
                     )
-                    Text(
-                        "The device has been configured and is ready to use.",
-                        color = VOnSurfaceSecondary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Button(
-                        onClick = { onDevicePaired(selectedDevice?.id ?: "") },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VOnSurface)
-                    ) {
-                        Text("Setup Member Profile")
+                    if (pairingState == PairingState.SCANNING || pairingState == PairingState.FOUND) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Scanning",
+                            tint = VOnSurfaceSecondary,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .rotate(rotation)
+                        )
                     }
                 }
-            }
-        } else if (scannedDevices.isEmpty() && pairingState != PairingState.SCANNING) {
-            // No devices
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(40.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.BluetoothDisabled,
-                        null,
-                        tint = VOnSurfaceSecondary,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Text("No devices found", color = VOnSurfaceSecondary)
-                    Text(
-                        "Make sure the VIKO wearable is powered on and nearby",
-                        color = VOnSurfaceSecondary,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+
+                // X button
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface)
                 }
             }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(scannedDevices) { device ->
-                    val isPairing = pairingDevice?.id == device.id && pairingState == PairingState.PAIRING
-                    DeviceListItem(
-                        device = device,
-                        isPairing = isPairing,
-                        onPair = {
-                            pairingDevice = device
-                            selectedDevice = device
-                            pairingState = PairingState.PAIRING
-                            scope.launch {
-                                delay(2000)
-                                pairingState = PairingState.SUCCESS
-                            }
-                        }
+
+            // Subtitle
+            Text(
+                text = "Pair your device to add a new member.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = VOnSurfaceSecondary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Content
+            when {
+                pairingState == PairingState.SUCCESS -> {
+                    SuccessState(
+                        onContinue = { onDevicePaired(selectedDevice?.id ?: "") }
                     )
+                }
+
+                scannedDevices.isEmpty() -> {
+                    // Still scanning — show skeleton placeholders
+                    Column(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        repeat(3) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(VSurface)
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(scannedDevices) { device ->
+                            val isPairing =
+                                pairingDevice?.id == device.id && pairingState == PairingState.PAIRING
+                            DeviceListItem(
+                                device = device,
+                                isPairing = isPairing,
+                                onPair = {
+                                    pairingDevice = device
+                                    selectedDevice = device
+                                    pairingState = PairingState.PAIRING
+                                    scope.launch {
+                                        delay(2000)
+                                        pairingState = PairingState.SUCCESS
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -232,7 +198,7 @@ fun MemberPairingScreen(
 }
 
 @Composable
-fun DeviceListItem(
+private fun DeviceListItem(
     device: NearbyDevice,
     isPairing: Boolean,
     onPair: () -> Unit
@@ -240,46 +206,99 @@ fun DeviceListItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(VSurface)
-            .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .clickable(enabled = !isPairing, onClick = onPair)
+            .padding(horizontal = 20.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(VBackground),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Bluetooth, null, tint = VOnSurface, modifier = Modifier.size(20.dp))
-        }
+        // Device name — bold, left
+        Text(
+            text = device.name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = VOnSurface,
+            modifier = Modifier.weight(1f)
+        )
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(device.name, style = MaterialTheme.typography.titleMedium, color = VOnSurface)
-            Text(
-                text = "${device.address} • ${device.signalStrength} dBm",
-                style = MaterialTheme.typography.bodySmall,
-                color = VOnSurfaceSecondary
-            )
-        }
-
+        // Right side: "Pair Device" label + link icon, or spinner
         if (isPairing) {
             CircularProgressIndicator(
                 modifier = Modifier.size(20.dp),
                 strokeWidth = 2.dp,
-                color = VOnSurface
+                color = VAccentBlue
             )
         } else {
-            TextButton(
-                onClick = onPair,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(Icons.Default.Link, null, modifier = Modifier.size(14.dp), tint = VOnSurface)
-                Spacer(Modifier.width(4.dp))
-                Text("Pair", color = VOnSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    text = "Pair Device",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VAccentBlue
+                )
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = VAccentBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuccessState(onContinue: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 40.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(VOnline.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = VOnline,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+            Text(
+                "Device Paired!",
+                style = MaterialTheme.typography.headlineSmall,
+                color = VOnSurface
+            )
+            Text(
+                "The device has been configured and is ready to use.",
+                color = VOnSurfaceSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Button(
+                onClick = onContinue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VAccentBlue)
+            ) {
+                Text(
+                    "Setup Member Profile",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VOnPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

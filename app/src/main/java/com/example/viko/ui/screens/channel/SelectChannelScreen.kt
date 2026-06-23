@@ -1,21 +1,22 @@
 package com.example.viko.ui.screens.channel
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +33,7 @@ fun SelectChannelScreen(
 ) {
     val worker = appState.workers.find { it.id == workerId }
     var selectedChannelId by remember { mutableStateOf(worker?.channelId ?: "") }
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
     var newChannelName by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -40,29 +41,70 @@ fun SelectChannelScreen(
         searchQuery.isEmpty() || it.name.contains(searchQuery, ignoreCase = true)
     }
 
-    if (showAddDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            containerColor = VSurface,
-            shape = RoundedCornerShape(20.dp),
-            title = { Text("Add New Channel") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+    // Add New Channel bottom sheet
+    if (showAddSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddSheet = false },
+            containerColor = VBackground,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Sheet header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add New Channel",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = VOnSurface
+                    )
+                    IconButton(onClick = { showAddSheet = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface)
+                    }
+                }
+
+                // Text field — standalone white card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(VSurface)
+                ) {
+                    TextField(
                         value = newChannelName,
                         onValueChange = { newChannelName = it },
-                        placeholder = { Text("Enter Channel Name", color = VOnSurfaceSecondary) },
+                        placeholder = {
+                            Text(
+                                "Enter Channel Name",
+                                color = VOnSurfaceSecondary,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = VOnSurface,
-                            unfocusedBorderColor = VBorder
+                        textStyle = MaterialTheme.typography.titleMedium.copy(color = VOnSurface),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            cursorColor = VAccentBlue,
+                            focusedTextColor = VOnSurface,
+                            unfocusedTextColor = VOnSurface
                         )
                     )
                 }
-            },
-            confirmButton = {
+
+                // Continue button — full width, blue
                 Button(
                     onClick = {
                         if (newChannelName.isNotBlank()) {
@@ -73,180 +115,203 @@ fun SelectChannelScreen(
                             appState.channels.add(newChannel)
                             selectedChannelId = newChannel.id
                             newChannelName = ""
-                            showAddDialog = false
+                            showAddSheet = false
                         }
                     },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VOnSurface)
-                ) { Text("Add") }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = { showAddDialog = false },
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, VBorder)
-                ) { Text("Cancel", color = VOnSurface) }
+                    enabled = newChannelName.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = VAccentBlue,
+                        disabledContainerColor = VAccentBlue.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Text(
+                        "Continue",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = VOnPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
-        )
+        }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(VBackground)
-    ) {
-        Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+    // Main screen — bottom sheet style
+    Box(modifier = Modifier.fillMaxSize()) {
 
-        // Header
-        Row(
+        // Dark scrim at top
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VOnSurface)
-            }
-            Text(
-                "Select Channel",
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(
-                onClick = { showAddDialog = true },
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(VOnSurface)
-            ) {
-                Icon(Icons.Default.Add, "Add Channel", tint = VOnPrimary, modifier = Modifier.size(20.dp))
-            }
-        }
+                .fillMaxHeight(0.12f)
+                .background(Color(0xFF1A1A1A))
+        )
 
-        // Search bar
-        Row(
+        // White sheet
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurface)
-                .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxHeight(0.92f)
+                .align(Alignment.BottomCenter)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(VBackground)
         ) {
-            Icon(Icons.Default.Search, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            TextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search Channel", color = VOnSurfaceSecondary, fontSize = 15.sp) },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedTextColor = VOnSurface,
-                    unfocusedTextColor = VOnSurface,
-                    cursorColor = VOnSurface
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = VBorder)
-
-        if (filteredChannels.isEmpty()) {
+            // Drag handle
             Box(
                 modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 12.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(VBorder)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Header row
+            Row(
+                modifier = Modifier
                     .fillMaxWidth()
-                    .padding(40.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = VOnSurface
+                    )
+                }
+                Text(
+                    text = "Select Channel",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = VOnSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                // Blue + button
+                IconButton(
+                    onClick = { showAddSheet = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(VAccentBlue)
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Channel",
+                        tint = VOnPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Search bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(VSurface)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = null,
+                    tint = VOnSurfaceSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            "Search Channel",
+                            color = VOnSurfaceSecondary,
+                            fontSize = 15.sp
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = VOnSurface,
+                        unfocusedTextColor = VOnSurface,
+                        cursorColor = VAccentBlue
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Channel list or empty state
+            if (filteredChannels.isEmpty()) {
                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("No channel yet", color = VOnSurfaceSecondary)
+                    Text(
+                        "No channel yet",
+                        color = VOnSurfaceSecondary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     OutlinedButton(
-                        onClick = { showAddDialog = true },
+                        onClick = { showAddSheet = true },
                         shape = RoundedCornerShape(12.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, VBorder)
                     ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add Channel", color = VOnSurface)
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = VAccentBlue
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Channel", color = VAccentBlue, fontWeight = FontWeight.Medium)
                     }
                 }
-            }
-        } else {
-            LazyColumn {
-                items(filteredChannels) { channel ->
-                    val isSelected = channel.id == selectedChannelId
-                    val memberCount = appState.workersForChannel(channel.id).size
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selectedChannelId = channel.id
-                                appState.updateWorkerChannel(workerId, channel.id)
-                                onChannelSelected(channel.id)
-                            }
-                            .background(if (isSelected) VOnSurface.copy(alpha = 0.04f) else VSurface)
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = channel.name,
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = if (isSelected) VOnSurface else VOnSurface,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                            if (memberCount > 0) {
-                                Text(
-                                    text = "$memberCount member${if (memberCount != 1) "s" else ""}",
-                                    fontSize = 12.sp,
-                                    color = VOnSurfaceSecondary
-                                )
-                            }
-                        }
-                        if (isSelected) {
-                            Icon(
-                                Icons.Default.Check,
-                                "Selected",
-                                tint = VOnSurface,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    HorizontalDivider(color = VBorder, modifier = Modifier.padding(start = 20.dp))
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAddDialog = true }
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(filteredChannels, key = { it.id }) { channel ->
+                        // Standalone white card per channel — bold name only
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(VOnSurface.copy(alpha = 0.06f)),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(VSurface)
+                                .clickable {
+                                    selectedChannelId = channel.id
+                                    appState.updateWorkerChannel(workerId, channel.id)
+                                    onChannelSelected(channel.id)
+                                }
+                                .padding(horizontal = 20.dp, vertical = 20.dp)
                         ) {
-                            Icon(Icons.Default.Add, null, tint = VOnSurface, modifier = Modifier.size(20.dp))
+                            Text(
+                                text = channel.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = VOnSurface
+                            )
                         }
-                        Text("Add New Channel", style = MaterialTheme.typography.titleMedium, color = VOnSurface)
                     }
-                    Spacer(modifier = Modifier.navigationBarsPadding())
+                    item {
+                        Spacer(modifier = Modifier.navigationBarsPadding())
+                    }
                 }
             }
         }

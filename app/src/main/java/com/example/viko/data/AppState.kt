@@ -61,6 +61,10 @@ class AppState {
             workers[idx] = workers[idx].copy(channelId = channelId)
         }
     }
+    fun updateWorkerName(id: String, newName: String) {
+        val idx = workers.indexOfFirst { it.id == id }
+        if (idx >= 0) workers[idx] = workers[idx].copy(name = newName)
+    }
 
     fun unassignWorkerFromChannel(workerId: String) {
         val idx = workers.indexOfFirst { it.id == workerId }

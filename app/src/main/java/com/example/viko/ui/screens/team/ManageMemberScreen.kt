@@ -9,8 +9,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +44,7 @@ fun ManageMemberScreen(
         matchesSearch && matchesChannel
     }
 
+    // Delete confirmation dialog
     if (deleteTarget != null) {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
@@ -66,18 +68,14 @@ fun ManageMemberScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = VAccentRed),
                     shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Delete")
-                }
+                ) { Text("Delete") }
             },
             dismissButton = {
                 OutlinedButton(
                     onClick = { deleteTarget = null },
                     shape = RoundedCornerShape(12.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, VBorder)
-                ) {
-                    Text("Cancel", color = VOnSurface)
-                }
+                ) { Text("Cancel", color = VOnSurface) }
             }
         )
     }
@@ -93,46 +91,65 @@ fun ManageMemberScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VOnSurface)
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = VOnSurface
+                )
             }
             Text(
                 text = "Manage Member",
                 style = MaterialTheme.typography.headlineLarge,
+                color = VOnSurface,
                 modifier = Modifier.weight(1f)
             )
+            // Blue filled circle + button — matches image
             IconButton(
                 onClick = onAddMember,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(VOnSurface)
+                    .background(VAccentBlue)
             ) {
-                Icon(Icons.Default.Add, "Add Member", tint = VOnPrimary, modifier = Modifier.size(20.dp))
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add Member",
+                    tint = VOnPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
 
-        // Search bar
+        // Search bar — full-width white pill, no outer border
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(VSurface)
-                .border(1.dp, VBorder, RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Search, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(20.dp))
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                tint = VOnSurfaceSecondary,
+                modifier = Modifier.size(20.dp)
+            )
             Spacer(modifier = Modifier.width(8.dp))
             TextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = {
-                    Text("Search Member", color = VOnSurfaceSecondary, fontSize = 15.sp)
+                    Text(
+                        "Search Member",
+                        color = VOnSurfaceSecondary,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
@@ -141,44 +158,27 @@ fun ManageMemberScreen(
                     unfocusedContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = VOnSurface,
+                    cursorColor = VAccentBlue,
                     focusedTextColor = VOnSurface,
                     unfocusedTextColor = VOnSurface
                 )
             )
-            IconButton(onClick = { /* show channel filter */ }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.FilterList, "Filter", tint = VOnSurfaceSecondary, modifier = Modifier.size(20.dp))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Channel filter chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = filterChannel == null,
-                onClick = { filterChannel = null },
-                label = { Text("All", fontSize = 12.sp) },
-                shape = RoundedCornerShape(8.dp)
-            )
-            appState.channels.forEach { ch ->
-                FilterChip(
-                    selected = filterChannel == ch.id,
-                    onClick = { filterChannel = if (filterChannel == ch.id) null else ch.id },
-                    label = { Text(ch.name, fontSize = 12.sp) },
-                    shape = RoundedCornerShape(8.dp)
+            IconButton(
+                onClick = { /* show channel filter */ },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = "Filter",
+                    tint = VOnSurfaceSecondary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = VBorder)
+        Spacer(modifier = Modifier.height(16.dp))
 
+        // Member list or empty state
         if (filteredWorkers.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -188,7 +188,12 @@ fun ManageMemberScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.Person, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(48.dp))
+                    Icon(
+                        Icons.Default.Person,
+                        contentDescription = null,
+                        tint = VOnSurfaceSecondary,
+                        modifier = Modifier.size(48.dp)
+                    )
                     Text("No members found", color = VOnSurfaceSecondary)
                     OutlinedButton(
                         onClick = onAddMember,
@@ -202,92 +207,110 @@ fun ManageMemberScreen(
                 }
             }
         } else {
-            LazyColumn {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 items(filteredWorkers, key = { it.id }) { worker ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onMemberClick(worker.id) }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Avatar
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(VBackground),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = worker.name.first().toString(),
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = VOnSurface
-                            )
-                        }
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = worker.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = VOnSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val channel = appState.channels.find { it.id == worker.channelId }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                StatusDot(isOnline = worker.isOnline)
-                                Text(
-                                    text = "${channel?.name ?: "Unknown"} • ${worker.zone}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = VOnSurfaceSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { deleteTarget = worker },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                "Delete",
-                                tint = VOnSurfaceSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    HorizontalDivider(color = VBorder, modifier = Modifier.padding(start = 80.dp))
+                    MemberCard(
+                        worker = worker,
+                        channel = appState.channels.find { it.id == worker.channelId },
+                        onClick = { onMemberClick(worker.id) },
+                        onDelete = { deleteTarget = worker }
+                    )
                 }
-
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onAddMember,
-                            modifier = Modifier.height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, VBorder),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = VOnSurface)
-                        ) {
-                            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Add Member")
-                        }
-                    }
                     Spacer(modifier = Modifier.navigationBarsPadding())
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MemberCard(
+    worker: Worker,
+    channel: Channel?,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = VSurface,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Worker name
+                Text(
+                    text = worker.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = VOnSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Channel badge + location/status row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Outlined channel pill — matches image exactly
+                    Box(
+                        modifier = Modifier
+                            .border(1.dp, VBorder, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = (channel?.name ?: "UNKNOWN").uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VOnSurfaceSecondary,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+
+                    // Zone + battery or "Not Available"
+                    Text(
+                        text = workerSubtitle(worker),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VOnSurfaceSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Chevron — matches the image (not a delete bin icon)
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = VBorder,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+/** Returns "Zone • Battery%" when the device is available, else "Not Available". */
+private fun workerSubtitle(worker: Worker): String {
+    val hasLocation = worker.zone.isNotBlank()
+    val hasBattery = worker.batteryLevel != null
+    return when {
+        hasLocation && hasBattery -> "${worker.zone} • ${worker.batteryLevel}%"
+        hasLocation -> worker.zone
+        else -> "Not Available"
     }
 }
