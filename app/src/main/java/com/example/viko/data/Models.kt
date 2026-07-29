@@ -51,5 +51,9 @@ data class NearbyDevice(
     val id: String,
     val name: String,
     val address: String,
-    val signalStrength: Int = -65
+    val signalStrength: Int = -65,
+    // Shown on the Setup Member sheet as "Device Status". Comes from the
+    // earpiece over BLE for real; a default keeps the mock list unchanged.
+    val batteryLevel: Int = 70,
+    val location: String = "Central Building"
 )

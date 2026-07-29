@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Viko" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Dark parent + a dark windowBackground so launching the app does not
+         flash white before Compose draws the first frame. -->
+    <style name="Theme.Viko" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/viko_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

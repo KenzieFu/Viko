@@ -56,9 +56,6 @@ fun AppNavigation() {
                 onBack = { navController.popBackStack() },
                 onMemberClick = { workerId ->
                     navController.navigate(Screen.MemberDetail.createRoute(workerId))
-                },
-                onAddMember = {
-                    navController.navigate(Screen.MemberPairing.createRoute("ch1"))
                 }
             )
         }

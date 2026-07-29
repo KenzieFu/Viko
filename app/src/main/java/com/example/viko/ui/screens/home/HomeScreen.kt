@@ -72,7 +72,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_sos),
                         contentDescription = "SOS Emergency Button",
-                        tint = Color.Red, // Changes the icon color dynamically
+                        tint = VAccentRed, // Changes the icon color dynamically
                         modifier = Modifier.size(24.dp) // Sets custom sizing
                     )
                     Text(
@@ -91,6 +91,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_bell),
                             contentDescription = "Notification Button",
+                            tint = VOnSurface, // untinted defaulted to dark, invisible on dark bg
                             modifier = Modifier.size(24.dp) // Sets custom sizing
                         )
 
@@ -159,7 +160,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                 }
             }
 
-            // Make Announcement bottom button (white card with blue megaphone)
+            // Make Announcement bottom button (dark card, white megaphone + label)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -181,7 +182,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_announce),
                         contentDescription = null,
-                        tint = VAccentBlue,
+                        tint = VOnSurface,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
@@ -272,6 +273,15 @@ fun ChannelCard(
 ) {
     val contentAlpha = if (isActive) 1f else 0.35f
     val isSpeaking = audioMode != ChannelAudioMode.Idle
+    val isListening = audioMode == ChannelAudioMode.Listening
+
+    // Figma splits the two active states:
+    //   TALK    → navy panel, blue circle, white mic icon, BLUE label
+    //   SPEAKER → neutral dark panel, white circle, blue icon, WHITE label
+    val activePanelColor = if (isListening) VListeningPanel else VActivePanel
+    val activeCircleColor = if (isListening) Color.White else VMicBlue
+    val activeIconColor = if (isListening) VMicBlue else Color.White
+    val activeLabelColor = if (isListening) Color.White else VAccentBlue
 
     Box(
         modifier = Modifier
@@ -328,7 +338,7 @@ fun ChannelCard(
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSpeaking) VActivePanel else Color.Transparent)
+                    .background(if (isSpeaking) activePanelColor else Color.Transparent)
                     .clickable(enabled = isActive, onClick = onMicTap)
                     .padding(vertical = 6.dp),
                 verticalArrangement = Arrangement.Center,
@@ -339,29 +349,29 @@ fun ChannelCard(
                     contentAlignment = Alignment.Center
                 ) {
                     if (isSpeaking) {
-                        SpeakingRipple(size = 104.dp, color = VAccentBlue)
+                        SpeakingRipple(size = 104.dp, color = activeCircleColor)
                     }
                     if (isSpeaking) {
-                        // Filled blue mic
+                        // Filled circle: blue for talk, white for speaker
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
                                 .clip(CircleShape)
-                                .background(VAccentBlue),
+                                .background(activeCircleColor),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (audioMode == ChannelAudioMode.Listening) {
+                            if (isListening) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.VolumeUp,
                                     contentDescription = "Listening to ${channel.name}",
-                                    tint = Color.White,
+                                    tint = activeIconColor,
                                     modifier = Modifier.size(30.dp)
                                 )
                             } else {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_mic),
                                     contentDescription = "Talking to ${channel.name}",
-                                    tint = Color.White,
+                                    tint = activeIconColor,
                                     modifier = Modifier.size(30.dp)
                                 )
                             }
@@ -379,7 +389,7 @@ fun ChannelCard(
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_mic),
                                 contentDescription = "Talk to ${channel.name}",
-                                tint = VAccentBlue.copy(alpha = contentAlpha),
+                                tint = VOnSurface.copy(alpha = contentAlpha),
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -391,7 +401,7 @@ fun ChannelCard(
                 Text(
                     text = channel.name,
                     style = MaterialTheme.typography.headlineLarge,
-                    color = if (isSpeaking) VAccentBlue else VOnSurface.copy(alpha = contentAlpha),
+                    color = if (isSpeaking) activeLabelColor else VOnSurface.copy(alpha = contentAlpha),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -584,7 +594,7 @@ fun AnnouncementSheetContent(
     onClose: () -> Unit
 ) {
     var isSpeaking by remember { mutableStateOf(false) }
-    val sheetBackground = if (isSpeaking) Color(0xFFF2F5FD) else VSurface
+    val sheetBackground = if (isSpeaking) VListeningPanel else VSurface
 
     Box(
         modifier = Modifier
@@ -618,7 +628,7 @@ fun AnnouncementSheetContent(
                     text = "Announce",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black,
+                    color = VOnSurface,
                     modifier = Modifier.align(Alignment.Center)
                 )
 
@@ -629,7 +639,7 @@ fun AnnouncementSheetContent(
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color.Black,
+                        tint = VOnSurface,
                         modifier = Modifier.size(30.dp)
                     )
                 }
@@ -917,7 +927,7 @@ fun TeamSheetContent(
                         workerToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Red
+                        containerColor = VAccentRed
                     )
                 ) {
                     Text("Delete")
@@ -1028,7 +1038,7 @@ fun EditableMemberListItem(
             Icon(
                 Icons.Default.Delete,
                 contentDescription = "Delete",
-                tint = Color.Red
+                tint = VAccentRed
             )
         }
     }

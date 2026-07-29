@@ -71,6 +71,64 @@ fun VikoTopBar(
     }
 }
 
+/**
+ * The plain text input used everywhere in the sheets: no Material box, no
+ * underline, no label — the caller draws the rounded container around it.
+ */
+@Composable
+fun VikoTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = { Text(placeholder, color = VOnSurfaceSecondary, fontSize = 15.sp) },
+        modifier = modifier,
+        singleLine = true,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedTextColor = VOnSurface,
+            unfocusedTextColor = VOnSurface,
+            cursorColor = VMicBlue
+        )
+    )
+}
+
+/**
+ * Figma's blue action button (Save / Continue). Disabled is the same blue gone
+ * dim rather than grey, which is how the design shows "not filled in yet".
+ */
+@Composable
+fun VikoBlueButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = VMicBlue,
+            contentColor = Color.White,
+            disabledContainerColor = VActivePanel,
+            disabledContentColor = Color.White.copy(alpha = 0.5f)
+        )
+    ) {
+        Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
 @Composable
 fun StatusDot(isOnline: Boolean, size: Dp = 8.dp) {
     Box(

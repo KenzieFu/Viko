@@ -29,12 +29,20 @@ import com.example.viko.ui.theme.*
 fun ManageMemberScreen(
     appState: AppState,
     onBack: () -> Unit,
-    onMemberClick: (String) -> Unit,
-    onAddMember: () -> Unit
+    onMemberClick: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<Worker?>(null) }
     var filterChannel by remember { mutableStateOf<String?>(null) }
+
+    // Adding a member is a stack of bottom sheets over this screen, not a
+    // separate route — see AddMemberFlow for why.
+    var showAddMember by remember { mutableStateOf(false) }
+    val onAddMember = { showAddMember = true }
+
+    if (showAddMember) {
+        AddMemberFlow(appState = appState, onDismiss = { showAddMember = false })
+    }
 
     val filteredWorkers = appState.workers.filter { worker ->
         val matchesSearch = searchQuery.isEmpty() ||
