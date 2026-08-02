@@ -7,15 +7,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.viko.data.AppState
-import com.example.viko.ui.screens.channel.SelectChannelScreen
-import com.example.viko.ui.screens.directcall.DirectCallScreen
-import com.example.viko.ui.screens.home.HomeScreen
-import com.example.viko.ui.screens.notifications.NotificationsScreen
-import com.example.viko.ui.screens.team.ManageMemberScreen
-import com.example.viko.ui.screens.team.MemberDetailScreen
-import com.example.viko.ui.screens.team.MemberPairingScreen
-import com.example.viko.ui.screens.team.SetupMemberScreen
+import com.example.viko.mock.AppState
+import com.example.viko.view.screens.channel.SelectChannelScreen
+import com.example.viko.view.screens.directcall.DirectCallScreen
+import com.example.viko.view.screens.home.HomeScreen
+import com.example.viko.view.screens.notifications.NotificationsScreen
+import com.example.viko.view.screens.team.ManageMemberScreen
+import com.example.viko.view.screens.team.MemberDetailScreen
+import com.example.viko.view.screens.team.MemberPairingScreen
+import com.example.viko.view.screens.team.SetupMemberScreen
 
 @Composable
 fun AppNavigation() {

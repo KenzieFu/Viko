@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.example.viko.navigation.AppNavigation
-import com.example.viko.ui.theme.VikoTheme
-import com.example.viko.ui.theme.VBackground
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.theme.VBackground
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
