@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.viko.mock.AppState
+import com.example.viko.mock.AppStateHolder
 import com.example.viko.view.screens.channel.SelectChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
@@ -20,7 +21,9 @@ import com.example.viko.view.screens.team.SetupMemberScreen
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val appState = remember { AppState() }
+    // Deliberately NOT remember { AppState() } — that is destroyed on every
+    // Activity recreation, wiping members the supervisor just paired.
+    val appState = AppStateHolder.instance
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 

@@ -2,6 +2,10 @@
 
 Android app, Kotlin + Jetpack Compose, package root `com.example.viko`.
 
+**Read [PRODUCT.md](PRODUCT.md) first** — what ViKO is, who the two users are, the
+feature list, the intended flow, and where the code currently diverges from it.
+This file only covers how the code is arranged.
+
 ## Layers
 
 Three layers, each a top-level package. Domain and Data are split per-feature inside;

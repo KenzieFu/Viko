@@ -10,9 +10,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -84,7 +84,7 @@ fun NotificationsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        Icons.Outlined.Notifications,
+                        Icons.Filled.Notifications,
                         null,
                         tint = VOnSurfaceSecondary,
                         modifier = Modifier.size(48.dp)
@@ -116,7 +116,7 @@ fun AlertCard(
     onResolve: () -> Unit
 ) {
     val isResolved = alert.status == AlertStatus.RESOLVED
-    val bgColor = if (isResolved) VSurface else VAlertCream
+    val bgColor = if (isResolved) VSurface else VAlertYellowSurface
 
     Box(
         modifier = Modifier
@@ -126,7 +126,7 @@ fun AlertCard(
             .background(bgColor)
             .border(
                 width = 1.dp,
-                color = if (isResolved) VBorder else VAlertCreamBorder,
+                color = if (isResolved) VBorder else VAlertYellowBorder,
                 shape = RoundedCornerShape(16.dp)
             )
             .padding(16.dp)
@@ -137,9 +137,9 @@ fun AlertCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
-                    imageVector = if (isResolved) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                    imageVector = if (isResolved) Icons.Filled.CheckCircle else Icons.Filled.Error,
                     contentDescription = null,
-                    tint = if (isResolved) VAccentBlue else VAlertAmber,
+                    tint = if (isResolved) VAccentBlue else VAlertYellow,
                     modifier = Modifier
                         .padding(top = 2.dp)
                         .size(20.dp)
@@ -186,7 +186,7 @@ fun AlertCard(
                     )
                     NotifActionButton(
                         text = "Resolve",
-                        icon = Icons.Outlined.CheckCircle,
+                        icon = Icons.Filled.CheckCircle,
                         modifier = Modifier.weight(1f),
                         onClick = onResolve
                     )

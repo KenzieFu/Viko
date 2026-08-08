@@ -10,10 +10,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -33,6 +34,7 @@ import com.example.viko.domain.team.model.Worker
 import com.example.viko.mock.AppState
 import com.example.viko.type.WorkerStatus
 import com.example.viko.navigation.Screen
+import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.components.*
 import com.example.viko.view.theme.*
 import kotlinx.coroutines.delay
@@ -47,6 +49,23 @@ fun HomeScreen(appState: AppState, navController: NavController) {
     var showAnnouncementSheet by remember { mutableStateOf(false) }
     var showTeamSheet by remember { mutableStateOf<String?>(null) }
     var talkingChannelId by remember { mutableStateOf<String?>(null) }
+
+    // First run: no members yet, so pairing IS the first step. The sheet opens over
+    // an empty Home, which is what the design shows — Home is the result of
+    // onboarding, not a screen you land on with a factory already configured.
+    // Saveable: with plain remember, an Activity recreation reset these and
+    // onboarding silently re-opened over whatever the supervisor was doing.
+    var showAddMember by rememberSaveable { mutableStateOf(false) }
+    var onboardingOffered by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(appState.needsOnboarding) {
+        if (appState.needsOnboarding && !onboardingOffered) {
+            onboardingOffered = true
+            showAddMember = true
+        }
+    }
+    if (showAddMember) {
+        AddMemberFlow(appState = appState, onDismiss = { showAddMember = false })
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -119,10 +138,42 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                     }
                 }
                 IconButton(onClick = { navController.navigate(Screen.ManageMembers.route) }) {
-                    Icon(Icons.Outlined.Settings, "Settings", tint = VOnSurface)
+                    Icon(Icons.Filled.Settings, "Settings", tint = VOnSurface)
                 }
             }
 
+            if (appState.channels.isEmpty()) {
+                // Nothing paired yet. No phantom channels — the grid stays empty
+                // until onboarding creates real ones.
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 40.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "No team yet",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = VOnSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Pair an earpiece to add your first member.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = VOnSurfaceSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        VikoBlueButton(
+                            text = "Pair Device",
+                            onClick = { showAddMember = true }
+                        )
+                    }
+                }
+            } else {
             // Channel grid
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -161,6 +212,7 @@ fun HomeScreen(appState: AppState, navController: NavController) {
                         onChipTap = { showTeamSheet = channel.id }
                     )
                 }
+            }
             }
 
             // Make Announcement bottom button (dark card, white megaphone + label)
@@ -311,7 +363,7 @@ fun ChannelCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Outlined.People,
+                    Icons.Filled.People,
                     contentDescription = null,
                     tint = VOnSurface.copy(alpha = contentAlpha),
                     modifier = Modifier.size(16.dp)
@@ -403,7 +455,9 @@ fun ChannelCard(
 
                 Text(
                     text = channel.name,
-                    style = MaterialTheme.typography.headlineLarge,
+                    // headlineLarge (25sp) overflowed a half-width card:
+                    // "Maintenance" rendered as "Maintenan…".
+                    style = MaterialTheme.typography.headlineMedium,
                     color = if (isSpeaking) activeLabelColor else VOnSurface.copy(alpha = contentAlpha),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -988,7 +1042,7 @@ fun MemberListItem(
                         WorkerStatus.AVAILABLE -> "${worker.zone} • Available"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (worker.status == WorkerStatus.SPEAKING) VAccentRed else VOnSurfaceSecondary
+                    color = if (worker.status == WorkerStatus.SPEAKING) VMicBlue else VOnSurfaceSecondary
                 )
             }
         }
@@ -1049,7 +1103,7 @@ fun EditableMemberListItem(
 @Composable
 private fun WorkerStatusIndicator(worker: Worker) {
     val animatedColor = when (worker.status) {
-        WorkerStatus.SPEAKING -> VAccentRed
+        WorkerStatus.SPEAKING -> VMicBlue
         WorkerStatus.LISTENING -> VAccentBlue
         else -> null
     }

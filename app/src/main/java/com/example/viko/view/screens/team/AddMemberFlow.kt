@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,15 +56,28 @@ fun AddMemberFlow(
     appState: AppState,
     onDismiss: () -> Unit
 ) {
-    var step by remember { mutableStateOf(AddMemberStep.Pairing) }
-    var pairedDevice by remember { mutableStateOf<NearbyDevice?>(null) }
+    // rememberSaveable throughout, NOT remember. A rotation, an IME inset change or
+    // a system overlay recreates the Activity; with plain remember the half-filled
+    // form was thrown away and the flow silently jumped back to the device list.
+    // The step is stored by name because enums are not saveable by default.
+    var stepName by rememberSaveable { mutableStateOf(AddMemberStep.Pairing.name) }
+    val step = AddMemberStep.valueOf(stepName)
+
+    // Store the id, not the NearbyDevice — a data class is not saveable.
+    var pairedDeviceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pairedDevice = mockNearbyDevices.find { it.id == pairedDeviceId }
+
     var pairingDeviceId by remember { mutableStateOf<String?>(null) }
-    var memberName by remember { mutableStateOf("") }
-    var selectedChannelId by remember { mutableStateOf("") }
+    var memberName by rememberSaveable { mutableStateOf("") }
+    var selectedChannelId by rememberSaveable { mutableStateOf("") }
+    // Onboarding pairs several members in a row: saving one returns to the device
+    // list rather than closing, and a Done button appears once there is at least
+    // one to finish with.
+    var addedCount by rememberSaveable { mutableIntStateOf(0) }
 
     // Sub-sheets stacked on top of the flow sheet
-    var showChannelPicker by remember { mutableStateOf(false) }
-    var addChannelPrefill by remember { mutableStateOf<String?>(null) }
+    var showChannelPicker by rememberSaveable { mutableStateOf(false) }
+    var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Fake BLE scan
     var isScanning by remember { mutableStateOf(true) }
@@ -88,14 +102,16 @@ fun AddMemberFlow(
                 devices = devices,
                 isScanning = isScanning,
                 pairingDeviceId = pairingDeviceId,
+                addedCount = addedCount,
                 onPair = { device ->
                     pairingDeviceId = device.id
-                    pairedDevice = device
+                    pairedDeviceId = device.id
                 },
                 onPaired = {
                     pairingDeviceId = null
-                    step = AddMemberStep.Setup
+                    stepName = AddMemberStep.Setup.name
                 },
+                onDone = onDismiss,
                 onClose = onDismiss
             )
 
@@ -118,7 +134,13 @@ fun AddMemberFlow(
                             isOnline = true
                         )
                     )
-                    onDismiss()
+                    addedCount++
+                    // Back to the device list so the next member can be paired.
+                    // Closing is the supervisor's call, via Done.
+                    memberName = ""
+                    selectedChannelId = ""
+                    pairedDeviceId = null
+                    stepName = AddMemberStep.Pairing.name
                 },
                 onClose = onDismiss
             )
@@ -175,8 +197,10 @@ private fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
     pairingDeviceId: String?,
+    addedCount: Int,
     onPair: (NearbyDevice) -> Unit,
     onPaired: () -> Unit,
+    onDone: () -> Unit,
     onClose: () -> Unit
 ) {
     // Pairing takes a moment, then the flow advances on its own — Figma has no
@@ -248,6 +272,18 @@ private fun NearbyDeviceSheetContent(
                     )
                 }
             }
+        }
+
+        if (addedCount > 0) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "$addedCount member${if (addedCount == 1) "" else "s"} added",
+                style = MaterialTheme.typography.bodySmall,
+                color = VOnSurfaceSecondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            VikoBlueButton(text = "Done", onClick = onDone)
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }

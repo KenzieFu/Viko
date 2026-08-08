@@ -3,7 +3,9 @@ package com.example.viko.view.screens.team
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -114,14 +116,23 @@ fun ManageMemberScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(
-                onClick = onAddMember,
+            // Blue circle, white glyph — same control as the one in Select Channel.
+            // Was a VOnSurface circle with a VOnPrimary icon, which the dark palette
+            // turned into near-white on near-white: an invisible icon on a white blob.
+            Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(VOnSurface)
+                    .background(VMicBlue)
+                    .clickable(onClick = onAddMember),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Add, "Add Member", tint = VOnPrimary, modifier = Modifier.size(20.dp))
+                Icon(
+                    Icons.Default.Add,
+                    "Add Member",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
@@ -163,10 +174,12 @@ fun ManageMemberScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Channel filter chips
+        // Channel filter chips — must scroll: with four channels the last chip ran
+        // off the right edge and rendered as a column of single letters.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
