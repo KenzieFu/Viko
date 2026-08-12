@@ -1,10 +1,25 @@
 package com.example.viko.view.screens.team
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -12,8 +27,20 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,22 +48,28 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.viko.components.InfoRow
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.components.VikoTextField
-import com.example.viko.domain.channel.model.Channel
+import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.NearbyDevice
-import com.example.viko.domain.team.model.Worker
-import com.example.viko.mock.AppState
-import com.example.viko.mock.mockNearbyDevices
 import com.example.viko.view.screens.channel.AddNewChannelSheetContent
 import com.example.viko.view.screens.channel.SelectChannelSheetContent
-import com.example.viko.view.theme.*
-import kotlinx.coroutines.delay
+import com.example.viko.view.theme.VBorder
+import com.example.viko.view.theme.VMicBlue
+import com.example.viko.view.theme.VOffline
+import com.example.viko.view.theme.VOnSurface
+import com.example.viko.view.theme.VOnSurfaceSecondary
+import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VSurfaceVariant
+import com.example.viko.view.theme.VWarning
 
 // The whole "add a member" journey from Figma: pair a device, name the person,
-// pick their channel, save. It is ONE composable holding ONE set of state, and
-// each Figma frame is a bottom sheet over the screen behind it.
+// pick their channel, save. It is ONE composable over ONE ViewModel, and each
+// Figma frame is a bottom sheet over the screen behind it.
 //
 // Why not separate nav screens (how this used to work): the channel picker was
 // a different route, so it could not write back into the half-filled setup
@@ -44,80 +77,43 @@ import kotlinx.coroutines.delay
 // did not exist yet, silently did nothing, and the chosen channel was thrown
 // away. Keeping the state in one place removes that class of bug entirely.
 
-private enum class AddMemberStep { Pairing, Setup }
-
-// Flip to true to preview Figma's "No devices found" frame without hardware.
-private const val SIMULATE_NO_DEVICES = false
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddMemberFlow(
-    appState: AppState,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    viewModel: AddMemberViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
-    var step by remember { mutableStateOf(AddMemberStep.Pairing) }
-    var pairedDevice by remember { mutableStateOf<NearbyDevice?>(null) }
-    var pairingDeviceId by remember { mutableStateOf<String?>(null) }
-    var memberName by remember { mutableStateOf("") }
-    var selectedChannelId by remember { mutableStateOf("") }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Sub-sheets stacked on top of the flow sheet
+    // Sub-sheets stacked on top of the flow sheet.
     var showChannelPicker by remember { mutableStateOf(false) }
     var addChannelPrefill by remember { mutableStateOf<String?>(null) }
 
-    // Fake BLE scan
-    var isScanning by remember { mutableStateOf(true) }
-    var devices by remember { mutableStateOf<List<NearbyDevice>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        delay(1200)
-        devices = if (SIMULATE_NO_DEVICES) emptyList() else mockNearbyDevices
-        isScanning = false
-    }
-
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = VSurface,
         contentColor = VOnSurface,
         dragHandle = { VikoDragHandle() }
     ) {
-        when (step) {
+        when (uiState.step) {
             AddMemberStep.Pairing -> NearbyDeviceSheetContent(
-                devices = devices,
-                isScanning = isScanning,
-                pairingDeviceId = pairingDeviceId,
-                onPair = { device ->
-                    pairingDeviceId = device.id
-                    pairedDevice = device
-                },
-                onPaired = {
-                    pairingDeviceId = null
-                    step = AddMemberStep.Setup
-                },
+                devices = uiState.devices,
+                isScanning = uiState.isScanning,
+                pairingDeviceId = uiState.pairingDeviceId,
+                onPair = viewModel::pair,
                 onClose = onDismiss
             )
 
             AddMemberStep.Setup -> SetupMemberSheetContent(
-                device = pairedDevice,
-                name = memberName,
-                onNameChange = { memberName = it },
-                channelName = appState.channels.find { it.id == selectedChannelId }?.name,
+                device = uiState.pairedDevice,
+                name = uiState.name,
+                onNameChange = viewModel::onNameChange,
+                channelName = uiState.selectedChannelName,
+                canSave = uiState.canSave,
                 onPickChannel = { showChannelPicker = true },
                 onSave = {
-                    appState.addWorker(
-                        Worker(
-                            id = "w_${appState.workers.size + 1}_${memberName.hashCode()}",
-                            name = memberName.trim(),
-                            channelId = selectedChannelId,
-                            zone = pairedDevice?.location ?: "Zone 1",
-                            deviceAddress = pairedDevice?.address ?: "Unknown",
-                            macAddress = pairedDevice?.address ?: "00:00:00:00:00:00",
-                            batteryLevel = pairedDevice?.batteryLevel ?: 100,
-                            isOnline = true
-                        )
-                    )
+                    viewModel.save()
                     onDismiss()
                 },
                 onClose = onDismiss
@@ -133,17 +129,17 @@ fun AddMemberFlow(
             dragHandle = { VikoDragHandle() }
         ) {
             SelectChannelSheetContent(
-                channels = appState.channels,
-                selectedChannelId = selectedChannelId,
-                onSelect = { id ->
+                channels = uiState.channels,
+                selectedChannelId = uiState.selectedChannelId,
+                memberCounts = uiState.memberCounts,
+                onSelect = { channelId ->
                     // Writes straight into this flow's state — this is the line
                     // the old nav-based version could not reach.
-                    selectedChannelId = id
+                    viewModel.selectChannel(channelId)
                     showChannelPicker = false
                 },
                 onRequestAddChannel = { prefill -> addChannelPrefill = prefill },
-                onBack = { showChannelPicker = false },
-                memberCountFor = { id -> appState.workersForChannel(id).size }
+                onBack = { showChannelPicker = false }
             )
         }
     }
@@ -158,9 +154,7 @@ fun AddMemberFlow(
             AddNewChannelSheetContent(
                 prefill = prefill,
                 onCreate = { name ->
-                    val channel = Channel(id = "ch_${appState.channels.size + 1}", name = name)
-                    appState.channels.add(channel)
-                    selectedChannelId = channel.id
+                    viewModel.createChannel(name)
                     addChannelPrefill = null
                     showChannelPicker = false
                 },
@@ -176,18 +170,8 @@ private fun NearbyDeviceSheetContent(
     isScanning: Boolean,
     pairingDeviceId: String?,
     onPair: (NearbyDevice) -> Unit,
-    onPaired: () -> Unit,
     onClose: () -> Unit
 ) {
-    // Pairing takes a moment, then the flow advances on its own — Figma has no
-    // "Device Paired!" confirmation step between here and Setup Member.
-    LaunchedEffect(pairingDeviceId) {
-        if (pairingDeviceId != null) {
-            delay(1400)
-            onPaired()
-        }
-    }
-
     val rotation by rememberInfiniteTransition(label = "scan").animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -212,7 +196,7 @@ private fun NearbyDeviceSheetContent(
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 Icons.Default.Bluetooth,
-                null,
+                contentDescription = null,
                 tint = VOnSurfaceSecondary,
                 modifier = Modifier
                     .size(14.dp)
@@ -294,15 +278,11 @@ private fun SetupMemberSheetContent(
     name: String,
     onNameChange: (String) -> Unit,
     channelName: String?,
+    canSave: Boolean,
     onPickChannel: () -> Unit,
     onSave: () -> Unit,
     onClose: () -> Unit
 ) {
-    // Figma greys the Save button until BOTH a name and a channel are set. The
-    // old screen let you save an empty form and quietly named the person
-    // "New Worker", which is how blank members got created.
-    val canSave = name.isNotBlank() && channelName != null
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -320,7 +300,6 @@ private fun SetupMemberSheetContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Name + Channel group
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -357,7 +336,7 @@ private fun SetupMemberSheetContent(
                 }
                 Icon(
                     Icons.Default.ChevronRight,
-                    null,
+                    contentDescription = null,
                     tint = VOnSurfaceSecondary,
                     modifier = Modifier.size(18.dp)
                 )
@@ -366,7 +345,6 @@ private fun SetupMemberSheetContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Read-only device facts
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -375,8 +353,8 @@ private fun SetupMemberSheetContent(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SetupInfoRow("Device Address", device?.address ?: "Unknown")
-            SetupInfoRow(
+            InfoRow("Device Address", device?.address ?: "Unknown")
+            InfoRow(
                 "Device Status",
                 "${device?.location ?: "Unknown"} • ${device?.batteryLevel ?: 0}%"
             )
@@ -384,6 +362,8 @@ private fun SetupMemberSheetContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // Figma greys Save until BOTH a name and a channel are set — see
+        // AddMemberViewModel.save for why that matters.
         VikoBlueButton(text = "Save", enabled = canSave, onClick = onSave)
     }
 }

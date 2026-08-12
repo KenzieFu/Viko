@@ -11,9 +11,15 @@ interface ChannelDao {
     @Query("SELECT * FROM channels")
     fun observeChannels(): Flow<List<ChannelEntity>>
 
+    @Query("SELECT COUNT(*) FROM channels")
+    suspend fun count(): Int
+
     @Query("SELECT * FROM channels WHERE id = :id")
     suspend fun getChannel(id: String): ChannelEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(channel: ChannelEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(channels: List<ChannelEntity>)
 }

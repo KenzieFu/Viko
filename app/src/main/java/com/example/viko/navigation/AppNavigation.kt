@@ -1,36 +1,44 @@
 package com.example.viko.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.viko.mock.AppState
 import com.example.viko.view.screens.channel.SelectChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
 import com.example.viko.view.screens.notifications.NotificationsScreen
 import com.example.viko.view.screens.team.ManageMemberScreen
 import com.example.viko.view.screens.team.MemberDetailScreen
-import com.example.viko.view.screens.team.MemberPairingScreen
-import com.example.viko.view.screens.team.SetupMemberScreen
 
+/**
+ * Every destination in the app. Screens receive navigation callbacks only —
+ * they never hold the NavController, and they get their data from a ViewModel
+ * scoped to their own back stack entry.
+ *
+ * Adding a member is deliberately NOT a destination: it is a stack of bottom
+ * sheets over ManageMemberScreen. See AddMemberFlow.
+ */
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val appState = remember { AppState() }
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 
         composable(Screen.Home.route) {
-            HomeScreen(appState = appState, navController = navController)
+            HomeScreen(
+                onOpenNotifications = { navController.navigate(Screen.Notifications.route) },
+                onOpenManageMembers = { navController.navigate(Screen.ManageMembers.route) },
+                onDirectCall = { workerId ->
+                    navController.navigate(Screen.DirectCall.createRoute(workerId))
+                }
+            )
         }
 
         composable(Screen.Notifications.route) {
             NotificationsScreen(
-                appState = appState,
                 onBack = { navController.popBackStack() },
                 onDirectCall = { workerId ->
                     navController.navigate(Screen.DirectCall.createRoute(workerId))
@@ -40,19 +48,13 @@ fun AppNavigation() {
 
         composable(
             route = Screen.DirectCall.route,
-            arguments = listOf(navArgument("workerId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val workerId = backStackEntry.arguments?.getString("workerId") ?: return@composable
-            DirectCallScreen(
-                workerId = workerId,
-                appState = appState,
-                onBack = { navController.popBackStack() }
-            )
+            arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
+        ) {
+            DirectCallScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Screen.ManageMembers.route) {
             ManageMemberScreen(
-                appState = appState,
                 onBack = { navController.popBackStack() },
                 onMemberClick = { workerId ->
                     navController.navigate(Screen.MemberDetail.createRoute(workerId))
@@ -62,68 +64,24 @@ fun AppNavigation() {
 
         composable(
             route = Screen.MemberDetail.route,
-            arguments = listOf(navArgument("workerId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val workerId = backStackEntry.arguments?.getString("workerId") ?: return@composable
+            arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
+        ) {
             MemberDetailScreen(
-                workerId = workerId,
-                appState = appState,
                 onBack = { navController.popBackStack() },
-                onDirectCall = { wId ->
-                    navController.navigate(Screen.DirectCall.createRoute(wId))
+                onDirectCall = { workerId ->
+                    navController.navigate(Screen.DirectCall.createRoute(workerId))
                 },
-                onSelectChannel = { wId ->
-                    navController.navigate(Screen.SelectChannel.createRoute(wId))
-                },
-                onRemove = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Screen.MemberPairing.route,
-            arguments = listOf(navArgument("channelId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val channelId = backStackEntry.arguments?.getString("channelId") ?: "ch1"
-            MemberPairingScreen(
-                channelId = channelId,
-                appState = appState,
-                onBack = { navController.popBackStack() },
-                onDevicePaired = { deviceId ->
-                    navController.navigate(Screen.SetupMember.createRoute(deviceId)) {
-                        popUpTo(Screen.MemberPairing.route) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(
-            route = Screen.SetupMember.route,
-            arguments = listOf(navArgument("deviceId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
-            SetupMemberScreen(
-                deviceId = deviceId,
-                appState = appState,
-                onBack = { navController.popBackStack() },
-                onSetupComplete = {
-                    navController.navigate(Screen.ManageMembers.route) {
-                        popUpTo(Screen.ManageMembers.route) { inclusive = true }
-                    }
-                },
-                onSelectChannel = { dId ->
-                    navController.navigate(Screen.SelectChannel.createRoute(dId))
+                onSelectChannel = { workerId ->
+                    navController.navigate(Screen.SelectChannel.createRoute(workerId))
                 }
             )
         }
 
         composable(
             route = Screen.SelectChannel.route,
-            arguments = listOf(navArgument("workerId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val workerId = backStackEntry.arguments?.getString("workerId") ?: ""
+            arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
+        ) {
             SelectChannelScreen(
-                workerId = workerId,
-                appState = appState,
                 onBack = { navController.popBackStack() },
                 onChannelSelected = { navController.popBackStack() }
             )

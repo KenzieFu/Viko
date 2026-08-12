@@ -25,15 +25,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
     companion object {
-        @Volatile private var instance: AppDatabase? = null
-
-        fun get(context: Context): AppDatabase =
-            instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "viko.db"
-                ).build().also { instance = it }
-            }
+        /**
+         * Built exactly once, by [com.example.viko.di.AppContainer] — nothing
+         * else should call this.
+         */
+        fun build(context: Context): AppDatabase = Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            "viko.db"
+        ).build()
     }
 }
