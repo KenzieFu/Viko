@@ -22,12 +22,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.example.viko.data.*
+import com.example.viko.network.BlePermissions
+import com.example.viko.network.VikoBle
 import com.example.viko.ui.theme.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
-enum class PairingState { SCANNING, FOUND, PAIRING, SUCCESS, NO_DEVICES }
 
 @Composable
 fun MemberPairingScreen(
@@ -36,23 +37,38 @@ fun MemberPairingScreen(
     onBack: () -> Unit,
     onDevicePaired: (String) -> Unit
 ) {
-    var pairingState by remember { mutableStateOf(PairingState.SCANNING) }
-    var scannedDevices by remember { mutableStateOf<List<NearbyDevice>>(emptyList()) }
-    var selectedDevice by remember { mutableStateOf<NearbyDevice?>(null) }
-    var pairingDevice by remember { mutableStateOf<NearbyDevice?>(null) }
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val ble = remember { VikoBle.get(context) }
 
-    // Simulate BLE scan
+    val scannedDevices by ble.devices.collectAsState()
+    val isScanning by ble.isScanning.collectAsState()
+
+    var hasPermission by remember { mutableStateOf(BlePermissions.allGranted(context)) }
+    var bluetoothOff by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        hasPermission = grants.values.all { it }
+    }
+
+    // Request permissions on entry, then scan. Scanning is stopped when the
+    // screen leaves composition — an unstopped BLE scan keeps the radio hot and
+    // Android will eventually throttle the app's scans app-wide.
     LaunchedEffect(Unit) {
-        delay(800)
-        scannedDevices = listOf(mockNearbyDevices[0])
-        pairingState = PairingState.FOUND
-        delay(600)
-        scannedDevices = mockNearbyDevices.take(2)
-        delay(600)
-        scannedDevices = mockNearbyDevices.take(3)
-        delay(400)
-        scannedDevices = mockNearbyDevices
+        if (!hasPermission) permissionLauncher.launch(BlePermissions.required)
+    }
+
+    DisposableEffect(hasPermission) {
+        if (hasPermission) {
+            if (ble.isBluetoothEnabled) {
+                bluetoothOff = false
+                ble.startScan()
+            } else {
+                bluetoothOff = true
+            }
+        }
+        onDispose { ble.stopScan() }
     }
 
     // Spinner rotation for scanning indicator
@@ -114,7 +130,7 @@ fun MemberPairingScreen(
                         fontWeight = FontWeight.Bold,
                         color = VOnSurface
                     )
-                    if (pairingState == PairingState.SCANNING || pairingState == PairingState.FOUND) {
+                    if (isScanning) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Scanning",
@@ -126,6 +142,12 @@ fun MemberPairingScreen(
                     }
                 }
 
+                // Manual rescan — badges only advertise while unprovisioned, so a
+                // supervisor who powers one on late needs a way to look again.
+                IconButton(onClick = { if (hasPermission) ble.startScan() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Rescan", tint = VOnSurface)
+                }
+
                 // X button
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface)
@@ -134,7 +156,7 @@ fun MemberPairingScreen(
 
             // Subtitle
             Text(
-                text = "Pair your device to add a new member.",
+                text = "Hold the badge button for 5 seconds until the LED blinks blue, then select it below.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = VOnSurfaceSecondary,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
@@ -144,14 +166,27 @@ fun MemberPairingScreen(
 
             // Content
             when {
-                pairingState == PairingState.SUCCESS -> {
-                    SuccessState(
-                        onContinue = { onDevicePaired(selectedDevice?.id ?: "") }
-                    )
-                }
+                !hasPermission -> InfoState(
+                    title = "Bluetooth permission needed",
+                    body = "ViKo needs Bluetooth access to find nearby badges.",
+                    actionLabel = "Grant permission",
+                    onAction = { permissionLauncher.launch(BlePermissions.required) }
+                )
 
-                scannedDevices.isEmpty() -> {
-                    // Still scanning — show skeleton placeholders
+                bluetoothOff -> InfoState(
+                    title = "Bluetooth is off",
+                    body = "Turn Bluetooth on, then scan again.",
+                    actionLabel = "Scan again",
+                    onAction = {
+                        if (ble.isBluetoothEnabled) {
+                            bluetoothOff = false
+                            ble.startScan()
+                        }
+                    }
+                )
+
+                scannedDevices.isEmpty() && isScanning -> {
+                    // Scanning with nothing found yet — skeleton placeholders
                     Column(
                         modifier = Modifier.padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -168,25 +203,29 @@ fun MemberPairingScreen(
                     }
                 }
 
+                scannedDevices.isEmpty() -> InfoState(
+                    title = "No badges found",
+                    body = "Make sure the badge is in pairing mode — hold its button for " +
+                        "5 seconds until the LED blinks blue. A badge that is already " +
+                        "provisioned will not appear here.",
+                    actionLabel = "Scan again",
+                    onAction = { ble.startScan() }
+                )
+
                 else -> {
                     LazyColumn(
                         contentPadding = PaddingValues(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(scannedDevices) { device ->
-                            val isPairing =
-                                pairingDevice?.id == device.id && pairingState == PairingState.PAIRING
+                        items(scannedDevices, key = { it.address }) { device ->
                             DeviceListItem(
                                 device = device,
-                                isPairing = isPairing,
+                                // Selecting a badge just carries its address forward;
+                                // the GATT write happens on Save in the setup screen,
+                                // once we actually have Wi-Fi creds and a worker name.
                                 onPair = {
-                                    pairingDevice = device
-                                    selectedDevice = device
-                                    pairingState = PairingState.PAIRING
-                                    scope.launch {
-                                        delay(2000)
-                                        pairingState = PairingState.SUCCESS
-                                    }
+                                    ble.stopScan()
+                                    onDevicePaired(device.address)
                                 }
                             )
                         }
@@ -198,9 +237,44 @@ fun MemberPairingScreen(
 }
 
 @Composable
+private fun InfoState(
+    title: String,
+    body: String,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = VOnSurface
+        )
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = VOnSurfaceSecondary
+        )
+        Button(
+            onClick = onAction,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = VAccentBlue)
+        ) {
+            Text(actionLabel, color = VOnPrimary, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
 private fun DeviceListItem(
     device: NearbyDevice,
-    isPairing: Boolean,
     onPair: () -> Unit
 ) {
     Row(
@@ -208,98 +282,42 @@ private fun DeviceListItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(VSurface)
-            .clickable(enabled = !isPairing, onClick = onPair)
+            .clickable(onClick = onPair)
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Device name — bold, left
-        Text(
-            text = device.name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = VOnSurface,
-            modifier = Modifier.weight(1f)
-        )
-
-        // Right side: "Pair Device" label + link icon, or spinner
-        if (isPairing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = VAccentBlue
-            )
-        } else {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = "Pair Device",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VAccentBlue
-                )
-                Icon(
-                    imageVector = Icons.Default.Link,
-                    contentDescription = null,
-                    tint = VAccentBlue,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SuccessState(onContinue: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 40.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(VOnline.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = null,
-                    tint = VOnline,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                "Device Paired!",
-                style = MaterialTheme.typography.headlineSmall,
+                text = device.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = VOnSurface
             )
+            // Real MAC + live RSSI. Signal strength is genuinely useful here: with
+            // several badges in pairing mode at once, the nearest one is the one
+            // the supervisor is holding.
             Text(
-                "The device has been configured and is ready to use.",
-                color = VOnSurfaceSecondary,
-                style = MaterialTheme.typography.bodyMedium
+                text = "${device.address}  ·  ${device.signalStrength} dBm",
+                style = MaterialTheme.typography.bodySmall,
+                color = VOnSurfaceSecondary
             )
-            Button(
-                onClick = onContinue,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VAccentBlue)
-            ) {
-                Text(
-                    "Setup Member Profile",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = VOnPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "Pair Device",
+                style = MaterialTheme.typography.bodyMedium,
+                color = VAccentBlue
+            )
+            Icon(
+                imageVector = Icons.Default.Link,
+                contentDescription = null,
+                tint = VAccentBlue,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

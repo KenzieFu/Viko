@@ -26,9 +26,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.R
 import com.example.viko.data.*
+import com.example.viko.network.BleProvisioner
+import com.example.viko.network.VikoBle
 import com.example.viko.ui.theme.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import kotlinx.coroutines.launch
+
+/**
+ * Wi-Fi credentials persist for the lifetime of the process so a supervisor
+ * provisioning a batch of badges types the factory SSID/password once.
+ *
+ * Deliberately NOT persisted to disk: storing the factory Wi-Fi password in
+ * app storage is a separate security decision that nobody has made yet (the
+ * docx flags credential handling as unresolved). In-memory means it is gone
+ * when the app is killed.
+ */
+object ProvisioningDefaults {
+    var ssid: String = ""
+    var password: String = ""
+    var zone: String = "Production Line 2"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,14 +60,34 @@ fun SetupMemberScreen(
     onSetupComplete: () -> Unit,
     onSelectChannel: (String) -> Unit  // keep signature intact for nav compatibility
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ble = remember { VikoBle.get(context) }
+
     var workerName by remember { mutableStateOf("") }
     var selectedChannelId by remember { mutableStateOf(appState.channels.firstOrNull()?.id ?: "") }
     var isLoading by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
     var showChannelPicker by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val device = mockNearbyDevices.find { it.id == deviceId } ?: mockNearbyDevices.firstOrNull()
+    // Wi-Fi credentials the badge will be provisioned with. Remembered across
+    // pairings in this process so a supervisor setting up a dozen badges types
+    // the factory password once, not twelve times.
+    var ssid by remember { mutableStateOf(ProvisioningDefaults.ssid) }
+    var wifiPassword by remember { mutableStateOf(ProvisioningDefaults.password) }
+    var zone by remember { mutableStateOf(ProvisioningDefaults.zone) }
+
+    // deviceId is the badge's BLE MAC, carried over from the pairing screen.
+    val device = ble.devices.value.find { it.address == deviceId }
+    val deviceAddress = device?.address ?: deviceId
     val selectedChannel = appState.channels.find { it.id == selectedChannelId }
+
+    // Badge device_id per the docx (WR-001, WR-002, ...). Assigned by the app
+    // because the badge has no way to know its own position in the fleet.
+    val assignedDeviceId = remember(deviceId) {
+        "WR-%03d".format(appState.workers.size + 1)
+    }
 
     // Channel picker bottom sheet
     if (showChannelPicker) {
@@ -99,8 +140,11 @@ fun SetupMemberScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     color = VOnSurface
                 )
+                // Deliberately does not claim the badge is "online" — the app has
+                // no runtime transport yet, so it cannot know. Confirm on the
+                // badge's serial monitor that it joined the network.
                 Text(
-                    "The device has been configured with Wi-Fi credentials and worker profile via BLE.",
+                    "The badge saved its Wi-Fi credentials and rebooted into Wi-Fi mode.",
                     color = VOnSurfaceSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center
@@ -109,7 +153,7 @@ fun SetupMemberScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    SetupInfoRow("Device", device?.name ?: "Unknown")
+                    SetupInfoRow("Badge", "$assignedDeviceId  ($deviceAddress)")
                     SetupInfoRow("Worker", workerName)
                     SetupInfoRow("Channel", selectedChannel?.name ?: "Unknown")
                 }
@@ -264,6 +308,65 @@ fun SetupMemberScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Wi-Fi credentials — sent to the badge over BLE. Without these the
+            // badge cannot join the factory network and is inert after reboot.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Factory Wi-Fi",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VOnSurfaceSecondary
+                )
+                SetupTextField(
+                    value = ssid,
+                    onValueChange = { ssid = it; ProvisioningDefaults.ssid = it },
+                    placeholder = "Wi-Fi network name (SSID)"
+                )
+                SetupTextField(
+                    value = wifiPassword,
+                    onValueChange = { wifiPassword = it; ProvisioningDefaults.password = it },
+                    placeholder = "Wi-Fi password",
+                    isPassword = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Zone
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Zone",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VOnSurfaceSecondary
+                )
+                SetupTextField(
+                    value = zone,
+                    onValueChange = { zone = it; ProvisioningDefaults.zone = it },
+                    placeholder = "e.g. Production Line 2"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            errorMessage?.let { msg ->
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Device info card
             Column(
                 modifier = Modifier
@@ -286,7 +389,7 @@ fun SetupMemberScreen(
                         color = VOnSurface
                     )
                     Text(
-                        device?.address ?: "-",
+                        deviceAddress,
                         style = MaterialTheme.typography.bodySmall,
                         color = VOnSurfaceSecondary
                     )
@@ -297,13 +400,13 @@ fun SetupMemberScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Device Status",
+                        "Assigned ID",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
                         color = VOnSurface
                     )
                     Text(
-                        "-",
+                        assignedDeviceId,
                         style = MaterialTheme.typography.bodySmall,
                         color = VOnSurfaceSecondary
                     )
@@ -311,23 +414,54 @@ fun SetupMemberScreen(
             }
         }
 
-        // Save button — pinned to bottom
+        // Save button — pinned to bottom. This is the real provisioning step:
+        // connect over BLE, write the config, wait for the badge to confirm.
         Button(
             onClick = {
+                errorMessage = null
+                if (ssid.isBlank()) {
+                    errorMessage = "Enter the factory Wi-Fi network name."
+                    return@Button
+                }
                 isLoading = true
-                val newWorker = Worker(
-                    id = "w_${System.currentTimeMillis()}",
-                    name = workerName.ifBlank { "New Worker" },
-                    channelId = selectedChannelId,
-                    zone = "",
-                    deviceAddress = device?.address ?: "Unknown",
-                    macAddress = device?.address ?: "00:00:00:00:00:00",
-                    batteryLevel = 100,
-                    isOnline = true
-                )
-                appState.addWorker(newWorker)
-                isLoading = false
-                showSuccess = true
+                scope.launch {
+                    val result = ble.provision(
+                        address = deviceAddress,
+                        config = BleProvisioner.Config(
+                            ssid = ssid,
+                            password = wifiPassword,
+                            deviceId = assignedDeviceId,
+                            workerId = "VN-%03d".format(appState.workers.size + 1),
+                            workerName = workerName.ifBlank { "New Worker" },
+                            factoryZone = zone.ifBlank { "Unassigned" }
+                        )
+                    )
+                    isLoading = false
+                    when (result) {
+                        is BleProvisioner.Result.Success -> {
+                            // Only record the worker once the badge has actually
+                            // confirmed it saved the config. Adding it on tap would
+                            // leave the roster claiming badges that were never
+                            // provisioned.
+                            appState.addWorker(
+                                Worker(
+                                    id = "w_${System.currentTimeMillis()}",
+                                    name = workerName.ifBlank { "New Worker" },
+                                    channelId = selectedChannelId,
+                                    zone = zone,
+                                    deviceAddress = assignedDeviceId,
+                                    macAddress = deviceAddress,
+                                    batteryLevel = 100,
+                                    isOnline = true
+                                )
+                            )
+                            showSuccess = true
+                        }
+                        is BleProvisioner.Result.Failure -> {
+                            errorMessage = result.message
+                        }
+                    }
+                }
             },
             enabled = !isLoading,
             modifier = Modifier
@@ -344,7 +478,7 @@ fun SetupMemberScreen(
             )
         ) {
             Text(
-                text = if (isLoading) "Saving..." else "Save",
+                text = if (isLoading) "Provisioning badge..." else "Save & Provision",
                 style = MaterialTheme.typography.titleMedium,
                 color = VOnPrimary,
                 fontWeight = FontWeight.SemiBold
@@ -397,6 +531,47 @@ fun SelectChannelSheetContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SetupTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    isPassword: Boolean = false
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(VSurface)
+    ) {
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = {
+                Text(
+                    placeholder,
+                    color = VOnSurfaceSecondary,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation =
+                if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+            textStyle = MaterialTheme.typography.titleMedium.copy(color = VOnSurface),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = VAccentBlue,
+                focusedTextColor = VOnSurface,
+                unfocusedTextColor = VOnSurface
+            )
+        )
     }
 }
 

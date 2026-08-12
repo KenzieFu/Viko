@@ -91,10 +91,3 @@ val mockMessages = listOf(
         timestamp = "45 min ago"
     ),
 )
-
-val mockNearbyDevices = listOf(
-    NearbyDevice(id = "nd1", name = "VIKO-ESP32-A1B2", address = "AA:BB:CC:11:22:33", signalStrength = -45),
-    NearbyDevice(id = "nd2", name = "VIKO-ESP32-C3D4", address = "AA:BB:CC:44:55:66", signalStrength = -67),
-    NearbyDevice(id = "nd3", name = "VIKO-ESP32-E5F6", address = "AA:BB:CC:77:88:99", signalStrength = -78),
-    NearbyDevice(id = "nd4", name = "VIKO-ESP32-G7H8", address = "AA:BB:CC:AA:BB:CC", signalStrength = -82),
-)
