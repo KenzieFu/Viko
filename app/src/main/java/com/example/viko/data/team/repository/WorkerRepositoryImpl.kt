@@ -9,8 +9,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class WorkerRepositoryImpl(private val dao: WorkerDao) : WorkerRepository {
+
     override fun observeWorkers(): Flow<List<Worker>> =
         dao.observeWorkers().map { list -> list.map { it.toDomain() } }
+
+    override fun observeWorker(id: String): Flow<Worker?> =
+        dao.observeWorker(id).map { it?.toDomain() }
 
     override suspend fun getWorker(id: String): Worker? =
         dao.getWorker(id)?.toDomain()
@@ -20,4 +24,10 @@ class WorkerRepositoryImpl(private val dao: WorkerDao) : WorkerRepository {
     override suspend fun updateWorker(worker: Worker) = dao.update(worker.toEntity())
 
     override suspend fun removeWorker(id: String) = dao.deleteById(id)
+
+    override suspend fun assignToChannel(workerId: String, channelId: String) =
+        dao.updateChannel(workerId, channelId)
+
+    override suspend fun renameWorker(workerId: String, name: String) =
+        dao.updateName(workerId, name)
 }

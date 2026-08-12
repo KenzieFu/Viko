@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,36 +37,6 @@ fun VikoDragHandle() {
                 .clip(RoundedCornerShape(2.dp))
                 .background(VBorder)
         )
-    }
-}
-
-@Composable
-fun VikoTopBar(
-    title: String,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    trailingContent: (@Composable () -> Unit)? = null
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
-        trailingContent?.invoke()
-        IconButton(onClick = onClose) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Close",
-                tint = VOnSurface
-            )
-        }
     }
 }
 
@@ -239,28 +208,3 @@ fun PrimaryButton(
     }
 }
 
-@Composable
-fun ChipBadge(text: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(VBackground)
-            .border(1.dp, VBorder, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = VOnSurface
-        )
-    }
-}
-
-@Composable
-fun SectionDivider() {
-    HorizontalDivider(
-        modifier = Modifier.fillMaxWidth(),
-        thickness = 1.dp,
-        color = VBorder
-    )
-}

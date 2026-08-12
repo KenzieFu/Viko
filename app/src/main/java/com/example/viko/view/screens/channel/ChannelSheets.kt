@@ -41,7 +41,7 @@ fun SelectChannelSheetContent(
     onSelect: (String) -> Unit,
     onRequestAddChannel: (prefill: String) -> Unit,
     onBack: () -> Unit,
-    memberCountFor: (String) -> Int = { 0 }
+    memberCounts: Map<String, Int> = emptyMap()
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -150,7 +150,7 @@ fun SelectChannelSheetContent(
                 items(filtered, key = { it.id }) { channel ->
                     ChannelRow(
                         name = channel.name,
-                        memberCount = memberCountFor(channel.id),
+                        memberCount = memberCounts[channel.id] ?: 0,
                         isSelected = channel.id == selectedChannelId,
                         onClick = { onSelect(channel.id) }
                     )

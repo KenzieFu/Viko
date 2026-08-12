@@ -15,6 +15,9 @@ interface AlertDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(alert: AlertEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(alerts: List<AlertEntity>)
+
     @Query("UPDATE alerts SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: AlertStatus)
 
