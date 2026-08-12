@@ -31,18 +31,22 @@ val VMicBlue = Color(0xFF2563EB)     // the filled mic circle while talking
 val VActivePanel = Color(0xFF1D3054)    // channel you are TALKING on
 val VListeningPanel = Color(0xFF242A38) // channel you are HEARING
 
-// Emergency alert banner (kept the "Cream" names so call sites still compile;
-// on dark they are a deep olive, not cream)
-val VAlertCream = Color(0xFF3D3312)
-val VAlertCreamBorder = Color(0xFF564818)
-val VAlertAmber = Color(0xFFE0A916)
+// YELLOW = an alert raised by a member. The emergency banner on Home and the
+// active cards in Notifications. Yellow means "someone needs attention", which is
+// distinct from red (danger the supervisor is broadcasting) and from green
+// (success / available).
+val VAlertYellow = Color(0xFFE0A916)        // icon, accent text — NOT yet sampled
+val VAlertYellowSurface = Color(0xFF3D320D) // card fill — from Figma
+val VAlertYellowBorder = Color(0xFF65501C)  // card outline — from Figma
 
 // Buttons (PrimaryButton — e.g. "Make Announcement")
 val VPrimary = Color(0xFF2A2A2C)
 val VOnPrimary = Color(0xFFF2F2F2)
 
-// Status
+// GREEN = success / available. Used for the online status dot, a healthy battery,
+// and the "Available" state on Direct Call.
 val VOnline = Color(0xFF32D74B)
+
 val VOffline = Color(0xFF6E6E73)
 val VWarning = Color(0xFFFF9F0A)
 val VLowBattery = Color(0xFFFF453A)

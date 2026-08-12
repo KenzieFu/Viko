@@ -1,9 +1,7 @@
 package com.example.viko.view.screens.directcall
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,17 +14,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,270 +29,225 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.viko.components.SpeakingRipple
+import com.example.viko.components.MissingWorker
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.CallState
-import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground
-import com.example.viko.view.theme.VBorder
+import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
-import com.example.viko.view.theme.VShadow
-import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VOnline
 import com.example.viko.view.theme.VSurfaceVariant
 
-/** One-to-one push-to-talk with a single worker, with live translation. */
+/**
+ * Supervisor ↔ one member, with the translated speech shown as text.
+ *
+ * Layout note — the glow used to be a free-floating layer pinned to the bottom of
+ * the screen at a fixed offset, which meant it drew straight over the transcript
+ * card whenever both were visible. Now each glow lives *inside* the slot it
+ * belongs to (behind the name, or behind the mic), so layout reserves space for it
+ * and nothing can overlap anything else. The two glows also never coexist: the
+ * name glows while the member talks, the mic glows while the supervisor talks.
+ */
 @Composable
 fun DirectCallScreen(
     onBack: () -> Unit,
     viewModel: DirectCallViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val worker = uiState.worker ?: return
-    val callState = uiState.callState
 
-    Box(
+    // Room answers a frame or two after navigation, and the member could be
+    // removed while this is open. Either way the close button has to stay
+    // reachable — an early return here leaves a black screen with no way out.
+    val worker = uiState.worker
+    if (worker == null) {
+        MissingWorker(onBack = onBack)
+        return
+    }
+
+    val isMemberTalking = uiState.callState == CallState.LISTENING
+    val isSupervisorTalking = uiState.callState == CallState.SPEAKING
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VBackground)
     ) {
-        if (callState != CallState.IDLE) {
-            Box(
+        Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = "DIRECT CALL",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 1.5.sp,
+                color = VOnSurfaceSecondary,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 100.dp)
-            ) {
-                SpeakingRipple(
-                    size = 280.dp,
-                    color = if (callState == CallState.SPEAKING) VOnSurface else VAccentRed.copy(alpha = 0.5f)
-                )
+                    .fillMaxWidth()
+                    .align(Alignment.Center)
+            )
+            IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterEnd)) {
+                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
             }
         }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Spacer(modifier = Modifier.weight(1f))
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.Close, "Back", tint = VOnSurface)
-                }
+        CallerIdentity(worker = worker, isMemberTalking = isMemberTalking)
+
+        if (uiState.translation != null && isMemberTalking) {
+            TranslationCard(text = uiState.translation.orEmpty())
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        PushToTalkSlot(
+            isSupervisorTalking = isSupervisorTalking,
+            isMemberTalking = isMemberTalking,
+            onToggle = viewModel::toggleTalking
+        )
+
+        Spacer(modifier = Modifier.navigationBarsPadding())
+    }
+}
+
+/** Name and status. The glow sits behind them while the member holds the channel. */
+@Composable
+private fun CallerIdentity(worker: Worker, isMemberTalking: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isMemberTalking) {
+            RadialGlow(size = 280.dp)
+        }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            Text(
+                text = worker.name,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = VOnSurface,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row {
                 Text(
-                    text = "Direct call",
+                    text = "${worker.zone} • ",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = VOnSurfaceSecondary,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center
+                    color = VOnSurfaceSecondary
                 )
-                Spacer(modifier = Modifier.width(48.dp))
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            CallerIdentity(
-                worker = worker,
-                callState = callState,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            if (uiState.transcript != null && callState != CallState.SPEAKING) {
-                TranscriptCard(
-                    isLive = callState == CallState.LISTENING,
-                    translation = uiState.translation.orEmpty(),
-                    transcript = uiState.transcript.orEmpty()
+                Text(
+                    text = if (isMemberTalking) "Listening..." else "Available",
+                    style = MaterialTheme.typography.bodyMedium,
+                    // Green = available, blue = a normal action in progress.
+                    // Never red here: red is emergency only.
+                    color = if (isMemberTalking) VMicBlue else VOnline
                 )
-                Spacer(modifier = Modifier.height(24.dp))
             }
-
-            PushToTalkButton(
-                callState = callState,
-                onToggle = viewModel::toggleTalking
-            )
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                FloatingActionButton(
-                    onClick = onBack,
-                    containerColor = VAccentRed,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.size(64.dp)
-                ) {
-                    Icon(Icons.Default.CallEnd, "End Call", modifier = Modifier.size(28.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-            Spacer(modifier = Modifier.navigationBarsPadding())
         }
     }
 }
 
 @Composable
-private fun CallerIdentity(
-    worker: Worker,
-    callState: CallState,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(VSurface)
-                .border(2.dp, VBorder, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = worker.initials(),
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Medium,
-                color = VOnSurface
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
+private fun TranslationCard(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(VSurfaceVariant)
+            .padding(horizontal = 18.dp, vertical = 16.dp)
+    ) {
         Text(
-            text = worker.name,
-            style = MaterialTheme.typography.displaySmall,
-            color = VOnSurface,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 40.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = when (callState) {
-                CallState.LISTENING -> "${worker.zone} • Speaking..."
-                CallState.SPEAKING -> "${worker.zone} • Listening..."
-                CallState.IDLE -> "${worker.zone} • Available"
-            },
+            text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (callState == CallState.LISTENING) VAccentRed else VOnSurfaceSecondary,
+            color = VOnSurface,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
+/** Push-to-talk. The glow lives inside this slot, so it cannot reach the card. */
 @Composable
-private fun TranscriptCard(isLive: Boolean, translation: String, transcript: String) {
+private fun PushToTalkSlot(
+    isSupervisorTalking: Boolean,
+    isMemberTalking: Boolean,
+    onToggle: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
-            .clip(RoundedCornerShape(16.dp))
-            .background(VSurface)
-            .padding(16.dp)
+            .height(220.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(if (isLive) VAccentRed else VOnSurfaceSecondary)
-                )
-                Text(
-                    text = if (isLive) "Translating..." else "Translated",
-                    fontSize = 11.sp,
-                    color = if (isLive) VAccentRed else VOnSurfaceSecondary
-                )
-            }
-            Text(
-                text = translation,
-                style = MaterialTheme.typography.bodyLarge,
-                color = VOnSurface
-            )
-            HorizontalDivider(color = VBorder)
-            Text(
-                text = transcript,
-                style = MaterialTheme.typography.bodySmall,
-                color = VOnSurfaceSecondary
-            )
+        if (isSupervisorTalking) {
+            RadialGlow(size = 220.dp)
         }
-    }
-}
-
-@Composable
-private fun PushToTalkButton(callState: CallState, onToggle: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.fillMaxWidth()
-    ) {
         Box(
             modifier = Modifier
-                .size(88.dp)
+                .size(96.dp)
                 .clip(CircleShape)
                 .background(
-                    when (callState) {
-                        CallState.SPEAKING -> VOnSurface
-                        CallState.LISTENING -> VAccentRed.copy(alpha = 0.1f)
-                        CallState.IDLE -> VSurfaceVariant
+                    when {
+                        isSupervisorTalking -> VMicBlue    // talking: blue fill
+                        isMemberTalking -> VSurfaceVariant // their turn: dimmed
+                        else -> Color.White                // idle: white fill
                     }
                 )
-                .border(
-                    width = 1.5.dp,
-                    color = when (callState) {
-                        CallState.SPEAKING -> VOnSurface
-                        CallState.LISTENING -> VAccentRed.copy(alpha = 0.3f)
-                        CallState.IDLE -> VBorder
-                    },
-                    shape = CircleShape
-                )
-                // The worker holds the channel while LISTENING — no talking over them.
-                .clickable(enabled = callState != CallState.LISTENING, onClick = onToggle),
+                // The member holds the channel while talking — no talking over them.
+                .clickable(enabled = !isMemberTalking, onClick = onToggle),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (callState == CallState.SPEAKING) Icons.Default.Mic else Icons.Default.MicOff,
+                imageVector = Icons.Default.Mic,
                 contentDescription = "Push to talk",
-                tint = when (callState) {
-                    CallState.SPEAKING -> Color.White
-                    CallState.LISTENING -> VAccentRed
-                    CallState.IDLE -> VOnSurface
+                tint = when {
+                    isSupervisorTalking -> Color.White
+                    isMemberTalking -> VOnSurfaceSecondary
+                    else -> VMicBlue
                 },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(36.dp)
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = when (callState) {
-                CallState.SPEAKING -> "Release to send"
-                CallState.LISTENING -> "Worker speaking"
-                CallState.IDLE -> "Tap to speak"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = VOnSurfaceSecondary
-        )
     }
 }
 
-/** "Nguyen Minh Tam" → "NM". */
-private fun Worker.initials(): String =
-    name.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("")
+/** Soft navy bloom used behind the name or the mic. */
+@Composable
+private fun RadialGlow(size: Dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        VMicBlue.copy(alpha = 0.28f),
+                        VMicBlue.copy(alpha = 0.10f),
+                        Color.Transparent
+                    )
+                )
+            )
+    )
+}

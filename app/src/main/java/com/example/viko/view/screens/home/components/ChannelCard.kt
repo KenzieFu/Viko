@@ -19,7 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -131,7 +131,9 @@ fun ChannelCard(
 
                 Text(
                     text = summary.channel.name,
-                    style = MaterialTheme.typography.headlineLarge,
+                    // headlineLarge (25sp) overflowed a half-width card:
+                    // "Maintenance" rendered as "Maintenan…".
+                    style = MaterialTheme.typography.headlineMedium,
                     color = if (isSpeaking) activeLabelColor else VOnSurface.copy(alpha = contentAlpha),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -161,7 +163,7 @@ private fun MemberCountChip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Outlined.People,
+            Icons.Filled.People,
             contentDescription = null,
             tint = VOnSurface.copy(alpha = contentAlpha),
             modifier = Modifier.size(16.dp)

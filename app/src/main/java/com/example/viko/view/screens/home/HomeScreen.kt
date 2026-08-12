@@ -25,7 +25,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,9 +34,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,13 +47,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.R
+import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.view.screens.home.components.AnnouncementSheetContent
 import com.example.viko.view.screens.home.components.ChannelAudioMode
 import com.example.viko.view.screens.home.components.ChannelCard
@@ -61,6 +66,7 @@ import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VOnSurface
+import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
 
@@ -79,10 +85,33 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    var showSosSheet by remember { mutableStateOf(false) }
-    var showAnnouncementSheet by remember { mutableStateOf(false) }
-    var openTeamSheetChannelId by remember { mutableStateOf<String?>(null) }
+    // Which sheet is open is view state, but it still has to survive an Activity
+    // recreation — a rotation should not close the roster the supervisor opened.
+    var showSosSheet by rememberSaveable { mutableStateOf(false) }
+    var showAnnouncementSheet by rememberSaveable { mutableStateOf(false) }
+    var openTeamSheetChannelId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Talking is deliberately NOT saveable: it stands in for holding the mic, and
+    // that ends when the screen goes away.
     var talkingChannelId by remember { mutableStateOf<String?>(null) }
+
+    // First run: nothing is paired, so pairing IS the first step. The sheet opens
+    // over an empty Home, which is what the design shows — Home is the result of
+    // onboarding, not a screen you land on with a factory already configured.
+    // Saveable, and offered only once: with plain remember an Activity recreation
+    // reset the flag and onboarding re-opened over whatever the supervisor was
+    // doing.
+    var showAddMember by rememberSaveable { mutableStateOf(false) }
+    var onboardingOffered by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(uiState.needsOnboarding) {
+        if (uiState.needsOnboarding && !onboardingOffered) {
+            onboardingOffered = true
+            showAddMember = true
+        }
+    }
+    if (showAddMember) {
+        AddMemberFlow(onDismiss = { showAddMember = false })
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -95,27 +124,36 @@ fun HomeScreen(
                 onSettingsTap = onOpenManageMembers
             )
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 100.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(uiState.channels, key = { it.channel.id }) { summary ->
-                    val isManagerTalking = talkingChannelId == summary.channel.id
-                    ChannelCard(
-                        summary = summary,
-                        audioMode = when {
-                            isManagerTalking -> ChannelAudioMode.Talking
-                            summary.hasSpeakingMember -> ChannelAudioMode.Listening
-                            else -> ChannelAudioMode.Idle
-                        },
-                        onMicTap = {
-                            talkingChannelId = if (isManagerTalking) null else summary.channel.id
-                        },
-                        onChipTap = { openTeamSheetChannelId = summary.channel.id }
-                    )
+            if (uiState.hasNoChannels) {
+                // Nothing paired yet. No phantom channels — the grid stays empty
+                // until onboarding creates real ones.
+                NoTeamYet(
+                    onPairDevice = { showAddMember = true },
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 100.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(uiState.channels, key = { it.channel.id }) { summary ->
+                        val isManagerTalking = talkingChannelId == summary.channel.id
+                        ChannelCard(
+                            summary = summary,
+                            audioMode = when {
+                                isManagerTalking -> ChannelAudioMode.Talking
+                                summary.hasSpeakingMember -> ChannelAudioMode.Listening
+                                else -> ChannelAudioMode.Idle
+                            },
+                            onMicTap = {
+                                talkingChannelId = if (isManagerTalking) null else summary.channel.id
+                            },
+                            onChipTap = { openTeamSheetChannelId = summary.channel.id }
+                        )
+                    }
                 }
             }
 
@@ -172,6 +210,32 @@ fun HomeScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun NoTeamYet(onPairDevice: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 40.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "No team yet",
+            style = MaterialTheme.typography.headlineSmall,
+            color = VOnSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Pair an earpiece to add your first member.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = VOnSurfaceSecondary,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        VikoBlueButton(text = "Pair Device", onClick = onPairDevice)
     }
 }
 
@@ -246,7 +310,7 @@ private fun HomeTopBar(
         }
 
         IconButton(onClick = onSettingsTap) {
-            Icon(Icons.Outlined.Settings, contentDescription = "Manage members", tint = VOnSurface)
+            Icon(Icons.Filled.Settings, contentDescription = "Manage members", tint = VOnSurface)
         }
     }
 }

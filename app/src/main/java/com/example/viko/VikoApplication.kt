@@ -22,8 +22,27 @@ class VikoApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
 
-        // First launch starts with an empty database; the demo dataset is what
-        // the competition build shows off, so seed it before the UI collects.
-        applicationScope.launch { container.databaseSeeder.seedIfEmpty() }
+        if (SEED_DEMO_DATA) {
+            applicationScope.launch { container.databaseSeeder.seedIfEmpty() }
+        }
+    }
+
+    private companion object {
+        /**
+         * Whether a first launch pre-fills the factory.
+         *
+         * `false` — a genuine first run: no members, no channels. Home opens the
+         * pairing sheet, "Add new channel" means something, and Select Channel's
+         * *No channel yet* state is reachable. This is what the design describes,
+         * and it is the default because onboarding is a screen we have to be able
+         * to demo.
+         *
+         * `true` — the populated demo: 4 channels, 20 members, one active alert
+         * ([com.example.viko.data.local.SeedData]). Flip it to show Home full of
+         * cards without pairing anything first.
+         *
+         * Either way it goes away once badges enrol themselves over the wire.
+         */
+        const val SEED_DEMO_DATA = false
     }
 }

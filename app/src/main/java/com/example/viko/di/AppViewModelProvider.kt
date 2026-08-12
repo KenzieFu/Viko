@@ -56,6 +56,7 @@ object AppViewModelProvider {
         }
         initializer {
             AddMemberViewModel(
+                savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,
                 deviceScanner = container().deviceScanner

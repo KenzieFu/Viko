@@ -24,9 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,9 +48,9 @@ import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.type.AlertStatus
 import com.example.viko.view.theme.VAccentBlue
-import com.example.viko.view.theme.VAlertAmber
-import com.example.viko.view.theme.VAlertCream
-import com.example.viko.view.theme.VAlertCreamBorder
+import com.example.viko.view.theme.VAlertYellow
+import com.example.viko.view.theme.VAlertYellowSurface
+import com.example.viko.view.theme.VAlertYellowBorder
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VOnSurface
@@ -135,7 +135,7 @@ private fun EmptyNotifications() {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
-                Icons.Outlined.Notifications,
+                Icons.Filled.Notifications,
                 contentDescription = null,
                 tint = VOnSurfaceSecondary,
                 modifier = Modifier.size(48.dp)
@@ -158,10 +158,10 @@ private fun AlertCard(
             .fillMaxWidth()
             .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isResolved) VSurface else VAlertCream)
+            .background(if (isResolved) VSurface else VAlertYellowSurface)
             .border(
                 width = 1.dp,
-                color = if (isResolved) VBorder else VAlertCreamBorder,
+                color = if (isResolved) VBorder else VAlertYellowBorder,
                 shape = RoundedCornerShape(16.dp)
             )
             .padding(16.dp)
@@ -172,9 +172,9 @@ private fun AlertCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
-                    imageVector = if (isResolved) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                    imageVector = if (isResolved) Icons.Filled.CheckCircle else Icons.Filled.Error,
                     contentDescription = null,
-                    tint = if (isResolved) VAccentBlue else VAlertAmber,
+                    tint = if (isResolved) VAccentBlue else VAlertYellow,
                     modifier = Modifier
                         .padding(top = 2.dp)
                         .size(20.dp)
@@ -221,7 +221,7 @@ private fun AlertCard(
                     )
                     AlertActionButton(
                         text = "Resolve",
-                        icon = Icons.Outlined.CheckCircle,
+                        icon = Icons.Filled.CheckCircle,
                         modifier = Modifier.weight(1f),
                         onClick = onResolve
                     )

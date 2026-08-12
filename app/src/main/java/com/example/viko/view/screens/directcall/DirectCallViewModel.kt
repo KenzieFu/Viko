@@ -20,14 +20,12 @@ import kotlinx.coroutines.launch
 data class DirectCallUiState(
     val worker: Worker? = null,
     val callState: CallState = CallState.IDLE,
-    val transcript: String? = null,
     val translation: String? = null
 )
 
 /** Local, non-persisted parts of a call: who is talking and what came through. */
 private data class CallSession(
     val callState: CallState = CallState.IDLE,
-    val transcript: String? = null,
     val translation: String? = null
 )
 
@@ -47,7 +45,6 @@ class DirectCallViewModel(
         DirectCallUiState(
             worker = worker,
             callState = call.callState,
-            transcript = call.transcript,
             translation = call.translation
         )
     }.stateIn(
@@ -79,7 +76,6 @@ class DirectCallViewModel(
         session.update {
             it.copy(
                 callState = CallState.LISTENING,
-                transcript = "Vâng thủ trưởng, tôi nghĩ chúng tôi đã xử lý xong rồi. Vậy là ổn rồi ạ.",
                 translation = "Yes boss, I think we've got them handled already now. So it's fine now."
             )
         }

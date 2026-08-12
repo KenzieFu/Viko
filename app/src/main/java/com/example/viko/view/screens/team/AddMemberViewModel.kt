@@ -1,5 +1,6 @@
 package com.example.viko.view.screens.team
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.domain.channel.model.Channel
@@ -31,12 +32,18 @@ data class AddMemberUiState(
     val name: String = "",
     val selectedChannelId: String = "",
     val channels: List<Channel> = emptyList(),
-    val memberCounts: Map<String, Int> = emptyMap()
+    val memberCounts: Map<String, Int> = emptyMap(),
+    /** Addresses of badges already on the roster — they cannot be paired again. */
+    val enrolledAddresses: Set<String> = emptySet(),
+    /** How many members this run of the flow has added — drives the Done button. */
+    val addedCount: Int = 0
 ) {
     val selectedChannelName: String? get() = channels.find { it.id == selectedChannelId }?.name
 
     /** The Save button stays dim until both fields are real — see [save]. */
     val canSave: Boolean get() = name.isNotBlank() && selectedChannelName != null
+
+    fun isEnrolled(device: NearbyDevice): Boolean = device.address in enrolledAddresses
 }
 
 /**
@@ -44,14 +51,20 @@ data class AddMemberUiState(
  * channel, save. One ViewModel for all of it, because the channel picker has to
  * be able to write back into a half-filled setup form — the reason this stopped
  * being three separate nav destinations.
+ *
+ * The form is mirrored into [SavedStateHandle]. A ViewModel already survives the
+ * configuration changes that used to eat a half-typed name — rotation, IME
+ * insets, a system overlay — but not process death, and a supervisor who
+ * backgrounds the app mid-pairing should not come back to an empty sheet either.
  */
 class AddMemberViewModel(
+    private val savedStateHandle: SavedStateHandle,
     private val workerRepository: WorkerRepository,
     private val channelRepository: ChannelRepository,
     private val deviceScanner: DeviceScanner
 ) : ViewModel() {
 
-    private val form = MutableStateFlow(AddMemberUiState())
+    private val form = MutableStateFlow(savedStateHandle.restoreForm())
     private var scanJob: Job? = null
 
     val uiState: StateFlow<AddMemberUiState> = combine(
@@ -61,7 +74,8 @@ class AddMemberViewModel(
     ) { state, channels, workers ->
         state.copy(
             channels = channels,
-            memberCounts = workers.groupingBy { it.channelId }.eachCount()
+            memberCounts = workers.groupingBy { it.channelId }.eachCount(),
+            enrolledAddresses = workers.map { it.macAddress }.toSet()
         )
     }.stateIn(
         scope = viewModelScope,
@@ -70,21 +84,20 @@ class AddMemberViewModel(
     )
 
     init {
-        restart()
+        viewModelScope.launch { form.collect(savedStateHandle::persistForm) }
+        startScan()
     }
 
-    /** Clears the form and starts a fresh scan — called each time the flow opens. */
+    /**
+     * Clears the form and starts a fresh scan.
+     *
+     * Called when the flow is dismissed, not when it opens: the whole point of
+     * keeping the form here is that it outlives a recreation mid-edit. Resetting
+     * on the way out gives the next open a clean sheet without costing that.
+     */
     fun restart() {
-        scanJob?.cancel()
         form.value = AddMemberUiState()
-        scanJob = viewModelScope.launch {
-            deviceScanner.scan().collect { devices ->
-                form.update { it.copy(devices = devices) }
-            }
-            // The scan finished; an empty list now means "no devices found",
-            // not "still looking".
-            form.update { it.copy(isScanning = false) }
-        }
+        startScan()
     }
 
     fun pair(device: NearbyDevice) = viewModelScope.launch {
@@ -107,9 +120,13 @@ class AddMemberViewModel(
     }
 
     /**
-     * Persists the new member. No-ops when the form is incomplete rather than
-     * inventing a placeholder name — blank "New Worker" rows are how the old
-     * screen leaked junk into the roster.
+     * Persists the new member and returns to the device list so the next badge
+     * can be paired — onboarding a shift means pairing several in a row, and
+     * closing the sheet is the supervisor's call via Done.
+     *
+     * No-ops when the form is incomplete rather than inventing a placeholder
+     * name; blank "New Worker" rows are how the old screen leaked junk into the
+     * roster.
      */
     fun save() = viewModelScope.launch {
         val state = form.value
@@ -128,6 +145,28 @@ class AddMemberViewModel(
                 isOnline = true
             )
         )
+
+        form.update {
+            it.copy(
+                step = AddMemberStep.Pairing,
+                pairedDevice = null,
+                name = "",
+                selectedChannelId = "",
+                addedCount = it.addedCount + 1
+            )
+        }
+    }
+
+    private fun startScan() {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch {
+            deviceScanner.scan().collect { devices ->
+                form.update { it.copy(devices = devices) }
+            }
+            // The scan finished; an empty list now means "no devices found",
+            // not "still looking".
+            form.update { it.copy(isScanning = false) }
+        }
     }
 
     private companion object {
@@ -137,3 +176,60 @@ class AddMemberViewModel(
         const val FULL_BATTERY = 100
     }
 }
+
+// Only the fields the supervisor typed or chose are saved. The device list is
+// not: after process death a rescan is the correct answer, not a stale list of
+// badges that may no longer be in range.
+
+private const val KEY_STEP = "add_member_step"
+private const val KEY_NAME = "add_member_name"
+private const val KEY_CHANNEL_ID = "add_member_channel_id"
+private const val KEY_ADDED_COUNT = "add_member_added_count"
+private const val KEY_PAIRED_DEVICE = "add_member_paired_device"
+
+private fun SavedStateHandle.persistForm(state: AddMemberUiState) {
+    this[KEY_STEP] = state.step.name
+    this[KEY_NAME] = state.name
+    this[KEY_CHANNEL_ID] = state.selectedChannelId
+    this[KEY_ADDED_COUNT] = state.addedCount
+    this[KEY_PAIRED_DEVICE] = state.pairedDevice?.toSavedList()
+}
+
+private fun SavedStateHandle.restoreForm(): AddMemberUiState {
+    val step = get<String>(KEY_STEP)
+        ?.let { runCatching { AddMemberStep.valueOf(it) }.getOrNull() }
+        ?: AddMemberStep.Pairing
+    val pairedDevice = get<ArrayList<String>>(KEY_PAIRED_DEVICE)?.toNearbyDevice()
+
+    return AddMemberUiState(
+        // A restored Setup step with no device to set up is not a state the flow
+        // can render, so fall back to the device list.
+        step = if (step == AddMemberStep.Setup && pairedDevice == null) AddMemberStep.Pairing else step,
+        pairedDevice = pairedDevice,
+        name = get<String>(KEY_NAME).orEmpty(),
+        selectedChannelId = get<String>(KEY_CHANNEL_ID).orEmpty(),
+        addedCount = get<Int>(KEY_ADDED_COUNT) ?: 0
+    )
+}
+
+/**
+ * NearbyDevice is a domain model and stays free of Android's Parcelable, so it
+ * crosses SavedStateHandle as its own primitives.
+ */
+private fun NearbyDevice.toSavedList() = arrayListOf(
+    id, name, address, signalStrength.toString(), batteryLevel.toString(), location
+)
+
+private fun ArrayList<String>.toNearbyDevice(): NearbyDevice? {
+    if (size != SAVED_DEVICE_FIELDS) return null
+    return NearbyDevice(
+        id = this[0],
+        name = this[1],
+        address = this[2],
+        signalStrength = this[3].toIntOrNull() ?: return null,
+        batteryLevel = this[4].toIntOrNull() ?: return null,
+        location = this[5]
+    )
+}
+
+private const val SAVED_DEVICE_FIELDS = 6

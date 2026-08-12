@@ -30,8 +30,21 @@ data class ChannelSummary(
 data class HomeUiState(
     val channels: List<ChannelSummary> = emptyList(),
     val unassignedToChannel: Map<String, List<Worker>> = emptyMap(),
-    val activeAlertCount: Int = 0
-)
+    val activeAlertCount: Int = 0,
+    val hasMembers: Boolean = false,
+    /**
+     * False until the database has answered. Everything that reacts to "there is
+     * nothing here" must wait for this — otherwise the first frame of a populated
+     * install reads as empty and onboarding opens over a working factory.
+     */
+    val isLoaded: Boolean = false
+) {
+    /** No badge has been paired yet, so pairing is the first thing to do. */
+    val needsOnboarding: Boolean get() = isLoaded && !hasMembers
+
+    /** Nothing to put in the grid — show the empty state instead of a blank screen. */
+    val hasNoChannels: Boolean get() = isLoaded && channels.isEmpty()
+}
 
 class HomeViewModel(
     private val workerRepository: WorkerRepository,
@@ -50,7 +63,9 @@ class HomeViewModel(
             unassignedToChannel = channels.associate { channel ->
                 channel.id to workers.filter { it.channelId != channel.id }
             },
-            activeAlertCount = alerts.count { it.status == AlertStatus.ACTIVE }
+            activeAlertCount = alerts.count { it.status == AlertStatus.ACTIVE },
+            hasMembers = workers.isNotEmpty(),
+            isLoaded = true
         )
     }.stateIn(
         scope = viewModelScope,

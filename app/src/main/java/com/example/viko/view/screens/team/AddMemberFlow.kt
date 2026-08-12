@@ -39,7 +39,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,12 +85,21 @@ fun AddMemberFlow(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Sub-sheets stacked on top of the flow sheet.
-    var showChannelPicker by remember { mutableStateOf(false) }
-    var addChannelPrefill by remember { mutableStateOf<String?>(null) }
+    // Sub-sheets stacked on top of the flow sheet. rememberSaveable, not
+    // remember: an Activity recreation (rotation, IME insets, a system overlay)
+    // would otherwise drop the supervisor back to the sheet underneath.
+    var showChannelPicker by rememberSaveable { mutableStateOf(false) }
+    var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // The form itself lives in the ViewModel, which survives recreation; clearing
+    // it is the last thing that happens on the way out.
+    val dismiss = {
+        viewModel.restart()
+        onDismiss()
+    }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = VSurface,
         contentColor = VOnSurface,
@@ -101,8 +110,11 @@ fun AddMemberFlow(
                 devices = uiState.devices,
                 isScanning = uiState.isScanning,
                 pairingDeviceId = uiState.pairingDeviceId,
+                isEnrolled = uiState::isEnrolled,
+                addedCount = uiState.addedCount,
                 onPair = viewModel::pair,
-                onClose = onDismiss
+                onDone = dismiss,
+                onClose = dismiss
             )
 
             AddMemberStep.Setup -> SetupMemberSheetContent(
@@ -112,11 +124,10 @@ fun AddMemberFlow(
                 channelName = uiState.selectedChannelName,
                 canSave = uiState.canSave,
                 onPickChannel = { showChannelPicker = true },
-                onSave = {
-                    viewModel.save()
-                    onDismiss()
-                },
-                onClose = onDismiss
+                // Saving returns to the device list rather than closing — see
+                // AddMemberViewModel.save.
+                onSave = viewModel::save,
+                onClose = dismiss
             )
         }
     }
@@ -169,7 +180,10 @@ private fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
     pairingDeviceId: String?,
+    isEnrolled: (NearbyDevice) -> Boolean,
+    addedCount: Int,
     onPair: (NearbyDevice) -> Unit,
+    onDone: () -> Unit,
     onClose: () -> Unit
 ) {
     val rotation by rememberInfiniteTransition(label = "scan").animateFloat(
@@ -228,10 +242,25 @@ private fun NearbyDeviceSheetContent(
                     NearbyDeviceRow(
                         device = device,
                         isPairing = pairingDeviceId == device.id,
+                        isEnrolled = isEnrolled(device),
                         onPair = { onPair(device) }
                     )
                 }
             }
+        }
+
+        // Onboarding pairs a whole shift in one sitting, so the flow stays open
+        // after each save. Done is how the supervisor says they are finished.
+        if (addedCount > 0) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "$addedCount member${if (addedCount == 1) "" else "s"} added",
+                style = MaterialTheme.typography.bodySmall,
+                color = VOnSurfaceSecondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            VikoBlueButton(text = "Done", onClick = onDone)
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
@@ -240,6 +269,7 @@ private fun NearbyDeviceSheetContent(
 private fun NearbyDeviceRow(
     device: NearbyDevice,
     isPairing: Boolean,
+    isEnrolled: Boolean,
     onPair: () -> Unit
 ) {
     Row(
@@ -247,7 +277,11 @@ private fun NearbyDeviceRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(VSurfaceVariant)
-            .clickable(enabled = !isPairing, onClick = onPair)
+            // A badge already on the roster cannot be paired again: the flow
+            // stays open after each save, so the one just enrolled is still
+            // sitting in this list, and a second pass would create a duplicate
+            // member on the same hardware.
+            .clickable(enabled = !isPairing && !isEnrolled, onClick = onPair)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -255,19 +289,23 @@ private fun NearbyDeviceRow(
             text = device.name,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = VOnSurface,
+            color = if (isEnrolled) VOnSurfaceSecondary else VOnSurface,
             modifier = Modifier.weight(1f)
         )
-        if (isPairing) {
-            CircularProgressIndicator(
+        when {
+            isPairing -> CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),
                 strokeWidth = 2.dp,
                 color = VMicBlue
             )
-        } else {
-            Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
+
+            isEnrolled -> Text("Paired", color = VOnSurfaceSecondary, fontSize = 12.sp)
+
+            else -> {
+                Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
+            }
         }
     }
 }

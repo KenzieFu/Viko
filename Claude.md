@@ -2,6 +2,10 @@
 
 Android app, Kotlin + Jetpack Compose, package root `com.example.viko`, min SDK 24.
 
+**Read [PRODUCT.md](PRODUCT.md) first** — what ViKo is, who the two users are, the
+visual language, every screen as designed, and where the code still diverges from
+it. This file covers how the code is arranged.
+
 ## What this app is
 
 The **manager half** of ViKo — Team ADA's entry in the OneVoice (Qualcomm) edge-AI
@@ -23,14 +27,14 @@ its own CLAUDE.md.
 
 | Screen | What it does |
 | --- | --- |
-| Home | Channel grid; tap the mic to talk to a channel, the chip to see its roster |
+| Home | Channel grid; tap the mic to talk to a channel, the chip to see its roster. On a fresh install it is the onboarding screen: *No team yet* with the pairing sheet already open |
 | — SOS sheet | Site-wide emergency broadcast (Fire / Gas / Evacuate / All Clear) |
 | — Announcement sheet | Site-wide voice announcement |
 | — Team sheet | One channel's roster; rename / remove / pull in members |
 | Notifications | The emergency feed — every SOS a badge has raised, resolve one or all |
 | Direct call | One-to-one PTT with a worker, with a live translation transcript |
 | Manage members | The full roster, searchable and channel-filterable |
-| — Add member flow | Pair a badge → name the worker → pick a channel → save |
+| — Add member flow | Pair a badge → name the worker → pick a channel → save, then back to the device list for the next one. Hosted by both Home and Manage members |
 | Member detail | Profile, badge status (MAC, firmware, battery), recent messages |
 | Select channel | Change an existing member's channel, or create one inline |
 
@@ -74,13 +78,22 @@ under `view/screens/<feature>/` and an `initializer` in `AppViewModelProvider`.
 **Screens are dumb.** A `@Composable` screen takes navigation callbacks and a
 ViewModel, collects one `uiState`, and renders it. It never touches a repository, never
 holds a `NavController`, and never does business logic. Anything a screen holds in
-`remember` should be view-only state: which sheet is open, which dialog is showing.
+`remember` should be view-only state: which sheet is open, which dialog is showing —
+and use `rememberSaveable` for it, so an Activity recreation (rotation, IME insets, a
+system overlay) does not drop the supervisor back through a stack of sheets.
 
 **ViewModels own state, not Compose.** Each screen has exactly one, exposing a single
 `StateFlow<XUiState>` built with `combine(...).stateIn(viewModelScope,
 SharingStarted.WhileSubscribed(UI_STATE_TIMEOUT_MS), initial)`. Route arguments arrive
 through `SavedStateHandle` using the keys in `NavArgs` — never as composable parameters
 threaded down by hand.
+
+**A half-filled form goes through `SavedStateHandle` too.** A ViewModel already survives
+rotation and the other configuration changes, but not process death, and a supervisor who
+backgrounds the app mid-pairing should not come back to an empty sheet. `AddMemberViewModel`
+mirrors its form into the handle — see the `persistForm` / `restoreForm` pair at the bottom
+of that file, and note that it stores the paired device as primitives rather than dragging
+Android's `Parcelable` into a domain model.
 
 **Derive in the ViewModel, not in the composable.** Member counts, channel names,
 "is anyone speaking" — resolve them once into the UI state (see `ChannelSummary`,
@@ -108,9 +121,15 @@ queries and native `Flow` support.
   version and add a migration when a schema changes.
 - `AppDatabase.build()` is called **only** by `AppContainer`, which is built **only** by
   `VikoApplication`.
-- First launch writes `SeedData` (4 channels, 20 workers, 3 alerts, 4 messages) through
-  the repositories via `DatabaseSeeder.seedIfEmpty()`. That demo dataset is what the
-  competition build shows off; it goes away once badges enrol themselves over the wire.
+- **A fresh install starts empty.** `SEED_DEMO_DATA` in `VikoApplication` is `false`,
+  because onboarding — Home opening the pairing sheet over a *No team yet* empty
+  state — only exists if there is genuinely nothing there. Flip it to `true` and
+  `DatabaseSeeder.seedIfEmpty()` writes `SeedData` (4 channels, 20 workers, 3 alerts,
+  4 messages) through the repositories for the populated demo. Either way it goes
+  away once badges enrol themselves over the wire.
+- Anything that reacts to "there is nothing here" must wait for `HomeUiState.isLoaded`.
+  The initial UI state is empty by construction, so acting on it directly makes a
+  populated install flash its empty state and re-run onboarding on the first frame.
 
 ## Build
 
@@ -141,7 +160,8 @@ and nothing else. Specifically:
 - Talking is UI-only: the mic buttons, the SOS broadcast and the announcement sheet
   toggle local state and animate. No audio is captured or sent.
 - `DirectCallViewModel.simulateIncomingSpeech()` fakes a received translation on a timer.
-  Delete it when real messages arrive.
+  Delete it when real messages arrive. It emits only the translated line — the design
+  shows no source-language transcript, so nothing renders the original Vietnamese.
 - The AI pipeline (ASR → NMT → TTS) is not integrated.
 - `EmergencyAlert.timeAgo` and `TranslationMessage.timestamp` are display strings, not
   timestamps. They need to become real time values before anything sorts or ages them.

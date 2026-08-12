@@ -39,7 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.BatteryBadge
 import com.example.viko.components.DetailField
 import com.example.viko.components.InfoRow
+import com.example.viko.components.MissingWorker
 import com.example.viko.components.PrimaryButton
 import com.example.viko.components.StatusDot
 import com.example.viko.di.AppViewModelProvider
@@ -75,9 +76,16 @@ fun MemberDetailScreen(
     viewModel: MemberDetailViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val worker = uiState.worker ?: return
 
-    var showRemoveConfirm by remember { mutableStateOf(false) }
+    // See MissingWorker: an early return here would leave a black screen with no
+    // close button while Room answers, or after the member has been removed.
+    val worker = uiState.worker
+    if (worker == null) {
+        MissingWorker(onBack = onBack)
+        return
+    }
+
+    var showRemoveConfirm by rememberSaveable { mutableStateOf(false) }
 
     if (showRemoveConfirm) {
         AlertDialog(

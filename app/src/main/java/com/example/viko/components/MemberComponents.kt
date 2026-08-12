@@ -13,14 +13,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
@@ -42,6 +47,7 @@ import com.example.viko.type.WorkerStatus
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground
+import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 
@@ -79,7 +85,9 @@ fun MemberListItem(
                 Text(
                     text = worker.statusLabel(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (worker.status == WorkerStatus.SPEAKING) VAccentRed else VOnSurfaceSecondary
+                    // Blue, not red: red is reserved for emergencies, and a member
+                    // simply holding the channel is not one.
+                    color = if (worker.status == WorkerStatus.SPEAKING) VMicBlue else VOnSurfaceSecondary
                 )
             }
         }
@@ -151,6 +159,34 @@ fun MemberAvatar(name: String, size: androidx.compose.ui.unit.Dp = 44.dp) {
     }
 }
 
+/**
+ * What a member-scoped screen shows when its worker does not resolve — for the
+ * frame or two before Room answers, and permanently if the member has been
+ * removed. Deliberately wordless: a "not found" message would be a lie during
+ * the loading frame. The point is that Close stays reachable, so the screen can
+ * never become a dead end.
+ */
+@Composable
+fun MissingWorker(onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(VBackground)
+    ) {
+        Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface)
+            }
+        }
+    }
+}
+
 /** A label/value row, used by the setup and detail forms. */
 @Composable
 fun InfoRow(label: String, value: String) {
@@ -182,7 +218,7 @@ fun DetailField(label: String, value: String) {
 @Composable
 private fun WorkerStatusIndicator(worker: Worker) {
     val pulseColor = when (worker.status) {
-        WorkerStatus.SPEAKING -> VAccentRed
+        WorkerStatus.SPEAKING -> VMicBlue
         WorkerStatus.LISTENING -> VAccentBlue
         else -> null
     }
