@@ -44,7 +44,7 @@ fun PrimaryButton(
     }
 }
 
-@Preview
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
 private fun PrimaryButtonPreview() {
     VikoTheme {
