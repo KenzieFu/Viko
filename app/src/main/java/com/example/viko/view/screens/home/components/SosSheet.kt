@@ -72,6 +72,26 @@ private val EMERGENCY_TYPES = listOf(
 private const val BROADCAST_DURATION_MS = 3_500L
 
 /**
+ * The emergency grid drives how tall the sheet is, so raising [EMERGENCY_CARD_HEIGHT]
+ * is how you give the sheet more room.
+ *
+ * [EMERGENCY_GRID_HEIGHT] is derived rather than typed out: the grid does not size
+ * itself to its rows, so a hardcoded height that no longer matched the cards would
+ * silently clip them instead of failing.
+ */
+// Declared before EMERGENCY_GRID_HEIGHT on purpose: top-level vals initialise in
+// file order, so a height computed from properties defined below it would read
+// them as zero.
+/** Four types in two columns. */
+private const val EMERGENCY_GRID_COLUMNS = 2
+private const val EMERGENCY_GRID_ROWS = 2
+
+private val EMERGENCY_CARD_HEIGHT = 165.dp
+private val EMERGENCY_GRID_SPACING = 16.dp
+private val EMERGENCY_GRID_HEIGHT =
+    EMERGENCY_CARD_HEIGHT * EMERGENCY_GRID_ROWS + EMERGENCY_GRID_SPACING * (EMERGENCY_GRID_ROWS - 1)
+
+/**
  * Site-wide emergency broadcast: pick a type, hold the floor for a few seconds.
  * Nothing is sent yet — this is the UI ahead of the emergency packet transport.
  */
@@ -115,10 +135,10 @@ fun SosSheetContent(onClose: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
 
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.height(330.dp),
+                columns = GridCells.Fixed(EMERGENCY_GRID_COLUMNS),
+                horizontalArrangement = Arrangement.spacedBy(EMERGENCY_GRID_SPACING),
+                verticalArrangement = Arrangement.spacedBy(EMERGENCY_GRID_SPACING),
+                modifier = Modifier.height(EMERGENCY_GRID_HEIGHT),
                 userScrollEnabled = false
             ) {
                 items(EMERGENCY_TYPES) { type ->
@@ -184,7 +204,7 @@ private fun EmergencyTypeCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(157.dp)
+            .height(EMERGENCY_CARD_HEIGHT)
             .alpha(if (dimmed) 0.4f else 1f)
             .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
