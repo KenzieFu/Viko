@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -144,7 +145,7 @@ fun HomeScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
-//            Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+            Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
 
             HomeTopBar(
                 activeAlertCount = uiState.activeAlertCount,
@@ -339,7 +340,7 @@ private fun HomeTopBar(
         }
 
         IconButton(onClick = onSettingsTap) {
-            Icon(Icons.Filled.Settings, contentDescription = "Manage members", tint = VOnSurface)
+            Icon(Icons.Outlined.Settings, contentDescription = "Manage members", tint = VOnSurface)
         }
     }
 }
