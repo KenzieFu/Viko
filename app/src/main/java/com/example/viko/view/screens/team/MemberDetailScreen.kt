@@ -16,14 +16,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.viko.domain.channel.model.Channel
 import com.example.viko.mock.AppState
 import com.example.viko.components.*
+import com.example.viko.view.screens.team.components.DetailField
 import com.example.viko.view.theme.*
+
+@Preview(showBackground = true)
+@Composable
+private fun MemberDetailScreenPreview() {
+    val appState = AppState()
+    VikoTheme {
+        MemberDetailScreen(
+            workerId = appState.workers.first().id,
+            appState = appState,
+            onBack = {},
+            onDirectCall = {},
+            onSelectChannel = {},
+            onRemove = {}
+        )
+    }
+}
 
 @Composable
 fun MemberDetailScreen(
@@ -264,14 +280,5 @@ fun MemberDetailScreen(
 
         Spacer(modifier = Modifier.navigationBarsPadding())
         Spacer(modifier = Modifier.height(20.dp))
-    }
-}
-
-@Composable
-fun DetailField(label: String, value: String) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
-        Text(label, fontSize = 11.sp, color = VOnSurfaceSecondary)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, color = VOnSurface)
     }
 }

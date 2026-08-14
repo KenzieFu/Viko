@@ -17,14 +17,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.mock.AppState
 import com.example.viko.mock.mockNearbyDevices
 import com.example.viko.components.*
+import com.example.viko.view.screens.team.components.SetupInfoRow
 import com.example.viko.view.theme.*
+
+@Preview(showBackground = true)
+@Composable
+private fun SetupMemberScreenPreview() {
+    VikoTheme {
+        SetupMemberScreen(
+            deviceId = mockNearbyDevices.first().id,
+            appState = AppState(),
+            onBack = {},
+            onSetupComplete = {},
+            onSelectChannel = {}
+        )
+    }
+}
 
 @Composable
 fun SetupMemberScreen(
@@ -290,18 +305,5 @@ fun SetupMemberScreen(
 
         Spacer(modifier = Modifier.navigationBarsPadding())
         Spacer(modifier = Modifier.height(20.dp))
-    }
-}
-
-@Composable
-fun SetupInfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(label, color = VOnSurfaceSecondary, fontSize = 13.sp)
-        Text(value, color = VOnSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }

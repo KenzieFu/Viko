@@ -1,4 +1,4 @@
-package com.example.viko.view.screens.channel
+package com.example.viko.view.screens.channel.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,8 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,9 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoTextField
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.view.theme.*
@@ -33,6 +31,21 @@ import com.example.viko.view.theme.*
 // code serves both the add-member flow and the member-detail screen. Whoever
 // shows them owns the sheet and owns the state; these just render and report
 // taps upward.
+
+@Preview(showBackground = true)
+@Composable
+private fun SelectChannelSheetContentPreview() {
+    VikoTheme {
+        SelectChannelSheetContent(
+            channels = listOf(Channel(id = "c1", name = "Kitchen"), Channel(id = "c2", name = "Front Desk")),
+            selectedChannelId = "c1",
+            onSelect = {},
+            onRequestAddChannel = {},
+            onBack = {},
+            memberCountFor = { 3 }
+        )
+    }
+}
 
 @Composable
 fun SelectChannelSheetContent(
@@ -188,98 +201,5 @@ fun SelectChannelSheetContent(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ChannelRow(
-    name: String,
-    memberCount: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(VSurfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface
-            )
-            if (memberCount > 0) {
-                Text(
-                    text = "$memberCount member${if (memberCount == 1) "" else "s"}",
-                    fontSize = 11.sp,
-                    color = VOnSurfaceSecondary
-                )
-            }
-        }
-        if (isSelected) {
-            Icon(Icons.Default.Check, "Selected", tint = VMicBlue, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
-@Composable
-fun AddNewChannelSheetContent(
-    prefill: String = "",
-    onCreate: (String) -> Unit,
-    onClose: () -> Unit
-) {
-    var name by remember { mutableStateOf(prefill) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp)
-            .navigationBarsPadding()
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Add New Channel",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
-                .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 14.dp)
-        ) {
-            VikoTextField(
-                value = name,
-                onValueChange = { name = it },
-                placeholder = "Enter Channel Name",
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        VikoBlueButton(
-            text = "Continue",
-            enabled = name.isNotBlank(),
-            onClick = { onCreate(name.trim()) }
-        )
     }
 }

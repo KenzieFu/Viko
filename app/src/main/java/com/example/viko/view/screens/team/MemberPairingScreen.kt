@@ -2,7 +2,6 @@ package com.example.viko.view.screens.team
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,17 +16,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.mock.AppState
 import com.example.viko.mock.mockNearbyDevices
+import com.example.viko.view.screens.team.components.DeviceListItem
+import com.example.viko.view.screens.team.components.PairingState
 import com.example.viko.view.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-enum class PairingState { SCANNING, FOUND, PAIRING, SUCCESS, NO_DEVICES }
+@Preview(showBackground = true)
+@Composable
+private fun MemberPairingScreenPreview() {
+    val appState = AppState()
+    VikoTheme {
+        MemberPairingScreen(
+            channelId = appState.channels.first().id,
+            appState = appState,
+            onBack = {},
+            onDevicePaired = {}
+        )
+    }
+}
 
 @Composable
 fun MemberPairingScreen(
@@ -228,60 +240,6 @@ fun MemberPairingScreen(
                         }
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun DeviceListItem(
-    device: NearbyDevice,
-    isPairing: Boolean,
-    onPair: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(VSurface)
-            .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(VBackground),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Bluetooth, null, tint = VOnSurface, modifier = Modifier.size(20.dp))
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(device.name, style = MaterialTheme.typography.titleMedium, color = VOnSurface)
-            Text(
-                text = "${device.address} • ${device.signalStrength} dBm",
-                style = MaterialTheme.typography.bodySmall,
-                color = VOnSurfaceSecondary
-            )
-        }
-
-        if (isPairing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = VOnSurface
-            )
-        } else {
-            TextButton(
-                onClick = onPair,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Icon(Icons.Default.Link, null, modifier = Modifier.size(14.dp), tint = VOnSurface)
-                Spacer(Modifier.width(4.dp))
-                Text("Pair", color = VOnSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

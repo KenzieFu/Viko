@@ -1,36 +1,19 @@
 package com.example.viko.view.screens.team
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.viko.components.VikoBlueButton
+import androidx.compose.ui.tooling.preview.Preview
 import com.example.viko.components.VikoDragHandle
-import com.example.viko.components.VikoTextField
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.mock.AppState
 import com.example.viko.mock.mockNearbyDevices
-import com.example.viko.view.screens.channel.AddNewChannelSheetContent
-import com.example.viko.view.screens.channel.SelectChannelSheetContent
+import com.example.viko.view.screens.channel.components.AddNewChannelSheetContent
+import com.example.viko.view.screens.channel.components.SelectChannelSheetContent
+import com.example.viko.view.screens.team.components.NearbyDeviceSheetContent
+import com.example.viko.view.screens.team.components.SetupMemberSheetContent
 import com.example.viko.view.theme.*
 import kotlinx.coroutines.delay
 
@@ -48,6 +31,14 @@ private enum class AddMemberStep { Pairing, Setup }
 
 // Flip to true to preview Figma's "No devices found" frame without hardware.
 private const val SIMULATE_NO_DEVICES = false
+
+@Preview(showBackground = true)
+@Composable
+private fun AddMemberFlowPreview() {
+    VikoTheme {
+        AddMemberFlow(appState = AppState(), onDismiss = {})
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,254 +158,5 @@ fun AddMemberFlow(
                 onClose = { addChannelPrefill = null }
             )
         }
-    }
-}
-
-@Composable
-private fun NearbyDeviceSheetContent(
-    devices: List<NearbyDevice>,
-    isScanning: Boolean,
-    pairingDeviceId: String?,
-    onPair: (NearbyDevice) -> Unit,
-    onPaired: () -> Unit,
-    onClose: () -> Unit
-) {
-    // Pairing takes a moment, then the flow advances on its own — Figma has no
-    // "Device Paired!" confirmation step between here and Setup Member.
-    LaunchedEffect(pairingDeviceId) {
-        if (pairingDeviceId != null) {
-            delay(1400)
-            onPaired()
-        }
-    }
-
-    val rotation by rememberInfiniteTransition(label = "scan").animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
-        label = "rot"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 440.dp)
-            .padding(horizontal = 20.dp)
-            .navigationBarsPadding()
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Nearby Device",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                Icons.Default.Bluetooth,
-                null,
-                tint = VOnSurfaceSecondary,
-                modifier = Modifier
-                    .size(14.dp)
-                    .rotate(if (isScanning) rotation else 0f)
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
-        }
-
-        Text(
-            text = "Pair your device to add a new member.",
-            style = MaterialTheme.typography.bodySmall,
-            color = VOnSurfaceSecondary
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (devices.isEmpty()) {
-            Text(
-                text = if (isScanning) "Scanning..." else "No devices found",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VOnSurfaceSecondary
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                devices.forEach { device ->
-                    NearbyDeviceRow(
-                        device = device,
-                        isPairing = pairingDeviceId == device.id,
-                        onPair = { onPair(device) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NearbyDeviceRow(
-    device: NearbyDevice,
-    isPairing: Boolean,
-    onPair: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(VSurfaceVariant)
-            .clickable(enabled = !isPairing, onClick = onPair)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = device.name,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = VOnSurface,
-            modifier = Modifier.weight(1f)
-        )
-        if (isPairing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-                color = VMicBlue
-            )
-        } else {
-            Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
-        }
-    }
-}
-
-@Composable
-private fun SetupMemberSheetContent(
-    device: NearbyDevice?,
-    name: String,
-    onNameChange: (String) -> Unit,
-    channelName: String?,
-    onPickChannel: () -> Unit,
-    onSave: () -> Unit,
-    onClose: () -> Unit
-) {
-    // Figma greys the Save button until BOTH a name and a channel are set. The
-    // old screen let you save an empty form and quietly named the person
-    // "New Worker", which is how blank members got created.
-    val canSave = name.isNotBlank() && channelName != null
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 20.dp)
-            .navigationBarsPadding()
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
-        }
-
-        DeviceIllustration(modifier = Modifier.align(Alignment.CenterHorizontally))
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Name + Channel group
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Text("Name", fontSize = 11.sp, color = VOnSurfaceSecondary)
-                VikoTextField(
-                    value = name,
-                    onValueChange = onNameChange,
-                    placeholder = "Enter Member Name",
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            HorizontalDivider(color = VBorder)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onPickChannel)
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Channel", fontSize = 11.sp, color = VOnSurfaceSecondary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = channelName ?: "Select Channel",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (channelName != null) VOnSurface else VOnSurfaceSecondary
-                    )
-                }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    null,
-                    tint = VOnSurfaceSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Read-only device facts
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SetupInfoRow("Device Address", device?.address ?: "Unknown")
-            SetupInfoRow(
-                "Device Status",
-                "${device?.location ?: "Unknown"} • ${device?.batteryLevel ?: 0}%"
-            )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        VikoBlueButton(text = "Save", enabled = canSave, onClick = onSave)
-    }
-}
-
-/**
- * Stand-in for the 3D earpiece render in Figma. Replace with the real asset
- * once design exports it — drop a PNG in res/drawable and swap this out.
- */
-@Composable
-private fun DeviceIllustration(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(112.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(VOnSurface.copy(alpha = 0.85f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(VSurfaceVariant)
-                .border(3.dp, VOffline, CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .size(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(VWarning)
-        )
     }
 }

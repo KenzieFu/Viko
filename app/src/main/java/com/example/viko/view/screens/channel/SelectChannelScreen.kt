@@ -10,9 +10,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.mock.AppState
+import com.example.viko.view.screens.channel.components.AddNewChannelSheetContent
+import com.example.viko.view.screens.channel.components.SelectChannelSheetContent
 import com.example.viko.view.theme.*
 
 /**
@@ -73,5 +76,19 @@ fun SelectChannelScreen(
                 onClose = { addChannelPrefill = null }
             )
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SelectChannelScreenPreview() {
+    val appState = AppState()
+    VikoTheme {
+        SelectChannelScreen(
+            workerId = appState.workers.first().id,
+            appState = appState,
+            onBack = {},
+            onChannelSelected = {}
+        )
     }
 }

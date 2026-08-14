@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.domain.team.model.Worker
@@ -262,5 +263,18 @@ fun DirectCallScreen(
             Spacer(modifier = Modifier.height(32.dp))
             Spacer(modifier = Modifier.navigationBarsPadding())
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun DirectCallScreenPreview() {
+    val appState = AppState()
+    VikoTheme {
+        DirectCallScreen(
+            workerId = appState.workers.first().id,
+            appState = appState,
+            onBack = {}
+        )
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.domain.channel.model.Channel
@@ -299,5 +300,13 @@ fun ManageMemberScreen(
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ManageMemberScreenPreview() {
+    VikoTheme {
+        ManageMemberScreen(appState = AppState(), onBack = {}, onMemberClick = {})
     }
 }

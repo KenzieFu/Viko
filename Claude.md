@@ -9,11 +9,19 @@ Three layers, each a top-level package. Domain and Data are split per-feature in
 
 ```
 view/            UI layer: screens (per feature) + theme
-  screens/<feature>/...Screen.kt
+  screens/<feature>/
+    <Feature>Screen.kt      top-level screen(s), one per file — each has a route in
+                             navigation/Routes.kt (or is a sheet-flow shown from one,
+                             e.g. AddMemberFlow)
+    components/             everything that screen(s) use — sheets, cards, list items,
+                             small enums — one composable/type per file
   theme/
-components/      Reusable Compose components shared across screens
+components/      Feature-agnostic UI atoms used across 2+ features (buttons, badges,
+                 dividers — no domain-model params), one file per component
+navigation/      Routes.kt (route definitions) + AppNavigation.kt (the NavHost)
 utils/           Helper functions (date formatting, etc.) — created on first real need
-type/            Small enums/value types shared across features (WorkerStatus, AlertStatus, CallState)
+type/            Small enums shared across features, one file per enum
+                 (WorkerStatus, AlertStatus, CallState)
 domain/<feature>/
   model/         Domain data classes (e.g. Worker, Channel)
   repository/    Repository *interfaces* — the only thing the UI layer depends on
@@ -29,6 +37,32 @@ Features today: `team` (Worker, NearbyDevice), `channel`, `alert`, `message`.
 Rule of thumb for a new feature: `domain/<feature>/model` + `domain/<feature>/repository`
 (interface) first, then `data/<feature>/local` (Entity + Dao) + `data/<feature>/repository`
 (impl), wire it into `AppDatabase` and `AppContainer`.
+
+## Compose file conventions
+
+One composable per file, file name matches the composable name, everywhere — screens,
+`components/`, `<feature>/components/`, and `type/`'s enums.
+
+- **Where a composable lives** is decided by content, not caller count:
+  - Feature-agnostic UI atom (takes primitives/lambdas, no domain-model params, e.g.
+    `VikoBlueButton`, `StatusDot`) → top-level `components/`.
+  - Anything that renders a specific feature's content (takes a domain model like `Worker`
+    or `Channel`, or is a sheet/card that belongs to one feature's flow) →
+    `view/screens/<feature>/components/`, **even if another feature's screen also calls
+    it** — e.g. `SelectChannelSheetContent` lives in `channel/components/` even though
+    `team/AddMemberFlow.kt` uses it too, because it's channel content, not generic UI.
+    Cross-feature imports of another feature's `components/` are normal here.
+  - A screen's own top-level composable (has a route, or is the sole entry point of a
+    sheet-flow like `AddMemberFlow`) stays directly under `view/screens/<feature>/`, not
+    in `components/`.
+- **Private helpers** (a sub-composable only its one caller in the same file uses) can stay
+  `private` and colocated in that caller's file. The moment a second file needs it, split
+  it into its own file **and drop `private`** — Kotlin's `private` is file-scoped, not
+  package-scoped, so a moved-but-still-private function silently breaks the original caller.
+- **Every composable gets a `@Preview`**: a `private fun <Name>Preview()` in the same file,
+  wrapped in `VikoTheme { ... }`, calling the composable with `AppState()` (self-seeds from
+  mock data — no fixtures needed) or a directly-constructed domain model for simple cases.
+  This is how you check a screen's UI without running the app.
 
 ## Local storage
 
