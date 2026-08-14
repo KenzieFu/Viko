@@ -65,15 +65,22 @@ import com.example.viko.view.theme.VSurfaceVariant
  */
 enum class ChannelAudioMode { Idle, Talking, Listening }
 
-/** One channel tile on the dashboard: member count chip on top, mic below. */
+/**
+ * One channel tile on the dashboard: member count chip on top, mic below.
+ *
+ * [enabled] is false while the supervisor holds another channel's mic — you can
+ * only talk on one at a time, so the rest fade back and stop responding, the same
+ * treatment an empty channel gets.
+ */
 @Composable
 fun ChannelCard(
     summary: ChannelSummary,
     audioMode: ChannelAudioMode,
     onMicTap: () -> Unit,
-    onChipTap: () -> Unit
+    onChipTap: () -> Unit,
+    enabled: Boolean = true
 ) {
-    val isActive = summary.isActive
+    val isActive = summary.isActive && enabled
     val contentAlpha = if (isActive) 1f else INACTIVE_ALPHA
     val isSpeaking = audioMode != ChannelAudioMode.Idle
     val isListening = audioMode == ChannelAudioMode.Listening
@@ -146,9 +153,14 @@ fun ChannelCard(
                         )
                     } else {
                         IdleMicCircle(
-                            channelName = summary.channel.name,
                             contentAlpha = contentAlpha,
-                            isReady = isReady
+                            // The mic is inert unless the channel is staffed and
+                            // free, so do not tell a screen reader to tap it.
+                            micLabel = when {
+                                isReady -> "Talk to ${summary.channel.name}"
+                                !enabled -> "${summary.channel.name} unavailable while talking"
+                                else -> "${summary.channel.name} has no members"
+                            }
                         )
                     }
                 }
@@ -258,7 +270,7 @@ private fun ActiveMicCircle(
  * which an unfaded [VBorder] would not do, leaving a crisp ring around a ghost.
  */
 @Composable
-private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boolean) {
+private fun IdleMicCircle(contentAlpha: Float, micLabel: String) {
     Box(
         modifier = Modifier
             .size(MIC_CIRCLE)

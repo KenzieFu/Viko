@@ -92,6 +92,13 @@ private val EMERGENCY_GRID_HEIGHT =
     EMERGENCY_CARD_HEIGHT * EMERGENCY_GRID_ROWS + EMERGENCY_GRID_SPACING * (EMERGENCY_GRID_ROWS - 1)
 
 /**
+ * The Announce button and the box it sits in. The box is the larger of the two so
+ * the ripple has somewhere to go without the button moving when it appears.
+ */
+private val ANNOUNCE_BUTTON = 88.dp
+private val ANNOUNCE_SLOT = 132.dp
+
+/**
  * Site-wide emergency broadcast: pick a type, hold the floor for a few seconds.
  * Nothing is sent yet — this is the UI ahead of the emergency packet transport.
  */
@@ -159,16 +166,20 @@ fun SosSheetContent(onClose: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Reserves the ripple's room whether or not it is drawing. Sized to
+                // fit, starting a broadcast grew this box 88 -> 132.dp, which shoved
+                // the button up and the label down — and, since the sheet is
+                // content-sized, resized the whole sheet under the user's thumb.
                 Box(
-                    modifier = Modifier.size(if (isBroadcasting) 132.dp else 88.dp),
+                    modifier = Modifier.size(ANNOUNCE_SLOT),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isBroadcasting) {
-                        SpeakingRipple(size = 132.dp, color = VAccentRed)
+                        SpeakingRipple(size = ANNOUNCE_SLOT, color = VAccentRed)
                     }
                     Box(
                         modifier = Modifier
-                            .size(88.dp)
+                            .size(ANNOUNCE_BUTTON)
                             .clip(CircleShape)
                             .background(VAccentRed)
                             .clickable { isBroadcasting = !isBroadcasting },
