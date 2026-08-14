@@ -134,6 +134,8 @@ fun ChannelCard(
                     modifier = Modifier.size(MIC_SLOT),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Every branch below draws into the same MIC_SLOT box at the
+                    // same MIC_CIRCLE size, so mic and label hold their position.
                     if (isSpeaking) {
                         SpeakingRipple(size = MIC_SLOT, color = activeCircleColor)
                         ActiveMicCircle(
@@ -151,7 +153,7 @@ fun ChannelCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(MIC_LABEL_GAP))
 
                 Text(
                     text = summary.channel.name,
@@ -280,19 +282,22 @@ private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boo
 private const val INACTIVE_ALPHA = 0.35f
 
 /**
- * Height reserved for the mic in every state — the widest thing that goes in it
- * is the ripple. Constant so the channel name sits at the same height whether or
- * not anyone is talking.
+ * Mic geometry. Every value here is the same in all four states — only fill, ring
+ * and label colour change — so the circle and the channel name never move when a
+ * channel goes live.
+ *
+ * [MIC_SLOT] is the box the mic is centred in, sized for the ripple at its widest
+ * so nothing resizes when the pulses appear. It is deliberately only ~1.5x the
+ * circle: at 104.dp the slot plus label filled the panel to within 6.dp and the
+ * tile read as crowded rather than centred. These proportions come off the Figma
+ * grid, where the circle is roughly a third of the card's width.
  */
-private val MIC_SLOT = 104.dp
+private val MIC_SLOT = 84.dp
+private val MIC_CIRCLE = 56.dp
+private val MIC_ICON = 24.dp
 
-/**
- * The circle itself, and the glyph inside it. One size for every state: they used
- * to be 64/30 while talking and 72/28 otherwise, so going live shrank the circle
- * and grew the mic, and neither the circle nor the label held still.
- */
-private val MIC_CIRCLE = 72.dp
-private val MIC_ICON = 30.dp
+/** Space between the mic and the channel name. */
+private val MIC_LABEL_GAP = 16.dp
 
 /** Half-width, the way the card actually sits in Home's two-column grid. */
 @Composable
