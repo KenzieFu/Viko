@@ -43,10 +43,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.viko.R
 import com.example.viko.components.AnnouncementWaveBackground
-import com.example.viko.components.EditableMemberListItem
-import com.example.viko.components.MemberListItem
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.view.screens.home.ChannelSummary
+import com.example.viko.view.screens.team.components.EditableMemberListItem
+import com.example.viko.view.screens.team.components.MemberListItem
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground

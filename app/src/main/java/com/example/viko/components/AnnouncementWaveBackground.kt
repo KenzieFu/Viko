@@ -7,11 +7,15 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.example.viko.view.theme.VAccentBlue
+import com.example.viko.view.theme.VikoTheme
 
 /**
  * The expanding rings behind a live announcement — drawn low in the sheet so it
@@ -41,5 +45,13 @@ fun AnnouncementWaveBackground(modifier: Modifier = Modifier) {
                 center = center
             )
         }
+    }
+}
+
+@Preview
+@Composable
+private fun AnnouncementWaveBackgroundPreview() {
+    VikoTheme {
+        AnnouncementWaveBackground(modifier = Modifier.size(240.dp))
     }
 }
