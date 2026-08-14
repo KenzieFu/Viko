@@ -113,11 +113,9 @@ fun SosSheetContent(onClose: () -> Unit) {
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (isBroadcasting) VAccentRed.copy(alpha = 0.05f) else Color.Transparent)
-    ) {
+    // The sheet surface never changes — only the wave reacts, same as the
+    // announcement sheet.
+    Box(modifier = Modifier.fillMaxWidth()) {
         // Same wave the announcement sheet uses, in red — arcs sweeping up from
         // the bottom of the sheet rather than a halo around the button, so the
         // whole surface reads as live. Drawn behind the content, and it takes no

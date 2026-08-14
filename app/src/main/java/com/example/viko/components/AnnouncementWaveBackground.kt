@@ -34,26 +34,44 @@ fun AnnouncementWaveBackground(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1700, easing = LinearEasing),
+            animation = tween(durationMillis = WAVE_PERIOD_MS, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "waveProgress"
     )
 
     Canvas(modifier = modifier) {
-        val center = Offset(size.width / 2f, size.height * 1.24f)
-        val baseRadii = listOf(0.39f, 0.56f, 0.72f)
-        baseRadii.forEachIndexed { index, baseRadius ->
-            val shiftedProgress = (progress + index * 0.22f) % 1f
-            val alpha = (0.08f * (1f - shiftedProgress)).coerceAtLeast(0.02f)
+        // Centred below the bottom edge, so only the tops of the rings show and
+        // they read as sound rising out of the button rather than as circles.
+        val center = Offset(size.width / 2f, size.height * WAVE_ORIGIN_Y)
+        val maxRadius = size.width * WAVE_MAX_RADIUS
+
+        repeat(WAVE_RING_COUNT) { index ->
+            // Each ring runs the same small -> big sweep, evenly offset in time, so
+            // one is always starting as another finishes.
+            val ringProgress = (progress + index.toFloat() / WAVE_RING_COUNT) % 1f
             drawCircle(
-                color = color.copy(alpha = alpha),
-                radius = size.width * (baseRadius + shiftedProgress * 0.09f),
+                // Brightest when small, gone by the time it is full size.
+                color = color.copy(alpha = WAVE_MAX_ALPHA * (1f - ringProgress)),
+                radius = maxRadius * (WAVE_MIN_RADIUS + (1f - WAVE_MIN_RADIUS) * ringProgress),
                 center = center
             )
         }
     }
 }
+
+private const val WAVE_PERIOD_MS = 1700
+private const val WAVE_RING_COUNT = 3
+
+/** Where the rings are centred, as a fraction of height — past 1f puts it off-screen. */
+private const val WAVE_ORIGIN_Y = 1.24f
+
+/** Ring size at birth and at death, as a fraction of [WAVE_MAX_RADIUS]. */
+private const val WAVE_MIN_RADIUS = 0.30f
+private const val WAVE_MAX_RADIUS = 1.05f
+
+/** Alpha of a newborn ring; it fades linearly to zero as it expands. */
+private const val WAVE_MAX_ALPHA = 0.14f
 
 @Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable

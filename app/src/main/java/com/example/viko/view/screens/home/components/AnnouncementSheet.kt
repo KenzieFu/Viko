@@ -40,15 +40,16 @@ import com.example.viko.components.AnnouncementWaveBackground
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VListeningPanel
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
 
 /**
  * All-channel announcement. Draws its own drag handle and corner radius because
- * the sheet turns navy while the manager holds the floor — the host passes a
- * transparent container so this can own the whole surface.
+ * the host passes a transparent container so this can own the whole surface.
+ *
+ * The surface itself does not change while speaking — the wave is the only thing
+ * that reacts, which keeps this consistent with the SOS sheet.
  */
 @Composable
 fun AnnouncementSheetContent(onClose: () -> Unit) {
@@ -59,7 +60,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
             .fillMaxWidth()
             .height(384.dp)
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(if (isSpeaking) VListeningPanel else VSurface)
+            .background(VSurface)
             .navigationBarsPadding()
     ) {
         if (isSpeaking) {
