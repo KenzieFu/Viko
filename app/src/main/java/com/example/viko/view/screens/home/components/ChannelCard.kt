@@ -126,12 +126,16 @@ fun ChannelCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Fixed slot, not sized to its contents: the ripple needs 104.dp
+                // and the idle circle only 72.dp, so sizing to fit made the block
+                // 32.dp taller the moment a channel went live — which Center then
+                // paid for by sliding the label down and the mic up.
                 Box(
-                    modifier = Modifier.size(if (isSpeaking) 104.dp else 72.dp),
+                    modifier = Modifier.size(MIC_SLOT),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isSpeaking) {
-                        SpeakingRipple(size = 104.dp, color = activeCircleColor)
+                        SpeakingRipple(size = MIC_SLOT, color = activeCircleColor)
                         ActiveMicCircle(
                             channelName = summary.channel.name,
                             isListening = isListening,
@@ -274,6 +278,13 @@ private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boo
 
 /** How far an empty channel's contents fade back. */
 private const val INACTIVE_ALPHA = 0.35f
+
+/**
+ * Height reserved for the mic in every state — the widest thing that goes in it
+ * is the ripple. Constant so the channel name sits at the same height whether or
+ * not anyone is talking.
+ */
+private val MIC_SLOT = 104.dp
 
 /** Half-width, the way the card actually sits in Home's two-column grid. */
 @Composable
