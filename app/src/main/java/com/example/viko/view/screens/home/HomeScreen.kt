@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,6 +57,9 @@ import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.domain.channel.model.Channel
+import com.example.viko.domain.team.model.Worker
+import com.example.viko.type.WorkerStatus
 import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.view.screens.home.components.AnnouncementSheetContent
 import com.example.viko.view.screens.home.components.ChannelAudioMode
@@ -69,13 +73,17 @@ import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VikoTheme
 
 /**
  * The manager's dashboard: one card per channel, an SOS broadcast, and a
  * site-wide announcement. Everything it shows comes from [HomeViewModel];
  * which sheet is open is view state and stays here.
+ *
+ * This overload only resolves the ViewModel and delegates to the stateless one
+ * below — a @Preview has no Application or database, so it cannot build a
+ * HomeViewModel, and all the layout has to live where a preview can reach it.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenNotifications: () -> Unit,
@@ -84,7 +92,28 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HomeScreen(
+        uiState = uiState,
+        onOpenNotifications = onOpenNotifications,
+        onOpenManageMembers = onOpenManageMembers,
+        onDirectCall = onDirectCall,
+        onRenameWorker = viewModel::renameWorker,
+        onRemoveWorker = viewModel::removeWorker,
+        onAssignWorkerToChannel = viewModel::assignWorkerToChannel
+    )
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    uiState: HomeUiState,
+    onOpenNotifications: () -> Unit,
+    onOpenManageMembers: () -> Unit,
+    onDirectCall: (String) -> Unit,
+    onRenameWorker: (String, String) -> Unit,
+    onRemoveWorker: (String) -> Unit,
+    onAssignWorkerToChannel: (String, String) -> Unit
+) {
     // Which sheet is open is view state, but it still has to survive an Activity
     // recreation — a rotation should not close the roster the supervisor opened.
     var showSosSheet by rememberSaveable { mutableStateOf(false) }
@@ -203,10 +232,10 @@ fun HomeScreen(
                     openTeamSheetChannelId = null
                     onDirectCall(workerId)
                 },
-                onRenameWorker = viewModel::renameWorker,
-                onRemoveWorker = viewModel::removeWorker,
+                onRenameWorker = onRenameWorker,
+                onRemoveWorker = onRemoveWorker,
                 onAssignWorker = { workerId ->
-                    viewModel.assignWorkerToChannel(workerId, teamSummary.channel.id)
+                    onAssignWorkerToChannel(workerId, teamSummary.channel.id)
                 }
             )
         }
@@ -348,5 +377,76 @@ private fun MakeAnnouncementButton(onClick: () -> Unit) {
                 color = VOnSurface
             )
         }
+    }
+}
+
+private fun previewWorker(
+    id: String,
+    name: String,
+    channelId: String,
+    status: WorkerStatus = WorkerStatus.AVAILABLE,
+    isOnline: Boolean = true,
+    batteryLevel: Int = 82
+) = Worker(
+    id = id,
+    name = name,
+    channelId = channelId,
+    zone = "Warehouse A",
+    deviceAddress = "VK-$id",
+    macAddress = "AA:BB:CC:DD:EE:$id",
+    batteryLevel = batteryLevel,
+    isOnline = isOnline,
+    status = status
+)
+
+/** The populated dashboard: two channels, one of them with a member talking. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun HomeScreenPreview() {
+    VikoTheme {
+        HomeScreen(
+            uiState = HomeUiState(
+                channels = listOf(
+                    ChannelSummary(
+                        channel = Channel(id = "c1", name = "Warehouse"),
+                        members = listOf(
+                            previewWorker("01", "Budi", "c1", WorkerStatus.SPEAKING),
+                            previewWorker("02", "Sari", "c1"),
+                            previewWorker("03", "Andi", "c1", isOnline = false)
+                        )
+                    ),
+                    ChannelSummary(
+                        channel = Channel(id = "c2", name = "Assembly"),
+                        members = listOf(previewWorker("04", "Rina", "c2", batteryLevel = 15))
+                    )
+                ),
+                activeAlertCount = 2,
+                hasMembers = true,
+                isLoaded = true
+            ),
+            onOpenNotifications = {},
+            onOpenManageMembers = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorkerToChannel = { _, _ -> }
+        )
+    }
+}
+
+/** Loaded, but nothing paired yet — the empty state, hard to reach in a running app. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun HomeScreenEmptyPreview() {
+    VikoTheme {
+        HomeScreen(
+            uiState = HomeUiState(hasMembers = true, isLoaded = true),
+            onOpenNotifications = {},
+            onOpenManageMembers = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorkerToChannel = { _, _ -> }
+        )
     }
 }
