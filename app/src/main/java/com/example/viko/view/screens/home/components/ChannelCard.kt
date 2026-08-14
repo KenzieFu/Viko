@@ -1,5 +1,8 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewChannelSummary
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -238,3 +241,15 @@ private fun IdleMicCircle(channelName: String, contentAlpha: Float) {
 
 /** How far an offline channel's contents fade back. */
 private const val INACTIVE_ALPHA = 0.35f
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun ChannelCardIdlePreview() {
+    VikoTheme { ChannelCard(previewChannelSummary(), ChannelAudioMode.Idle, {}, {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun ChannelCardTalkingPreview() {
+    VikoTheme { ChannelCard(previewChannelSummary(), ChannelAudioMode.Talking, {}, {}) }
+}

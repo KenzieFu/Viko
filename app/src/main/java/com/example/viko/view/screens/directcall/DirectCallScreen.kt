@@ -1,5 +1,9 @@
 package com.example.viko.view.screens.directcall
 
+import com.example.viko.type.WorkerStatus
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewWorker
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -65,7 +69,19 @@ fun DirectCallScreen(
     viewModel: DirectCallViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    DirectCallScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onToggleTalking = viewModel::toggleTalking
+    )
+}
 
+@Composable
+fun DirectCallScreen(
+    uiState: DirectCallUiState,
+    onBack: () -> Unit,
+    onToggleTalking: () -> Unit
+) {
     // Room answers a frame or two after navigation, and the member could be
     // removed while this is open. Either way the close button has to stay
     // reachable — an early return here leaves a black screen with no way out.
@@ -119,7 +135,7 @@ fun DirectCallScreen(
         PushToTalkSlot(
             isSupervisorTalking = isSupervisorTalking,
             isMemberTalking = isMemberTalking,
-            onToggle = viewModel::toggleTalking
+            onToggle = onToggleTalking
         )
 
         Spacer(modifier = Modifier.navigationBarsPadding())
@@ -250,4 +266,41 @@ private fun RadialGlow(size: Dp) {
                 )
             )
     )
+}
+
+/** Member holding the channel, with a translation coming through. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenListeningPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Budi", status = WorkerStatus.SPEAKING),
+                callState = CallState.LISTENING,
+                translation = "Mesin nomor tiga berhenti, saya perlu bantuan."
+            ),
+            onBack = {}, onToggleTalking = {}
+        )
+    }
+}
+
+/** Idle — nobody talking. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenIdlePreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(worker = previewWorker(name = "Sari")),
+            onBack = {}, onToggleTalking = {}
+        )
+    }
+}
+
+/** Worker not resolved — the escape hatch, easy to break and hard to reach by hand. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenMissingWorkerPreview() {
+    VikoTheme {
+        DirectCallScreen(uiState = DirectCallUiState(worker = null), onBack = {}, onToggleTalking = {})
+    }
 }

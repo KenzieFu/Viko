@@ -57,9 +57,9 @@ import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
-import com.example.viko.domain.channel.model.Channel
-import com.example.viko.domain.team.model.Worker
-import com.example.viko.type.WorkerStatus
+import com.example.viko.view.screens.previewChannel
+import com.example.viko.view.screens.previewChannelSummary
+import com.example.viko.view.screens.previewWorker
 import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.view.screens.home.components.AnnouncementSheetContent
 import com.example.viko.view.screens.home.components.ChannelAudioMode
@@ -380,25 +380,6 @@ private fun MakeAnnouncementButton(onClick: () -> Unit) {
     }
 }
 
-private fun previewWorker(
-    id: String,
-    name: String,
-    channelId: String,
-    status: WorkerStatus = WorkerStatus.AVAILABLE,
-    isOnline: Boolean = true,
-    batteryLevel: Int = 82
-) = Worker(
-    id = id,
-    name = name,
-    channelId = channelId,
-    zone = "Warehouse A",
-    deviceAddress = "VK-$id",
-    macAddress = "AA:BB:CC:DD:EE:$id",
-    batteryLevel = batteryLevel,
-    isOnline = isOnline,
-    status = status
-)
-
 /** The populated dashboard: two channels, one of them with a member talking. */
 @Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
@@ -407,16 +388,9 @@ private fun HomeScreenPreview() {
         HomeScreen(
             uiState = HomeUiState(
                 channels = listOf(
+                    previewChannelSummary("c1", "Warehouse"),
                     ChannelSummary(
-                        channel = Channel(id = "c1", name = "Warehouse"),
-                        members = listOf(
-                            previewWorker("01", "Budi", "c1", WorkerStatus.SPEAKING),
-                            previewWorker("02", "Sari", "c1"),
-                            previewWorker("03", "Andi", "c1", isOnline = false)
-                        )
-                    ),
-                    ChannelSummary(
-                        channel = Channel(id = "c2", name = "Assembly"),
+                        channel = previewChannel("c2", "Assembly"),
                         members = listOf(previewWorker("04", "Rina", "c2", batteryLevel = 15))
                     )
                 ),

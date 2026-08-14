@@ -1,5 +1,7 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VikoTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -149,4 +151,10 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
             }
         }
     }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun AnnouncementSheetContentPreview() {
+    VikoTheme { AnnouncementSheetContent(onClose = {}) }
 }
