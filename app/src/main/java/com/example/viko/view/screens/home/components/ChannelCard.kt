@@ -54,11 +54,14 @@ import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VSurfaceVariant
 
 /**
- * Three steps, dimmest to loudest:
- *   OFFLINE → no panel, everything faded to INACTIVE_ALPHA, mic not tappable
- *   READY   → staffed but quiet: 40% talk panel, mic rimmed in half-strength blue
- *   TALK    → navy panel, blue circle ringed in VMicRing, outline mic, BLUE label
- *   SPEAKER → neutral dark panel, white circle, blue icon, WHITE label, no ring
+ * Three mic states, dimmest to loudest:
+ *   EMPTY → nobody on the channel: no panel, whole tile faded to INACTIVE_ALPHA
+ *   READY → members present, nobody talking: no panel, grey rim, WHITE mic + label
+ *   TALK  → navy panel, blue circle ringed in VMicRing, outline mic, BLUE label
+ *
+ * EMPTY and READY are the same drawing at different opacity — only TALK gets a
+ * panel. SPEAKER (someone else holding the channel) reuses TALK's layout with a
+ * neutral panel, white circle and blue icon.
  */
 enum class ChannelAudioMode { Idle, Talking, Listening }
 
@@ -75,8 +78,9 @@ fun ChannelCard(
     val isSpeaking = audioMode != ChannelAudioMode.Idle
     val isListening = audioMode == ChannelAudioMode.Listening
 
-    // Staffed but nobody holding the mic. Its own treatment so the grid reads as
-    // three steps rather than two: nobody there, ready to talk to, live right now.
+    // Staffed but nobody holding the mic — looks the same as an empty channel,
+    // only at full opacity. Tracked separately because the mic IS tappable here,
+    // which the accessibility label has to reflect.
     val isReady = isActive && !isSpeaking
 
     val activePanelColor = if (isListening) VListeningPanel else VActivePanel
@@ -84,13 +88,9 @@ fun ChannelCard(
     val activeIconColor = if (isListening) VMicBlue else Color.White
     val activeLabelColor = if (isListening) Color.White else VMicRing
 
-    // Derived from the talking panel rather than a colour of its own, so the
-    // ready state stays the same hue if VActivePanel is ever re-sampled.
-    val panelColor = when {
-        isSpeaking -> activePanelColor
-        isReady -> VActivePanel.copy(alpha = READY_PANEL_ALPHA)
-        else -> Color.Transparent
-    }
+    // Only a live channel gets a panel. A staffed-but-quiet one is separated from
+    // an empty one by opacity alone, which is what the Figma grid shows.
+    val panelColor = if (isSpeaking) activePanelColor else Color.Transparent
 
     Box(
         modifier = Modifier
@@ -246,9 +246,10 @@ private fun ActiveMicCircle(
 }
 
 /**
- * The mic when nobody is holding the channel. [isReady] means there are people
- * on it: the rim picks up the talk blue at half strength, so a staffed channel
- * looks tappable without competing with one that is actually live.
+ * The mic when nobody is holding the channel: hollow circle, grey rim, white mic.
+ *
+ * An empty channel is the same drawing faded back — the rim fades with the icon,
+ * which an unfaded [VBorder] would not do, leaving a crisp ring around a ghost.
  */
 @Composable
 private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boolean) {
@@ -257,30 +258,22 @@ private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boo
             .size(72.dp)
             .clip(CircleShape)
             .background(VSurface)
-            .border(
-                width = if (isReady) 2.dp else 1.dp,
-                color = if (isReady) VMicRing.copy(alpha = READY_RIM_ALPHA) else VBorder,
-                shape = CircleShape
-            ),
+            .border(1.dp, VBorder.copy(alpha = contentAlpha), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             painter = painterResource(id = R.drawable.ic_mic),
-            contentDescription = if (isReady) "Talk to $channelName" else "$channelName is offline",
-            tint = if (isReady) VMicRing else VOnSurface.copy(alpha = contentAlpha),
+            // The mic is inert with nobody on the channel, so do not tell a screen
+            // reader to tap it.
+            contentDescription = if (isReady) "Talk to $channelName" else "$channelName has no members",
+            tint = VOnSurface.copy(alpha = contentAlpha),
             modifier = Modifier.size(28.dp)
         )
     }
 }
 
-/** How far an offline channel's contents fade back. */
+/** How far an empty channel's contents fade back. */
 private const val INACTIVE_ALPHA = 0.35f
-
-/** Ready sits between transparent and the full talking panel. */
-private const val READY_PANEL_ALPHA = 0.40f
-
-/** ...and its rim between the grey idle border and the solid talking ring. */
-private const val READY_RIM_ALPHA = 0.55f
 
 /** Half-width, the way the card actually sits in Home's two-column grid. */
 @Composable
@@ -317,40 +310,46 @@ private fun ChannelCardReadyPreview() {
     }
 }
 
-/** All three steps together — the only way to check they actually read apart. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+/** A channel with 5 members and nobody online — renders 0/5 and fully faded. */
+private fun previewEmptyChannelSummary(name: String) = ChannelSummary(
+    channel = previewChannel("c9", name),
+    members = (1..5).map { previewWorker("1$it", "Member $it", "c9", isOnline = false) }
+)
+
+/**
+ * The Figma grid: talking, empty, and two ready channels. This is the layout the
+ * states have to be told apart in — checking them one at a time hides the fact
+ * that empty and ready are the same drawing at different opacity.
+ */
+@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
-private fun ChannelCardAllStatesPreview() {
+private fun ChannelCardGridPreview() {
     VikoTheme {
-        Row(modifier = Modifier.padding(12.dp)) {
-            listOf<Pair<ChannelSummary, ChannelAudioMode>>(
-                ChannelSummary(
-                    channel = previewChannel("c9", "Loading Bay"),
-                    members = listOf(previewWorker("07", "Rina", "c9", isOnline = false))
-                ) to ChannelAudioMode.Idle,
-                previewChannelSummary(name = "Warehouse") to ChannelAudioMode.Idle,
-                previewChannelSummary(name = "Operations") to ChannelAudioMode.Talking
-            ).forEach { (summary, mode) ->
-                Box(modifier = Modifier.width(160.dp).padding(horizontal = 4.dp)) {
-                    ChannelCard(summary, mode, {}, {})
+        Column(modifier = Modifier.padding(12.dp)) {
+            listOf(
+                previewChannelSummary(name = "Operations") to ChannelAudioMode.Talking,
+                previewEmptyChannelSummary("Facilities") to ChannelAudioMode.Idle,
+                previewChannelSummary(name = "Maintenance") to ChannelAudioMode.Idle,
+                previewChannelSummary(name = "Security") to ChannelAudioMode.Idle
+            ).chunked(2).forEach { row ->
+                Row {
+                    row.forEach { (summary, mode) ->
+                        Box(modifier = Modifier.width(170.dp).padding(4.dp)) {
+                            ChannelCard(summary, mode, {}, {})
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/** Nobody online — the whole tile fades back and the mic stops responding. */
+/** 0/5 — nobody on the channel. The whole tile fades and the mic stops responding. */
 @Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
-private fun ChannelCardOfflinePreview() {
+private fun ChannelCardEmptyPreview() {
     ChannelCardPreviewFrame {
-        ChannelCard(
-            ChannelSummary(
-                channel = previewChannel("c9", "Loading Bay"),
-                members = listOf(previewWorker("07", "Rina", "c9", isOnline = false))
-            ),
-            ChannelAudioMode.Idle, {}, {}
-        )
+        ChannelCard(previewEmptyChannelSummary("Facilities"), ChannelAudioMode.Idle, {}, {})
     }
 }
 
