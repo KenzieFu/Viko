@@ -60,18 +60,36 @@ fun AnnouncementWaveBackground(
     }
 }
 
+/**
+ * How tall the wave area should be. Both the announcement and the SOS sheet use
+ * this rather than their own number, so the pulse is the same size in both — the
+ * arcs are sized off the box, so two different heights would be two different
+ * pulses.
+ */
+val AnnouncementWaveHeight = 236.dp
+
 private const val WAVE_PERIOD_MS = 1700
 private const val WAVE_RING_COUNT = 3
 
-/** Where the rings are centred, as a fraction of height — past 1f puts it off-screen. */
-private const val WAVE_ORIGIN_Y = 1.24f
+/**
+ * Where the rings are centred, as a fraction of the wave's height. Past 1f puts
+ * the origin below the bottom edge so only the crowns of the arcs show.
+ *
+ * Together with [WAVE_MAX_RADIUS] this is what keeps the pulse in the lower part
+ * of the sheet: origin 1.15 minus a 0.72-of-width radius leaves the biggest arc
+ * just inside the top of the wave area. Push the radius up or the origin down and
+ * the arcs climb out of it and wash over the whole sheet.
+ */
+private const val WAVE_ORIGIN_Y = 1.15f
 
-/** Ring size at birth and at death, as a fraction of [WAVE_MAX_RADIUS]. */
-private const val WAVE_MIN_RADIUS = 0.30f
-private const val WAVE_MAX_RADIUS = 1.05f
+/** Largest a ring gets, as a fraction of the wave's width. */
+private const val WAVE_MAX_RADIUS = 0.72f
+
+/** Size a ring is born at, as a fraction of [WAVE_MAX_RADIUS]. */
+private const val WAVE_MIN_RADIUS = 0.40f
 
 /** Alpha of a newborn ring; it fades linearly to zero as it expands. */
-private const val WAVE_MAX_ALPHA = 0.14f
+private const val WAVE_MAX_ALPHA = 0.18f
 
 @Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable

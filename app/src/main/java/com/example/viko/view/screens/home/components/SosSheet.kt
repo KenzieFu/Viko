@@ -3,6 +3,7 @@ package com.example.viko.view.screens.home.components
 import com.example.viko.view.theme.VSurfaceVariant
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.components.AnnouncementWaveBackground
+import com.example.viko.components.AnnouncementWaveHeight
 import com.example.viko.view.theme.VikoTheme
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
@@ -94,9 +95,6 @@ private val EMERGENCY_GRID_HEIGHT =
 
 private val ANNOUNCE_BUTTON = 88.dp
 
-/** How far up the sheet the broadcast wave reaches. */
-private val ANNOUNCE_WAVE_HEIGHT = 236.dp
-
 /**
  * Site-wide emergency broadcast: pick a type, hold the floor for a few seconds.
  * Nothing is sent yet — this is the UI ahead of the emergency packet transport.
@@ -125,7 +123,7 @@ fun SosSheetContent(onClose: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(ANNOUNCE_WAVE_HEIGHT),
+                    .height(AnnouncementWaveHeight),
                 color = VAccentRed
             )
         }

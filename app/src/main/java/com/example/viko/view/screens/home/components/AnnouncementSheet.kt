@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.viko.R
 import com.example.viko.components.AnnouncementWaveBackground
+import com.example.viko.components.AnnouncementWaveHeight
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VBorder
@@ -68,7 +69,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(236.dp)
+                    .height(AnnouncementWaveHeight)
             )
         }
 
