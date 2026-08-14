@@ -1,5 +1,10 @@
 package com.example.viko.view.screens.team
 
+import com.example.viko.type.WorkerStatus
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.screens.previewChannel
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -75,7 +80,25 @@ fun ManageMemberScreen(
     viewModel: ManageMemberViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ManageMemberScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onMemberClick = onMemberClick,
+        onRemoveWorker = viewModel::removeWorker,
+        onSearchQueryChange = viewModel::onSearchQueryChange,
+        onChannelFilterChange = viewModel::onChannelFilterChange
+    )
+}
 
+@Composable
+fun ManageMemberScreen(
+    uiState: ManageMemberUiState,
+    onBack: () -> Unit,
+    onMemberClick: (String) -> Unit,
+    onRemoveWorker: (String) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onChannelFilterChange: (String?) -> Unit
+) {
     // Saveable, so a rotation does not dismiss the dialog or the sheet. The id,
     // not the Worker — a data class is not saveable.
     var deleteTargetId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,7 +114,7 @@ fun ManageMemberScreen(
     if (deleteTargetId != null) {
         DeleteMemberDialog(
             onConfirm = {
-                deleteTargetId?.let(viewModel::removeWorker)
+                deleteTargetId?.let(onRemoveWorker)
                 deleteTargetId = null
             },
             onDismiss = { deleteTargetId = null }
@@ -153,7 +176,7 @@ fun ManageMemberScreen(
             Spacer(modifier = Modifier.width(8.dp))
             VikoTextField(
                 value = uiState.searchQuery,
-                onValueChange = viewModel::onSearchQueryChange,
+                onValueChange = onSearchQueryChange,
                 placeholder = "Search Member",
                 modifier = Modifier.weight(1f)
             )
@@ -172,7 +195,7 @@ fun ManageMemberScreen(
         ) {
             FilterChip(
                 selected = uiState.filterChannelId == null,
-                onClick = { viewModel.onChannelFilterChange(null) },
+                onClick = { onChannelFilterChange(null) },
                 label = { Text("All", fontSize = 12.sp) },
                 shape = RoundedCornerShape(8.dp)
             )
@@ -180,7 +203,7 @@ fun ManageMemberScreen(
                 FilterChip(
                     selected = uiState.filterChannelId == channel.id,
                     onClick = {
-                        viewModel.onChannelFilterChange(
+                        onChannelFilterChange(
                             channel.id.takeUnless { it == uiState.filterChannelId }
                         )
                     },
@@ -337,4 +360,39 @@ private fun DeleteMemberDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun ManageMemberScreenPreview() {
+    VikoTheme {
+        ManageMemberScreen(
+            uiState = ManageMemberUiState(
+                members = listOf(
+                    MemberRow(previewWorker("01", "Budi", "c1", WorkerStatus.SPEAKING), "Warehouse"),
+                    MemberRow(previewWorker("02", "Sari", "c1"), "Warehouse"),
+                    MemberRow(previewWorker("03", "Andi", "c2", isOnline = false, batteryLevel = 12), "Assembly")
+                ),
+                channels = listOf(previewChannel("c1", "Warehouse"), previewChannel("c2", "Assembly"))
+            ),
+            onBack = {}, onMemberClick = {}, onRemoveWorker = {},
+            onSearchQueryChange = {}, onChannelFilterChange = {}
+        )
+    }
+}
+
+/** Search that matched nothing — distinct from having no members at all. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun ManageMemberScreenNoResultsPreview() {
+    VikoTheme {
+        ManageMemberScreen(
+            uiState = ManageMemberUiState(
+                channels = listOf(previewChannel("c1", "Warehouse")),
+                searchQuery = "zzz"
+            ),
+            onBack = {}, onMemberClick = {}, onRemoveWorker = {},
+            onSearchQueryChange = {}, onChannelFilterChange = {}
+        )
+    }
 }

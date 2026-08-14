@@ -1,5 +1,7 @@
 package com.example.viko.view.screens.team
 
+import com.example.viko.view.theme.VikoTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -433,6 +435,81 @@ private fun DeviceIllustration(modifier: Modifier = Modifier) {
                 .size(14.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(VWarning)
+        )
+    }
+}
+
+private fun previewDevice(id: String, name: String, rssi: Int = -45) =
+    NearbyDevice(id = id, name = name, address = "AA:BB:CC:11:22:$id", signalStrength = rssi)
+
+/**
+ * The two steps are previewed as their sheet *contents*, not through
+ * [AddMemberFlow] itself — that wraps everything in a ModalBottomSheet, which
+ * has no host to render into inside a preview.
+ */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun NearbyDeviceSheetContentPreview() {
+    VikoTheme {
+        NearbyDeviceSheetContent(
+            devices = listOf(
+                previewDevice("33", "VIKO-ESP32-A1B2"),
+                previewDevice("66", "VIKO-ESP32-C3D4", rssi = -67),
+                previewDevice("99", "VIKO-ESP32-E5F6", rssi = -80)
+            ),
+            isScanning = true,
+            pairingDeviceId = "66",
+            isEnrolled = { it.id == "99" },
+            addedCount = 1,
+            onPair = {}, onDone = {}, onClose = {}
+        )
+    }
+}
+
+/** Scanning with nothing found yet. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun NearbyDeviceSheetContentScanningPreview() {
+    VikoTheme {
+        NearbyDeviceSheetContent(
+            devices = emptyList(),
+            isScanning = true,
+            pairingDeviceId = null,
+            isEnrolled = { false },
+            addedCount = 0,
+            onPair = {}, onDone = {}, onClose = {}
+        )
+    }
+}
+
+/** Setup filled in and ready to save. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun SetupMemberSheetContentPreview() {
+    VikoTheme {
+        SetupMemberSheetContent(
+            device = previewDevice("33", "VIKO-ESP32-A1B2"),
+            name = "Budi",
+            onNameChange = {},
+            channelName = "Warehouse",
+            canSave = true,
+            onPickChannel = {}, onSave = {}, onClose = {}
+        )
+    }
+}
+
+/** Setup still empty — Save dim, which is the state that is easy to get wrong. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun SetupMemberSheetContentEmptyPreview() {
+    VikoTheme {
+        SetupMemberSheetContent(
+            device = previewDevice("33", "VIKO-ESP32-A1B2"),
+            name = "",
+            onNameChange = {},
+            channelName = null,
+            canSave = false,
+            onPickChannel = {}, onSave = {}, onClose = {}
         )
     }
 }

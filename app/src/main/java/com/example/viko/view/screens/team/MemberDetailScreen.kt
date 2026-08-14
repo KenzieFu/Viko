@@ -1,5 +1,8 @@
 package com.example.viko.view.screens.team
 
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewWorker
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,7 +79,23 @@ fun MemberDetailScreen(
     viewModel: MemberDetailViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    MemberDetailScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onDirectCall = onDirectCall,
+        onSelectChannel = onSelectChannel,
+        onRemoveWorker = viewModel::removeWorker
+    )
+}
 
+@Composable
+fun MemberDetailScreen(
+    uiState: MemberDetailUiState,
+    onBack: () -> Unit,
+    onDirectCall: (String) -> Unit,
+    onSelectChannel: (String) -> Unit,
+    onRemoveWorker: () -> Unit
+) {
     // See MissingWorker: an early return here would leave a black screen with no
     // close button while Room answers, or after the member has been removed.
     val worker = uiState.worker
@@ -102,7 +121,7 @@ fun MemberDetailScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.removeWorker()
+                        onRemoveWorker()
                         showRemoveConfirm = false
                         onBack()
                     },
@@ -317,4 +336,48 @@ private fun RecentMessages(messages: List<TranslationMessage>) {
     }
 
     Spacer(modifier = Modifier.height(16.dp))
+}
+
+private fun previewMessage(id: String, original: String, translated: String, at: String) =
+    TranslationMessage(
+        id = id,
+        workerId = "w01",
+        workerName = "Budi",
+        channelId = "c1",
+        originalText = original,
+        translatedText = translated,
+        timestamp = at
+    )
+
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun MemberDetailScreenPreview() {
+    VikoTheme {
+        MemberDetailScreen(
+            uiState = MemberDetailUiState(
+                worker = previewWorker(name = "Budi", batteryLevel = 64),
+                channelName = "Warehouse",
+                recentMessages = listOf(
+                    previewMessage("m1", "Mesin nomor tiga berhenti.", "3번 기계가 멈췄습니다.", "09:41"),
+                    previewMessage("m2", "Saya perlu bantuan di sini.", "여기 도움이 필요합니다.", "09:38")
+                )
+            ),
+            onBack = {}, onDirectCall = {}, onSelectChannel = {}, onRemoveWorker = {}
+        )
+    }
+}
+
+/** No traffic yet, and the worker offline on a low battery. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun MemberDetailScreenQuietPreview() {
+    VikoTheme {
+        MemberDetailScreen(
+            uiState = MemberDetailUiState(
+                worker = previewWorker(name = "Andi", isOnline = false, batteryLevel = 12),
+                channelName = "Assembly"
+            ),
+            onBack = {}, onDirectCall = {}, onSelectChannel = {}, onRemoveWorker = {}
+        )
+    }
 }
