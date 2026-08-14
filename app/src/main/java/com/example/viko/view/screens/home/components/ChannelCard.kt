@@ -281,9 +281,7 @@ private fun IdleMicCircle(contentAlpha: Float, micLabel: String) {
     ) {
         Icon(
             painter = painterResource(id = R.drawable.ic_mic),
-            // The mic is inert with nobody on the channel, so do not tell a screen
-            // reader to tap it.
-            contentDescription = if (isReady) "Talk to $channelName" else "$channelName has no members",
+            contentDescription = micLabel,
             tint = VOnSurface.copy(alpha = contentAlpha),
             modifier = Modifier.size(MIC_ICON)
         )
@@ -353,25 +351,48 @@ private fun previewEmptyChannelSummary(name: String) = ChannelSummary(
 )
 
 /**
- * The Figma grid: talking, empty, and two ready channels. This is the layout the
- * states have to be told apart in — checking them one at a time hides the fact
- * that empty and ready are the same drawing at different opacity.
+ * The Figma grid, nobody holding a mic: one empty channel among three ready ones.
+ * This is the layout the states have to be told apart in — checking them one at a
+ * time hides the fact that empty and ready are the same drawing at different
+ * opacity.
  */
 @Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
 private fun ChannelCardGridPreview() {
+    ChannelCardGrid(talkingOnOperations = false)
+}
+
+/**
+ * Holding Operations' mic: every other channel is faded and inert, so the grid
+ * shows one live card among disabled ones — the state Home puts them in.
+ */
+@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun ChannelCardGridTalkingPreview() {
+    ChannelCardGrid(talkingOnOperations = true)
+}
+
+@Composable
+private fun ChannelCardGrid(talkingOnOperations: Boolean) {
     VikoTheme {
         Column(modifier = Modifier.padding(12.dp)) {
             listOf(
-                previewChannelSummary(name = "Operations") to ChannelAudioMode.Talking,
-                previewEmptyChannelSummary("Facilities") to ChannelAudioMode.Idle,
-                previewChannelSummary(name = "Maintenance") to ChannelAudioMode.Idle,
-                previewChannelSummary(name = "Security") to ChannelAudioMode.Idle
+                previewChannelSummary(name = "Operations") to true,
+                previewEmptyChannelSummary("Facilities") to false,
+                previewChannelSummary(name = "Maintenance") to false,
+                previewChannelSummary(name = "Security") to false
             ).chunked(2).forEach { row ->
                 Row {
-                    row.forEach { (summary, mode) ->
+                    row.forEach { (summary, isOperations) ->
+                        val talking = talkingOnOperations && isOperations
                         Box(modifier = Modifier.width(170.dp).padding(4.dp)) {
-                            ChannelCard(summary, mode, {}, {})
+                            ChannelCard(
+                                summary = summary,
+                                audioMode = if (talking) ChannelAudioMode.Talking else ChannelAudioMode.Idle,
+                                onMicTap = {},
+                                onChipTap = {},
+                                enabled = !talkingOnOperations || isOperations
+                            )
                         }
                     }
                 }

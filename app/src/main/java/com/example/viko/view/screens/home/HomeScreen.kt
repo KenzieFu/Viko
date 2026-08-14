@@ -181,7 +181,11 @@ fun HomeScreen(
                             onMicTap = {
                                 talkingChannelId = if (isManagerTalking) null else summary.channel.id
                             },
-                            onChipTap = { openTeamSheetChannelId = summary.channel.id }
+                            onChipTap = { openTeamSheetChannelId = summary.channel.id },
+                            // One mic, one channel: while a channel is held, every
+                            // other card goes inert so the only tap available is
+                            // letting go of the one you are on.
+                            enabled = talkingChannelId == null || isManagerTalking
                         )
                     }
                 }

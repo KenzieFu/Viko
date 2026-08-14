@@ -1,5 +1,8 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VSurfaceVariant
+import com.example.viko.view.theme.VOnSurfaceSecondary
+import com.example.viko.components.AnnouncementWaveBackground
 import com.example.viko.view.theme.VikoTheme
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
@@ -45,7 +48,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.viko.components.SpeakingRipple
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBorder
@@ -72,17 +74,16 @@ private val EMERGENCY_TYPES = listOf(
 private const val BROADCAST_DURATION_MS = 3_500L
 
 /**
- * The emergency grid drives how tall the sheet is, so raising [EMERGENCY_CARD_HEIGHT]
- * is how you give the sheet more room.
+ * The emergency grid drives how tall the sheet is, so [EMERGENCY_CARD_HEIGHT] is
+ * the one knob for giving the sheet more room.
  *
- * [EMERGENCY_GRID_HEIGHT] is derived rather than typed out: the grid does not size
- * itself to its rows, so a hardcoded height that no longer matched the cards would
- * silently clip them instead of failing.
+ * [EMERGENCY_GRID_HEIGHT] is derived rather than typed out: LazyVerticalGrid does
+ * not size itself to its rows, so a hardcoded height that no longer matched the
+ * cards would silently clip them instead of failing.
+ *
+ * The row/column counts come first because top-level properties initialise in file
+ * order — a height computed from values declared below it would read them as zero.
  */
-// Declared before EMERGENCY_GRID_HEIGHT on purpose: top-level vals initialise in
-// file order, so a height computed from properties defined below it would read
-// them as zero.
-/** Four types in two columns. */
 private const val EMERGENCY_GRID_COLUMNS = 2
 private const val EMERGENCY_GRID_ROWS = 2
 
@@ -91,12 +92,10 @@ private val EMERGENCY_GRID_SPACING = 16.dp
 private val EMERGENCY_GRID_HEIGHT =
     EMERGENCY_CARD_HEIGHT * EMERGENCY_GRID_ROWS + EMERGENCY_GRID_SPACING * (EMERGENCY_GRID_ROWS - 1)
 
-/**
- * The Announce button and the box it sits in. The box is the larger of the two so
- * the ripple has somewhere to go without the button moving when it appears.
- */
 private val ANNOUNCE_BUTTON = 88.dp
-private val ANNOUNCE_SLOT = 132.dp
+
+/** How far up the sheet the broadcast wave reaches. */
+private val ANNOUNCE_WAVE_HEIGHT = 236.dp
 
 /**
  * Site-wide emergency broadcast: pick a type, hold the floor for a few seconds.
@@ -119,6 +118,20 @@ fun SosSheetContent(onClose: () -> Unit) {
             .fillMaxWidth()
             .background(if (isBroadcasting) VAccentRed.copy(alpha = 0.05f) else Color.Transparent)
     ) {
+        // Same wave the announcement sheet uses, in red — arcs sweeping up from
+        // the bottom of the sheet rather than a halo around the button, so the
+        // whole surface reads as live. Drawn behind the content, and it takes no
+        // layout space, so nothing moves when a broadcast starts.
+        if (isBroadcasting) {
+            AnnouncementWaveBackground(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(ANNOUNCE_WAVE_HEIGHT),
+                color = VAccentRed
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -166,32 +179,22 @@ fun SosSheetContent(onClose: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Reserves the ripple's room whether or not it is drawing. Sized to
-                // fit, starting a broadcast grew this box 88 -> 132.dp, which shoved
-                // the button up and the label down — and, since the sheet is
-                // content-sized, resized the whole sheet under the user's thumb.
+                // No halo slot to reserve any more — the wave behind the sheet does
+                // the work, so the button is just the button and cannot move.
                 Box(
-                    modifier = Modifier.size(ANNOUNCE_SLOT),
+                    modifier = Modifier
+                        .size(ANNOUNCE_BUTTON)
+                        .clip(CircleShape)
+                        .background(VAccentRed)
+                        .clickable { isBroadcasting = !isBroadcasting },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isBroadcasting) {
-                        SpeakingRipple(size = ANNOUNCE_SLOT, color = VAccentRed)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(ANNOUNCE_BUTTON)
-                            .clip(CircleShape)
-                            .background(VAccentRed)
-                            .clickable { isBroadcasting = !isBroadcasting },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Campaign,
-                            contentDescription = "Announce",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Campaign,
+                        contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
@@ -219,11 +222,16 @@ private fun EmergencyTypeCard(
             .alpha(if (dimmed) 0.4f else 1f)
             .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isSelected) type.accent.copy(alpha = 0.08f) else VSurface)
-            .border(
-                width = 1.5.dp,
-                color = if (isSelected) type.accent.copy(alpha = 0.4f) else VBorder,
-                shape = RoundedCornerShape(16.dp)
+            // Unselected carries no accent at all — the card is just a lighter
+            // surface than the sheet, which is what separates it now that there is
+            // no outline. VSurface would be invisible here: the sheet is VSurface.
+            .background(if (isSelected) type.accent.copy(alpha = 0.08f) else VSurfaceVariant)
+            .then(
+                if (isSelected) Modifier.border(
+                    width = 1.5.dp,
+                    color = type.accent.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(16.dp)
+                ) else Modifier
             )
             .clickable(enabled = !dimmed, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -232,17 +240,24 @@ private fun EmergencyTypeCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Unselected: hollow, hairline ring, neutral glyph — an emergency type
+            // reads as armed only once it has been chosen, so four red icons cannot
+            // sit there looking like four live alarms.
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
-                    .background(if (isSelected) type.accent else type.accent.copy(alpha = 0.08f)),
+                    .background(if (isSelected) type.accent else Color.Transparent)
+                    .then(
+                        if (isSelected) Modifier
+                        else Modifier.border(1.dp, VBorder, CircleShape)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     type.icon,
                     contentDescription = type.label,
-                    tint = if (isSelected) Color.White else type.accent,
+                    tint = if (isSelected) Color.White else VOnSurfaceSecondary,
                     modifier = Modifier.size(26.dp)
                 )
             }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.viko.view.theme.VAccentBlue
@@ -20,9 +21,15 @@ import com.example.viko.view.theme.VikoTheme
 /**
  * The expanding rings behind a live announcement — drawn low in the sheet so it
  * reads as sound coming up out of the talk button.
+ *
+ * [color] defaults to the announcement blue; the SOS sheet passes red so an
+ * emergency broadcast is never mistaken for a routine one.
  */
 @Composable
-fun AnnouncementWaveBackground(modifier: Modifier = Modifier) {
+fun AnnouncementWaveBackground(
+    modifier: Modifier = Modifier,
+    color: Color = VAccentBlue
+) {
     val progress by rememberInfiniteTransition(label = "announcementWave").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -40,7 +47,7 @@ fun AnnouncementWaveBackground(modifier: Modifier = Modifier) {
             val shiftedProgress = (progress + index * 0.22f) % 1f
             val alpha = (0.08f * (1f - shiftedProgress)).coerceAtLeast(0.02f)
             drawCircle(
-                color = VAccentBlue.copy(alpha = alpha),
+                color = color.copy(alpha = alpha),
                 radius = size.width * (baseRadius + shiftedProgress * 0.09f),
                 center = center
             )
