@@ -9,8 +9,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class MessageRepositoryImpl(private val dao: MessageDao) : MessageRepository {
+
     override fun observeMessages(): Flow<List<TranslationMessage>> =
         dao.observeMessages().map { list -> list.map { it.toDomain() } }
+
+    override fun observeMessagesFor(workerId: String): Flow<List<TranslationMessage>> =
+        dao.observeMessagesFor(workerId).map { list -> list.map { it.toDomain() } }
 
     override suspend fun addMessage(message: TranslationMessage) = dao.insert(message.toEntity())
 }

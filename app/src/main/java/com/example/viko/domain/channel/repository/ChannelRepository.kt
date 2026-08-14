@@ -6,4 +6,5 @@ import kotlinx.coroutines.flow.Flow
 interface ChannelRepository {
     fun observeChannels(): Flow<List<Channel>>
     suspend fun getChannel(id: String): Channel?
+    suspend fun addChannel(channel: Channel)
 }

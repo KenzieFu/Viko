@@ -5,5 +5,6 @@ import kotlinx.coroutines.flow.Flow
 
 interface MessageRepository {
     fun observeMessages(): Flow<List<TranslationMessage>>
+    fun observeMessagesFor(workerId: String): Flow<List<TranslationMessage>>
     suspend fun addMessage(message: TranslationMessage)
 }
