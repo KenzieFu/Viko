@@ -126,10 +126,10 @@ fun ChannelCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Fixed slot, not sized to its contents: the ripple needs 104.dp
-                // and the idle circle only 72.dp, so sizing to fit made the block
-                // 32.dp taller the moment a channel went live — which Center then
-                // paid for by sliding the label down and the mic up.
+                // Fixed slot, not sized to its contents: the ripple needs the full
+                // MIC_SLOT and the bare circle only MIC_CIRCLE, so sizing to fit
+                // made the block taller the moment a channel went live — which
+                // Center then paid for by sliding the label down and the mic up.
                 Box(
                     modifier = Modifier.size(MIC_SLOT),
                     contentAlignment = Alignment.Center
@@ -218,7 +218,7 @@ private fun ActiveMicCircle(
 ) {
     Box(
         modifier = Modifier
-            .size(64.dp)
+            .size(MIC_CIRCLE)
             .clip(CircleShape)
             .background(circleColor)
             // Ring only while talking: on the speaker state the circle is already
@@ -234,7 +234,7 @@ private fun ActiveMicCircle(
                 Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = "Listening to $channelName",
                 tint = iconColor,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier.size(MIC_ICON)
             )
         } else {
             // ic_mic is stroke-only (fillColor #00000000), so the talking icon is
@@ -243,7 +243,7 @@ private fun ActiveMicCircle(
                 painter = painterResource(id = R.drawable.ic_mic),
                 contentDescription = "Talking to $channelName",
                 tint = iconColor,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier.size(MIC_ICON)
             )
         }
     }
@@ -259,7 +259,7 @@ private fun ActiveMicCircle(
 private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boolean) {
     Box(
         modifier = Modifier
-            .size(72.dp)
+            .size(MIC_CIRCLE)
             .clip(CircleShape)
             .background(VSurface)
             .border(1.dp, VBorder.copy(alpha = contentAlpha), CircleShape),
@@ -271,7 +271,7 @@ private fun IdleMicCircle(channelName: String, contentAlpha: Float, isReady: Boo
             // reader to tap it.
             contentDescription = if (isReady) "Talk to $channelName" else "$channelName has no members",
             tint = VOnSurface.copy(alpha = contentAlpha),
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(MIC_ICON)
         )
     }
 }
@@ -285,6 +285,14 @@ private const val INACTIVE_ALPHA = 0.35f
  * not anyone is talking.
  */
 private val MIC_SLOT = 104.dp
+
+/**
+ * The circle itself, and the glyph inside it. One size for every state: they used
+ * to be 64/30 while talking and 72/28 otherwise, so going live shrank the circle
+ * and grew the mic, and neither the circle nor the label held still.
+ */
+private val MIC_CIRCLE = 72.dp
+private val MIC_ICON = 30.dp
 
 /** Half-width, the way the card actually sits in Home's two-column grid. */
 @Composable
