@@ -68,7 +68,12 @@ fun AnnouncementWaveBackground(
  */
 val AnnouncementWaveHeight = 236.dp
 
-private const val WAVE_PERIOD_MS = 1700
+/**
+ * One ring's full sweep. With [WAVE_RING_COUNT] rings evenly offset, a new one
+ * starts every WAVE_PERIOD_MS / WAVE_RING_COUNT — so this is the knob for how
+ * urgent the pulse feels, not just how fast a single ring travels.
+ */
+private const val WAVE_PERIOD_MS = 2800
 private const val WAVE_RING_COUNT = 3
 
 /**

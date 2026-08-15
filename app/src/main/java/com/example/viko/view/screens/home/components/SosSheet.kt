@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -88,7 +89,11 @@ private const val BROADCAST_DURATION_MS = 3_500L
 private const val EMERGENCY_GRID_COLUMNS = 2
 private const val EMERGENCY_GRID_ROWS = 2
 
-private val EMERGENCY_CARD_HEIGHT = 165.dp
+private val EMERGENCY_CARD_HEIGHT = 200.dp
+
+/** How far the selected panel stops short of the card's edge — same idea as a
+ *  channel tile on Home, where the card's own surface stays visible around it. */
+private val EMERGENCY_PANEL_INSET = 12.dp
 private val EMERGENCY_GRID_SPACING = 16.dp
 private val EMERGENCY_GRID_HEIGHT =
     EMERGENCY_CARD_HEIGHT * EMERGENCY_GRID_ROWS + EMERGENCY_GRID_SPACING * (EMERGENCY_GRID_ROWS - 1)
@@ -131,11 +136,13 @@ fun SosSheetContent(onClose: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 24.dp)
+
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp)
         ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth()
+                .padding(top =24.dp)) {
                 Text(
                     text = "SOS",
                     style = MaterialTheme.typography.headlineLarge,
@@ -143,6 +150,7 @@ fun SosSheetContent(onClose: () -> Unit) {
                     color = VOnSurface,
                     modifier = Modifier.align(Alignment.Center)
                 )
+
                 IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterEnd)) {
                     Icon(Icons.Default.Close, "Close", tint = VOnSurface)
                 }
@@ -169,11 +177,14 @@ fun SosSheetContent(onClose: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
+
+
+
             ) {
                 // No halo slot to reserve any more — the wave behind the sheet does
                 // the work, so the button is just the button and cannot move.
@@ -185,6 +196,7 @@ fun SosSheetContent(onClose: () -> Unit) {
                         .clickable { isBroadcasting = !isBroadcasting },
                     contentAlignment = Alignment.Center
                 ) {
+
                     Icon(
                         Icons.Default.Campaign,
                         contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
@@ -199,6 +211,7 @@ fun SosSheetContent(onClose: () -> Unit) {
                     fontWeight = if (isBroadcasting) FontWeight.Bold else FontWeight.Medium,
                     color = if (isBroadcasting) VAccentRed else VOnSurface
                 )
+
             }
         }
     }
@@ -214,27 +227,27 @@ private fun EmergencyTypeCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(EMERGENCY_CARD_HEIGHT)
+            .height(180.dp)
             .alpha(if (dimmed) 0.4f else 1f)
             .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
-            // Unselected carries no accent at all — the card is just a lighter
-            // surface than the sheet, which is what separates it now that there is
-            // no outline. VSurface would be invisible here: the sheet is VSurface.
-            .background(if (isSelected) type.accent.copy(alpha = 0.08f) else VSurfaceVariant)
-            .then(
-                if (isSelected) Modifier.border(
-                    width = 1.5.dp,
-                    color = type.accent.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(16.dp)
-                ) else Modifier
-            )
-            .clickable(enabled = !dimmed, onClick = onClick),
+            // The card itself keeps its own surface in both states — the sheet is
+            // VSurface, so VSurfaceVariant is what separates a card from it.
+            .background(VSurfaceVariant)
+            .clickable(enabled = !dimmed, onClick = onClick)
+            .padding(EMERGENCY_PANEL_INSET),
         contentAlignment = Alignment.Center
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(12.dp))
+                // No outline in either state. Selected is an inset tinted panel the
+                // way a channel you are talking on is on Home: the fill carries the
+                // accent, stopping short of the card's edge.
+                .background(if (isSelected) type.accent.copy(alpha = 0.15f) else Color.Transparent),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
         ) {
             // Unselected: hollow, hairline ring, neutral glyph — an emergency type
             // reads as armed only once it has been chosen, so four red icons cannot
@@ -259,7 +272,7 @@ private fun EmergencyTypeCard(
             }
             Text(
                 text = type.label,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = if (isSelected) type.accent else VOnSurface
             )
         }

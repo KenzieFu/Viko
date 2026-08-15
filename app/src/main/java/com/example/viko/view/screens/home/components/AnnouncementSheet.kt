@@ -45,6 +45,11 @@ import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
 
+private val ANNOUNCE_BUTTON = 120.dp
+
+/** Space between the "From …" line and the button. */
+private val ANNOUNCE_BUTTON_GAP = 66.dp
+
 /**
  * All-channel announcement. Draws its own drag handle and corner radius because
  * the host passes a transparent container so this can own the whole surface.
@@ -110,46 +115,33 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(if (isSpeaking) 64.dp else 66.dp))
+            Spacer(modifier = Modifier.height(ANNOUNCE_BUTTON_GAP))
 
+            // Size and gap are the same in both states so the button cannot shift
+            // when you tap it — only fill, rim and shadow change. The shadow is a
+            // draw-only modifier, so dropping it while speaking costs no layout.
             Box(
-                modifier = Modifier.size(if (isSpeaking) 118.dp else 120.dp),
+                modifier = Modifier
+                    .size(ANNOUNCE_BUTTON)
+                    .then(
+                        if (isSpeaking) Modifier
+                        else Modifier.shadow(2.dp, CircleShape, spotColor = VShadow)
+                    )
+                    .clip(CircleShape)
+                    .background(if (isSpeaking) VAccentBlue else VSurface)
+                    .then(
+                        if (isSpeaking) Modifier
+                        else Modifier.border(1.dp, VBorder, CircleShape)
+                    )
+                    .clickable { isSpeaking = !isSpeaking },
                 contentAlignment = Alignment.Center
             ) {
-                if (!isSpeaking) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .shadow(2.dp, CircleShape, spotColor = VShadow)
-                            .clip(CircleShape)
-                            .background(VSurface)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(if (isSpeaking) 118.dp else 120.dp)
-                        .clip(CircleShape)
-                        .background(if (isSpeaking) VAccentBlue else VSurface)
-                        .border(
-                            width = if (isSpeaking) 0.dp else 1.dp,
-                            color = VBorder,
-                            shape = CircleShape
-                        )
-                        .clickable { isSpeaking = !isSpeaking },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_announce),
-                        contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
-                        tint = if (isSpeaking) Color.White else VAccentBlue,
-                        modifier = Modifier.size(46.dp)
-                    )
-                }
-            }
-
-            if (!isSpeaking) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_announce),
+                    contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
+                    tint = if (isSpeaking) Color.White else VAccentBlue,
+                    modifier = Modifier.size(46.dp)
+                )
             }
         }
     }
