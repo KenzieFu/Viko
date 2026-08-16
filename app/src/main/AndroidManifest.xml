@@ -28,6 +28,20 @@
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
+    <!-- Badge control channel. INTERNET is required to bind the TCP 5001 listener
+         even though nothing here ever leaves the factory LAN — Android gates all
+         socket use behind it. NsdManager holds its own multicast lock for the
+         mDNS advertisement, so CHANGE_WIFI_MULTICAST_STATE is not needed. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Supervisor push-to-talk: the phone mic is captured and streamed to a
+         badge over UDP 5002. Receiving and playing badge audio needs no
+         permission; only capture does. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="true" />
+
     <application
         android:name=".VikoApplication"
         android:allowBackup="true"

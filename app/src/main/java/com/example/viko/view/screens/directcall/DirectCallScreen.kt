@@ -1,5 +1,14 @@
 package com.example.viko.view.screens.directcall
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.example.viko.type.WorkerStatus
 import com.example.viko.view.theme.VikoTheme
 import com.example.viko.view.screens.previewWorker
@@ -69,10 +78,32 @@ fun DirectCallScreen(
     viewModel: DirectCallViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Asked for on first press rather than on entry: the supervisor may only
+    // ever listen, and a permission dialog thrown at a screen they opened to
+    // hear someone is noise. Granting it starts the stream immediately, so the
+    // press that triggered the prompt isn't wasted.
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMicPermission = granted
+        if (granted) viewModel.toggleTalking()
+    }
+
     DirectCallScreen(
         uiState = uiState,
         onBack = onBack,
-        onToggleTalking = viewModel::toggleTalking
+        onToggleTalking = {
+            if (hasMicPermission) viewModel.toggleTalking()
+            else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     )
 }
 
@@ -126,8 +157,14 @@ fun DirectCallScreen(
 
         CallerIdentity(worker = worker, isMemberTalking = isMemberTalking)
 
-        if (uiState.translation != null && isMemberTalking) {
-            TranslationCard(text = uiState.translation.orEmpty())
+        // The transcript card has nothing to show until ASR/NMT lands — speech
+        // is carried as live audio, not text. Until then the slot is used for
+        // the one thing worth saying: why a press to talk did nothing.
+        when {
+            uiState.translation != null && isMemberTalking ->
+                TranslationCard(text = uiState.translation.orEmpty())
+
+            uiState.talkError != null -> TranslationCard(text = uiState.talkError)
         }
 
         Spacer(modifier = Modifier.weight(1f))

@@ -22,6 +22,11 @@ class VikoApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
 
+        // Listening starts with the process, not with a screen: a badge registers
+        // as soon as it joins the Wi-Fi, whether or not anyone has the app open
+        // on the Team tab.
+        container.badgeRegistry.start(applicationScope)
+
         if (SEED_DEMO_DATA) {
             applicationScope.launch { container.databaseSeeder.seedIfEmpty() }
         }
