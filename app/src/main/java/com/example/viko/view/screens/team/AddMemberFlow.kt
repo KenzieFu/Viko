@@ -1,5 +1,7 @@
 package com.example.viko.view.screens.team
 
+import com.example.viko.view.theme.VikoTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -8,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,25 +41,32 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.InfoRow
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.components.VikoTextField
+import com.example.viko.data.team.ble.BlePermissions
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.NearbyDevice
+import com.example.viko.domain.team.model.badgeDeviceId
 import com.example.viko.view.screens.channel.AddNewChannelSheetContent
 import com.example.viko.view.screens.channel.SelectChannelSheetContent
 import com.example.viko.view.theme.VBorder
@@ -84,12 +95,29 @@ fun AddMemberFlow(
     viewModel: AddMemberViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // Sub-sheets stacked on top of the flow sheet. rememberSaveable, not
     // remember: an Activity recreation (rotation, IME insets, a system overlay)
     // would otherwise drop the supervisor back to the sheet underneath.
     var showChannelPicker by rememberSaveable { mutableStateOf(false) }
     var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // BLE scanning is a runtime permission, and denying it is silent: the scan
+    // starts fine and simply never reports a device. So the grant is tracked
+    // explicitly and the sheet says what is missing instead of showing an empty
+    // list forever.
+    var hasBlePermission by remember { mutableStateOf(BlePermissions.allGranted(context)) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        hasBlePermission = grants.values.all { it }
+        if (hasBlePermission) viewModel.rescan()
+    }
+
+    LaunchedEffect(Unit) {
+        if (hasBlePermission) viewModel.rescan() else permissionLauncher.launch(BlePermissions.required)
+    }
 
     // The form itself lives in the ViewModel, which survives recreation; clearing
     // it is the last thing that happens on the way out.
@@ -109,10 +137,15 @@ fun AddMemberFlow(
             AddMemberStep.Pairing -> NearbyDeviceSheetContent(
                 devices = uiState.devices,
                 isScanning = uiState.isScanning,
-                pairingDeviceId = uiState.pairingDeviceId,
+                hasPermission = hasBlePermission,
+                isBluetoothEnabled = uiState.isBluetoothEnabled,
                 isEnrolled = uiState::isEnrolled,
                 addedCount = uiState.addedCount,
-                onPair = viewModel::pair,
+                onSelect = viewModel::select,
+                onRescan = {
+                    if (hasBlePermission) viewModel.rescan()
+                    else permissionLauncher.launch(BlePermissions.required)
+                },
                 onDone = dismiss,
                 onClose = dismiss
             )
@@ -121,8 +154,16 @@ fun AddMemberFlow(
                 device = uiState.pairedDevice,
                 name = uiState.name,
                 onNameChange = viewModel::onNameChange,
+                zone = uiState.zone,
+                onZoneChange = viewModel::onZoneChange,
+                wifiSsid = uiState.wifiSsid,
+                onSsidChange = viewModel::onSsidChange,
+                wifiPassword = uiState.wifiPassword,
+                onPasswordChange = viewModel::onPasswordChange,
                 channelName = uiState.selectedChannelName,
                 canSave = uiState.canSave,
+                isProvisioning = uiState.isProvisioning,
+                error = uiState.error,
                 onPickChannel = { showChannelPicker = true },
                 // Saving returns to the device list rather than closing — see
                 // AddMemberViewModel.save.
@@ -179,10 +220,12 @@ fun AddMemberFlow(
 private fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
-    pairingDeviceId: String?,
+    hasPermission: Boolean,
+    isBluetoothEnabled: Boolean,
     isEnrolled: (NearbyDevice) -> Boolean,
     addedCount: Int,
-    onPair: (NearbyDevice) -> Unit,
+    onSelect: (NearbyDevice) -> Unit,
+    onRescan: () -> Unit,
     onDone: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -223,7 +266,7 @@ private fun NearbyDeviceSheetContent(
         }
 
         Text(
-            text = "Pair your device to add a new member.",
+            text = "Hold a badge's button for 5 seconds to put it in pairing mode.",
             style = MaterialTheme.typography.bodySmall,
             color = VOnSurfaceSecondary
         )
@@ -232,7 +275,15 @@ private fun NearbyDeviceSheetContent(
 
         if (devices.isEmpty()) {
             Text(
-                text = if (isScanning) "Scanning..." else "No devices found",
+                // Each of these is a different fix, and an undifferentiated
+                // "No devices found" sends the supervisor hunting the wrong one.
+                text = when {
+                    !hasPermission -> "Bluetooth permission is needed to find badges."
+                    !isBluetoothEnabled -> "Turn Bluetooth on to find badges."
+                    isScanning -> "Scanning..."
+                    else -> "No badges in pairing mode. A badge with bad Wi-Fi " +
+                        "credentials only starts advertising ~20s after power-on."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = VOnSurfaceSecondary
             )
@@ -241,12 +292,22 @@ private fun NearbyDeviceSheetContent(
                 devices.forEach { device ->
                     NearbyDeviceRow(
                         device = device,
-                        isPairing = pairingDeviceId == device.id,
                         isEnrolled = isEnrolled(device),
-                        onPair = { onPair(device) }
+                        onSelect = { onSelect(device) }
                     )
                 }
             }
+        }
+
+        // The scan window closes on its own to spare the radio, so getting
+        // another one has to be reachable — this is the button a supervisor
+        // presses after holding the badge button.
+        if (!isScanning) {
+            Spacer(modifier = Modifier.height(16.dp))
+            VikoBlueButton(
+                text = if (hasPermission) "Scan again" else "Allow Bluetooth",
+                onClick = onRescan
+            )
         }
 
         // Onboarding pairs a whole shift in one sitting, so the flow stays open
@@ -268,44 +329,43 @@ private fun NearbyDeviceSheetContent(
 @Composable
 private fun NearbyDeviceRow(
     device: NearbyDevice,
-    isPairing: Boolean,
     isEnrolled: Boolean,
-    onPair: () -> Unit
+    onSelect: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(VSurfaceVariant)
-            // A badge already on the roster cannot be paired again: the flow
+            // A badge already on the roster cannot be set up again: the flow
             // stays open after each save, so the one just enrolled is still
             // sitting in this list, and a second pass would create a duplicate
             // member on the same hardware.
-            .clickable(enabled = !isPairing && !isEnrolled, onClick = onPair)
+            .clickable(enabled = !isEnrolled, onClick = onSelect)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = device.name,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (isEnrolled) VOnSurfaceSecondary else VOnSurface,
-            modifier = Modifier.weight(1f)
-        )
-        when {
-            isPairing -> CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 2.dp,
-                color = VMicBlue
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = device.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (isEnrolled) VOnSurfaceSecondary else VOnSurface
             )
-
-            isEnrolled -> Text("Paired", color = VOnSurfaceSecondary, fontSize = 12.sp)
-
-            else -> {
-                Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
-            }
+            Text(
+                // Real signal from the scan, so a supervisor can tell which of
+                // three identical-looking badges is the one in their hand.
+                text = "${device.address}  •  ${device.signalStrength} dBm",
+                fontSize = 11.sp,
+                color = VOnSurfaceSecondary
+            )
+        }
+        if (isEnrolled) {
+            Text("Paired", color = VOnSurfaceSecondary, fontSize = 12.sp)
+        } else {
+            Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -315,8 +375,16 @@ private fun SetupMemberSheetContent(
     device: NearbyDevice?,
     name: String,
     onNameChange: (String) -> Unit,
+    zone: String,
+    onZoneChange: (String) -> Unit,
+    wifiSsid: String,
+    onSsidChange: (String) -> Unit,
+    wifiPassword: String,
+    onPasswordChange: (String) -> Unit,
     channelName: String?,
     canSave: Boolean,
+    isProvisioning: Boolean,
+    error: String?,
     onPickChannel: () -> Unit,
     onSave: () -> Unit,
     onClose: () -> Unit
@@ -324,6 +392,7 @@ private fun SetupMemberSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(bottom = 20.dp)
             .navigationBarsPadding()
@@ -350,6 +419,21 @@ private fun SetupMemberSheetContent(
                     value = name,
                     onValueChange = onNameChange,
                     placeholder = "Enter Member Name",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            HorizontalDivider(color = VBorder)
+
+            // The zone goes onto the badge, not just the roster: it is what an
+            // emergency_alert reports, and it is how a supervisor knows where to
+            // run before anything has been translated.
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Text("Factory zone", fontSize = 11.sp, color = VOnSurfaceSecondary)
+                VikoTextField(
+                    value = zone,
+                    onValueChange = onZoneChange,
+                    placeholder = "e.g. Production Line 2",
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -383,6 +467,41 @@ private fun SetupMemberSheetContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // The badge has no keyboard and no screen: this is the only moment the
+        // factory Wi-Fi can reach it. It is sent over BLE, saved to the badge's
+        // flash, and used for every connection it ever makes.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(VSurfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Text("Factory Wi-Fi network", fontSize = 11.sp, color = VOnSurfaceSecondary)
+                VikoTextField(
+                    value = wifiSsid,
+                    onValueChange = onSsidChange,
+                    placeholder = "SSID",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            HorizontalDivider(color = VBorder)
+
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Text("Wi-Fi password", fontSize = 11.sp, color = VOnSurfaceSecondary)
+                VikoTextField(
+                    value = wifiPassword,
+                    onValueChange = onPasswordChange,
+                    placeholder = "Password",
+                    isPassword = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -392,17 +511,46 @@ private fun SetupMemberSheetContent(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             InfoRow("Device Address", device?.address ?: "Unknown")
-            InfoRow(
-                "Device Status",
-                "${device?.location ?: "Unknown"} • ${device?.batteryLevel ?: 0}%"
+            InfoRow("Signal", device?.let { "${it.signalStrength} dBm" } ?: "Unknown")
+            InfoRow("Device ID", device?.let { badgeDeviceId(it.address) } ?: "Unknown")
+        }
+
+        if (error != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = error,
+                style = MaterialTheme.typography.bodySmall,
+                color = VWarning
             )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Figma greys Save until BOTH a name and a channel are set — see
-        // AddMemberViewModel.save for why that matters.
-        VikoBlueButton(text = "Save", enabled = canSave, onClick = onSave)
+        // Figma greys Save until the form is complete — see
+        // AddMemberViewModel.save for why that matters. Saving here also writes
+        // the badge over BLE, which takes a few seconds and can fail.
+        VikoBlueButton(
+            text = if (isProvisioning) "Provisioning badge…" else "Save & Provision",
+            enabled = canSave,
+            onClick = onSave
+        )
+
+        if (isProvisioning) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = VMicBlue
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Keep the badge nearby — it reboots onto Wi-Fi when this finishes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VOnSurfaceSecondary
+                )
+            }
+        }
     }
 }
 
@@ -433,6 +581,99 @@ private fun DeviceIllustration(modifier: Modifier = Modifier) {
                 .size(14.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(VWarning)
+        )
+    }
+}
+
+private fun previewDevice(id: String, name: String, rssi: Int = -45) =
+    NearbyDevice(id = id, name = name, address = "AA:BB:CC:11:22:$id", signalStrength = rssi)
+
+/**
+ * The two steps are previewed as their sheet *contents*, not through
+ * [AddMemberFlow] itself — that wraps everything in a ModalBottomSheet, which
+ * has no host to render into inside a preview.
+ */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun NearbyDeviceSheetContentPreview() {
+    VikoTheme {
+        NearbyDeviceSheetContent(
+            devices = listOf(
+                previewDevice("33", "ViKo-A1B2"),
+                previewDevice("66", "ViKo-C3D4", rssi = -67),
+                previewDevice("99", "ViKo-E5F6", rssi = -80)
+            ),
+            isScanning = true,
+            hasPermission = true,
+            isBluetoothEnabled = true,
+            isEnrolled = { it.id == "99" },
+            addedCount = 1,
+            onSelect = {}, onRescan = {}, onDone = {}, onClose = {}
+        )
+    }
+}
+
+/** Scanning with nothing found yet. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun NearbyDeviceSheetContentScanningPreview() {
+    VikoTheme {
+        NearbyDeviceSheetContent(
+            devices = emptyList(),
+            isScanning = true,
+            hasPermission = true,
+            isBluetoothEnabled = true,
+            isEnrolled = { false },
+            addedCount = 0,
+            onSelect = {}, onRescan = {}, onDone = {}, onClose = {}
+        )
+    }
+}
+
+/** Setup filled in and ready to save. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun SetupMemberSheetContentPreview() {
+    VikoTheme {
+        SetupMemberSheetContent(
+            device = previewDevice("33", "ViKo-A1B2"),
+            name = "Budi",
+            onNameChange = {},
+            zone = "Production Line 2",
+            onZoneChange = {},
+            wifiSsid = "FactoryTranslate_AP",
+            onSsidChange = {},
+            wifiPassword = "hunter2hunter2",
+            onPasswordChange = {},
+            channelName = "Warehouse",
+            canSave = true,
+            isProvisioning = false,
+            error = null,
+            onPickChannel = {}, onSave = {}, onClose = {}
+        )
+    }
+}
+
+/** Setup still empty — Save dim, which is the state that is easy to get wrong. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Composable
+private fun SetupMemberSheetContentEmptyPreview() {
+    VikoTheme {
+        SetupMemberSheetContent(
+            device = previewDevice("33", "ViKo-A1B2"),
+            name = "",
+            onNameChange = {},
+            zone = "",
+            onZoneChange = {},
+            wifiSsid = "",
+            onSsidChange = {},
+            wifiPassword = "",
+            onPasswordChange = {},
+            channelName = null,
+            canSave = false,
+            isProvisioning = false,
+            error = "Timed out. Is the badge still in pairing mode?",
+            onPickChannel = {}, onSave = {}, onClose = {}
         )
     }
 }

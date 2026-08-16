@@ -1,5 +1,9 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.screens.previewChannelSummary
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -252,6 +256,22 @@ private fun TalkToTeamButton(isTalking: Boolean, onToggle: () -> Unit) {
         Text(
             text = "Talk to Team",
             color = if (isTalking) Color.White else VOnSurface
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun TeamSheetContentPreview() {
+    VikoTheme {
+        TeamSheetContent(
+            summary = previewChannelSummary(),
+            assignableWorkers = listOf(previewWorker("09", "Dewi", "")),
+            onClose = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorker = {}
         )
     }
 }

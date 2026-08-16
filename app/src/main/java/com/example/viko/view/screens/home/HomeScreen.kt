@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,6 +58,9 @@ import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.view.screens.previewChannel
+import com.example.viko.view.screens.previewChannelSummary
+import com.example.viko.view.screens.previewWorker
 import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.view.screens.home.components.AnnouncementSheetContent
 import com.example.viko.view.screens.home.components.ChannelAudioMode
@@ -69,13 +74,17 @@ import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VikoTheme
 
 /**
  * The manager's dashboard: one card per channel, an SOS broadcast, and a
  * site-wide announcement. Everything it shows comes from [HomeViewModel];
  * which sheet is open is view state and stays here.
+ *
+ * This overload only resolves the ViewModel and delegates to the stateless one
+ * below — a @Preview has no Application or database, so it cannot build a
+ * HomeViewModel, and all the layout has to live where a preview can reach it.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenNotifications: () -> Unit,
@@ -84,7 +93,28 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HomeScreen(
+        uiState = uiState,
+        onOpenNotifications = onOpenNotifications,
+        onOpenManageMembers = onOpenManageMembers,
+        onDirectCall = onDirectCall,
+        onRenameWorker = viewModel::renameWorker,
+        onRemoveWorker = viewModel::removeWorker,
+        onAssignWorkerToChannel = viewModel::assignWorkerToChannel
+    )
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    uiState: HomeUiState,
+    onOpenNotifications: () -> Unit,
+    onOpenManageMembers: () -> Unit,
+    onDirectCall: (String) -> Unit,
+    onRenameWorker: (String, String) -> Unit,
+    onRemoveWorker: (String) -> Unit,
+    onAssignWorkerToChannel: (String, String) -> Unit
+) {
     // Which sheet is open is view state, but it still has to survive an Activity
     // recreation — a rotation should not close the roster the supervisor opened.
     var showSosSheet by rememberSaveable { mutableStateOf(false) }
@@ -151,7 +181,11 @@ fun HomeScreen(
                             onMicTap = {
                                 talkingChannelId = if (isManagerTalking) null else summary.channel.id
                             },
-                            onChipTap = { openTeamSheetChannelId = summary.channel.id }
+                            onChipTap = { openTeamSheetChannelId = summary.channel.id },
+                            // One mic, one channel: while a channel is held, every
+                            // other card goes inert so the only tap available is
+                            // letting go of the one you are on.
+                            enabled = talkingChannelId == null || isManagerTalking
                         )
                     }
                 }
@@ -203,10 +237,10 @@ fun HomeScreen(
                     openTeamSheetChannelId = null
                     onDirectCall(workerId)
                 },
-                onRenameWorker = viewModel::renameWorker,
-                onRemoveWorker = viewModel::removeWorker,
+                onRenameWorker = onRenameWorker,
+                onRemoveWorker = onRemoveWorker,
                 onAssignWorker = { workerId ->
-                    viewModel.assignWorkerToChannel(workerId, teamSummary.channel.id)
+                    onAssignWorkerToChannel(workerId, teamSummary.channel.id)
                 }
             )
         }
@@ -310,7 +344,7 @@ private fun HomeTopBar(
         }
 
         IconButton(onClick = onSettingsTap) {
-            Icon(Icons.Filled.Settings, contentDescription = "Manage members", tint = VOnSurface)
+            Icon(Icons.Outlined.Settings, contentDescription = "Manage members", tint = VOnSurface)
         }
     }
 }
@@ -348,5 +382,50 @@ private fun MakeAnnouncementButton(onClick: () -> Unit) {
                 color = VOnSurface
             )
         }
+    }
+}
+
+/** The populated dashboard: two channels, one of them with a member talking. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun HomeScreenPreview() {
+    VikoTheme {
+        HomeScreen(
+            uiState = HomeUiState(
+                channels = listOf(
+                    previewChannelSummary("c1", "Warehouse"),
+                    ChannelSummary(
+                        channel = previewChannel("c2", "Assembly"),
+                        members = listOf(previewWorker("04", "Rina", "c2", batteryLevel = 15))
+                    )
+                ),
+                activeAlertCount = 2,
+                hasMembers = true,
+                isLoaded = true
+            ),
+            onOpenNotifications = {},
+            onOpenManageMembers = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorkerToChannel = { _, _ -> }
+        )
+    }
+}
+
+/** Loaded, but nothing paired yet — the empty state, hard to reach in a running app. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun HomeScreenEmptyPreview() {
+    VikoTheme {
+        HomeScreen(
+            uiState = HomeUiState(hasMembers = true, isLoaded = true),
+            onOpenNotifications = {},
+            onOpenManageMembers = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorkerToChannel = { _, _ -> }
+        )
     }
 }

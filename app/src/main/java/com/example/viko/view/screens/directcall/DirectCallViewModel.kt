@@ -3,49 +3,63 @@ package com.example.viko.view.screens.directcall
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.navigation.NavArgs
 import com.example.viko.type.CallState
+import com.example.viko.type.WorkerStatus
 import com.example.viko.utils.UI_STATE_TIMEOUT_MS
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 data class DirectCallUiState(
     val worker: Worker? = null,
     val callState: CallState = CallState.IDLE,
-    val translation: String? = null
-)
-
-/** Local, non-persisted parts of a call: who is talking and what came through. */
-private data class CallSession(
-    val callState: CallState = CallState.IDLE,
-    val translation: String? = null
+    val translation: String? = null,
+    /**
+     * Set when the supervisor pressed talk and nothing could be sent — no mic
+     * permission, or the badge has never been heard from so we have no address
+     * for it. Silence with a lit-up button would be the worst possible feedback.
+     */
+    val talkError: String? = null
 )
 
 class DirectCallViewModel(
     savedStateHandle: SavedStateHandle,
-    workerRepository: WorkerRepository
+    workerRepository: WorkerRepository,
+    private val audio: BadgeAudioServer
 ) : ViewModel() {
 
+    /** Also the badge's `device_id` — workers are keyed by it end to end. */
     private val workerId: String = checkNotNull(savedStateHandle[NavArgs.WORKER_ID])
 
-    private val session = MutableStateFlow(CallSession())
+    private val talking = MutableStateFlow(false)
+    private val talkError = MutableStateFlow<String?>(null)
 
     val uiState: StateFlow<DirectCallUiState> = combine(
         workerRepository.observeWorker(workerId),
-        session
-    ) { worker, call ->
+        talking,
+        talkError
+    ) { worker, isTalking, error ->
         DirectCallUiState(
             worker = worker,
-            callState = call.callState,
-            translation = call.translation
+            // The member holding their badge button is the authority: their
+            // ptt_start already flipped this worker to SPEAKING via
+            // BadgeRegistry, and their turn outranks ours.
+            callState = when {
+                worker?.status == WorkerStatus.SPEAKING -> CallState.LISTENING
+                isTalking -> CallState.SPEAKING
+                else -> CallState.IDLE
+            },
+            // No transcript: ASR/NMT/TTS is not built, and inventing a line of
+            // Vietnamese here would be a lie the demo tells for us. Speech is
+            // carried live instead — see BadgeAudioServer.
+            translation = null,
+            talkError = error
         )
     }.stateIn(
         scope = viewModelScope,
@@ -53,38 +67,27 @@ class DirectCallViewModel(
         initialValue = DirectCallUiState()
     )
 
-    init {
-        simulateIncomingSpeech()
-    }
-
-    /** Manager pushes to talk. Ignored while the worker holds the channel. */
-    fun toggleTalking() = session.update { call ->
-        when (call.callState) {
-            CallState.LISTENING -> call
-            CallState.SPEAKING -> call.copy(callState = CallState.IDLE)
-            CallState.IDLE -> call.copy(callState = CallState.SPEAKING)
-        }
-    }
-
     /**
-     * Placeholder for the real receive path: a `ptt_start` control packet,
-     * streamed audio, then a translated transcript. Delete this once the badge
-     * transport delivers real messages.
+     * Manager pushes to talk: opens the phone mic and streams it to this badge.
+     * Ignored while the worker holds the channel — half duplex, like the badge's
+     * own button.
      */
-    private fun simulateIncomingSpeech() = viewModelScope.launch {
-        delay(INCOMING_DELAY_MS)
-        session.update {
-            it.copy(
-                callState = CallState.LISTENING,
-                translation = "Yes boss, I think we've got them handled already now. So it's fine now."
-            )
+    fun toggleTalking() {
+        if (uiState.value.callState == CallState.LISTENING) return
+
+        if (talking.value) {
+            audio.stopTalking()
+            talking.value = false
+            return
         }
-        delay(SPEECH_DURATION_MS)
-        session.update { it.copy(callState = CallState.IDLE) }
+
+        val failure = audio.startTalking(workerId, viewModelScope)
+        talking.value = failure == null
+        talkError.value = failure
     }
 
-    private companion object {
-        const val INCOMING_DELAY_MS = 2_500L
-        const val SPEECH_DURATION_MS = 4_000L
+    /** Leaving the screen must not leave the mic open and streaming. */
+    override fun onCleared() {
+        audio.stopTalking()
     }
 }

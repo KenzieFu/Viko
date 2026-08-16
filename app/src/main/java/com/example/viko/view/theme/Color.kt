@@ -26,9 +26,15 @@ val VAccentRed = Color(0xFFFF383C)   // SOS / emergency only — nothing else
 val VAccentBlue = Color(0xFF3B82F6)  // talk state, badges, links
 val VMicBlue = Color(0xFF2563EB)     // the filled mic circle while talking
 
+/**
+ * The ring around the talking mic circle, and the channel name under it — the
+ * same blue as ic_mic's own stroke, so circle outline and label read as one.
+ */
+val VMicRing = Color(0xFF0062FF)
+
 // Panels behind an active channel. Both are dim so the bright circle on top of
 // them is what draws the eye — talk is blue-tinted, speaker is near-neutral.
-val VActivePanel = Color(0xFF1D3054)    // channel you are TALKING on
+val VActivePanel = Color(0xFF1C284A)    // channel you are TALKING on
 val VListeningPanel = Color(0xFF242A38) // channel you are HEARING
 
 // YELLOW = an alert raised by a member. The emergency banner on Home and the

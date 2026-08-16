@@ -6,12 +6,14 @@ import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
 import com.example.viko.data.local.DatabaseSeeder
 import com.example.viko.data.message.repository.MessageRepositoryImpl
+import com.example.viko.data.network.BadgeAudioServer
+import com.example.viko.data.network.BadgeControlServer
+import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.data.team.repository.WorkerRepositoryImpl
-import com.example.viko.data.team.scanner.SimulatedDeviceScanner
+import com.example.viko.data.team.scanner.BleDeviceScanner
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.repository.MessageRepository
-import com.example.viko.domain.team.repository.DeviceScanner
 import com.example.viko.domain.team.repository.WorkerRepository
 
 /**
@@ -30,11 +32,31 @@ class AppContainer(context: Context) {
     val messageRepository: MessageRepository = MessageRepositoryImpl(database.messageDao())
 
     /**
-     * Badge discovery. Simulated until the BLE transport lands — swapping in the
-     * real scanner is a one-line change here, because every caller depends on
-     * the [DeviceScanner] interface rather than this implementation.
+     * Badge discovery and BLE provisioning. Held as [BleDeviceScanner] rather
+     * than [DeviceScanner] because the pairing sheet also asks it whether
+     * Bluetooth and its permissions are actually available before scanning.
      */
-    val deviceScanner: DeviceScanner = SimulatedDeviceScanner()
+    val deviceScanner: BleDeviceScanner = BleDeviceScanner(context)
+
+    /**
+     * Live speech to and from badges (UDP 5002). Unlike the control channel this
+     * one *is* touched by a screen — Direct Call pushes the phone mic through it
+     * — so it is exposed rather than hidden behind [badgeRegistry].
+     */
+    val badgeAudio: BadgeAudioServer = BadgeAudioServer(context)
+
+    /**
+     * The badge control channel (TCP 5001 + mDNS). Started by
+     * [com.example.viko.VikoApplication]; it writes straight into the
+     * repositories above, so no screen depends on it directly.
+     */
+    val badgeRegistry = BadgeRegistry(
+        server = BadgeControlServer(context),
+        audio = badgeAudio,
+        workers = workerRepository,
+        channels = channelRepository,
+        alerts = alertRepository
+    )
 
     val databaseSeeder = DatabaseSeeder(
         workerRepository = workerRepository,

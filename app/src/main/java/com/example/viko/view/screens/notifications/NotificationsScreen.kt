@@ -1,5 +1,7 @@
 package com.example.viko.view.screens.notifications
 
+import com.example.viko.view.theme.VikoTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -58,7 +60,12 @@ import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
 
-/** The emergency feed: every SOS a badge has raised, newest first. */
+/**
+ * The emergency feed: every SOS a badge has raised, newest first.
+ *
+ * Resolves the ViewModel and delegates; the layout lives in the stateless
+ * overload so @Preview can render it without an Application or database.
+ */
 @Composable
 fun NotificationsScreen(
     onBack: () -> Unit,
@@ -66,7 +73,23 @@ fun NotificationsScreen(
     viewModel: NotificationsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    NotificationsScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onDirectCall = onDirectCall,
+        onResolve = viewModel::resolve,
+        onResolveAll = viewModel::resolveAll
+    )
+}
 
+@Composable
+fun NotificationsScreen(
+    uiState: NotificationsUiState,
+    onBack: () -> Unit,
+    onDirectCall: (String) -> Unit,
+    onResolve: (String) -> Unit,
+    onResolveAll: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -93,7 +116,7 @@ fun NotificationsScreen(
                     fontSize = 15.sp,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { viewModel.resolveAll() }
+                        .clickable { onResolveAll() }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -114,7 +137,7 @@ fun NotificationsScreen(
                     AlertCard(
                         alert = alert,
                         onDirectCall = { onDirectCall(alert.workerId) },
-                        onResolve = { viewModel.resolve(alert.id) }
+                        onResolve = { onResolve(alert.id) }
                     )
                 }
             }
@@ -259,6 +282,47 @@ private fun AlertActionButton(
             text = text,
             style = MaterialTheme.typography.titleMedium,
             color = VOnSurface
+        )
+    }
+}
+
+private fun previewAlert(id: String, name: String, status: AlertStatus, timeAgo: String) =
+    EmergencyAlert(
+        id = id,
+        workerId = "w$id",
+        workerName = name,
+        zone = "Warehouse A",
+        team = "Warehouse",
+        timeAgo = timeAgo,
+        status = status
+    )
+
+/** Active and resolved alerts side by side — the two card treatments. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun NotificationsScreenPreview() {
+    VikoTheme {
+        NotificationsScreen(
+            uiState = NotificationsUiState(
+                alerts = listOf(
+                    previewAlert("1", "Budi", AlertStatus.ACTIVE, "2 min ago"),
+                    previewAlert("2", "Sari", AlertStatus.ACKNOWLEDGED, "14 min ago"),
+                    previewAlert("3", "Andi", AlertStatus.RESOLVED, "1 hr ago")
+                )
+            ),
+            onBack = {}, onDirectCall = {}, onResolve = {}, onResolveAll = {}
+        )
+    }
+}
+
+/** Nothing has happened — the state you hope to see most of the time. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun NotificationsScreenEmptyPreview() {
+    VikoTheme {
+        NotificationsScreen(
+            uiState = NotificationsUiState(),
+            onBack = {}, onDirectCall = {}, onResolve = {}, onResolveAll = {}
         )
     }
 }

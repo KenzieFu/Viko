@@ -1,5 +1,8 @@
 package com.example.viko.view.screens.channel
 
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewChannel
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -282,4 +285,25 @@ fun AddNewChannelSheetContent(
             onClick = { onCreate(name.trim()) }
         )
     }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun SelectChannelSheetContentPreview() {
+    VikoTheme {
+        SelectChannelSheetContent(
+            channels = listOf(previewChannel("c1", "Warehouse"), previewChannel("c2", "Assembly")),
+            selectedChannelId = "c1",
+            onSelect = {},
+            onRequestAddChannel = {},
+            onBack = {},
+            memberCounts = mapOf("c1" to 3, "c2" to 1)
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun AddNewChannelSheetContentPreview() {
+    VikoTheme { AddNewChannelSheetContent(prefill = "Loading Bay", onCreate = {}, onClose = {}) }
 }

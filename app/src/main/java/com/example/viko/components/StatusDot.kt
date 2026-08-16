@@ -24,7 +24,7 @@ fun StatusDot(isOnline: Boolean, size: Dp = 8.dp) {
     )
 }
 
-@Preview
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
 private fun StatusDotPreview() {
     VikoTheme {

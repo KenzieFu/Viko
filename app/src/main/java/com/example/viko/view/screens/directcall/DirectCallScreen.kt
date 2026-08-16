@@ -1,5 +1,18 @@
 package com.example.viko.view.screens.directcall
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.example.viko.type.WorkerStatus
+import com.example.viko.view.theme.VikoTheme
+import com.example.viko.view.screens.previewWorker
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -65,7 +78,41 @@ fun DirectCallScreen(
     viewModel: DirectCallViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
+    // Asked for on first press rather than on entry: the supervisor may only
+    // ever listen, and a permission dialog thrown at a screen they opened to
+    // hear someone is noise. Granting it starts the stream immediately, so the
+    // press that triggered the prompt isn't wasted.
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMicPermission = granted
+        if (granted) viewModel.toggleTalking()
+    }
+
+    DirectCallScreen(
+        uiState = uiState,
+        onBack = onBack,
+        onToggleTalking = {
+            if (hasMicPermission) viewModel.toggleTalking()
+            else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    )
+}
+
+@Composable
+fun DirectCallScreen(
+    uiState: DirectCallUiState,
+    onBack: () -> Unit,
+    onToggleTalking: () -> Unit
+) {
     // Room answers a frame or two after navigation, and the member could be
     // removed while this is open. Either way the close button has to stay
     // reachable — an early return here leaves a black screen with no way out.
@@ -110,8 +157,14 @@ fun DirectCallScreen(
 
         CallerIdentity(worker = worker, isMemberTalking = isMemberTalking)
 
-        if (uiState.translation != null && isMemberTalking) {
-            TranslationCard(text = uiState.translation.orEmpty())
+        // The transcript card has nothing to show until ASR/NMT lands — speech
+        // is carried as live audio, not text. Until then the slot is used for
+        // the one thing worth saying: why a press to talk did nothing.
+        when {
+            uiState.translation != null && isMemberTalking ->
+                TranslationCard(text = uiState.translation.orEmpty())
+
+            uiState.talkError != null -> TranslationCard(text = uiState.talkError)
         }
 
         Spacer(modifier = Modifier.weight(1f))
@@ -119,7 +172,7 @@ fun DirectCallScreen(
         PushToTalkSlot(
             isSupervisorTalking = isSupervisorTalking,
             isMemberTalking = isMemberTalking,
-            onToggle = viewModel::toggleTalking
+            onToggle = onToggleTalking
         )
 
         Spacer(modifier = Modifier.navigationBarsPadding())
@@ -250,4 +303,41 @@ private fun RadialGlow(size: Dp) {
                 )
             )
     )
+}
+
+/** Member holding the channel, with a translation coming through. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenListeningPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Budi", status = WorkerStatus.SPEAKING),
+                callState = CallState.LISTENING,
+                translation = "Mesin nomor tiga berhenti, saya perlu bantuan."
+            ),
+            onBack = {}, onToggleTalking = {}
+        )
+    }
+}
+
+/** Idle — nobody talking. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenIdlePreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(worker = previewWorker(name = "Sari")),
+            onBack = {}, onToggleTalking = {}
+        )
+    }
+}
+
+/** Worker not resolved — the escape hatch, easy to break and hard to reach by hand. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenMissingWorkerPreview() {
+    VikoTheme {
+        DirectCallScreen(uiState = DirectCallUiState(worker = null), onBack = {}, onToggleTalking = {})
+    }
 }

@@ -1,5 +1,7 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VikoTheme
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,18 +37,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.viko.R
 import com.example.viko.components.AnnouncementWaveBackground
+import com.example.viko.components.AnnouncementWaveHeight
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VListeningPanel
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VShadow
 import com.example.viko.view.theme.VSurface
 
+private val ANNOUNCE_BUTTON = 120.dp
+
+/** Space between the "From …" line and the button. */
+private val ANNOUNCE_BUTTON_GAP = 66.dp
+
 /**
  * All-channel announcement. Draws its own drag handle and corner radius because
- * the sheet turns navy while the manager holds the floor — the host passes a
- * transparent container so this can own the whole surface.
+ * the host passes a transparent container so this can own the whole surface.
+ *
+ * The surface itself does not change while speaking — the wave is the only thing
+ * that reacts, which keeps this consistent with the SOS sheet.
  */
 @Composable
 fun AnnouncementSheetContent(onClose: () -> Unit) {
@@ -57,7 +66,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
             .fillMaxWidth()
             .height(384.dp)
             .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(if (isSpeaking) VListeningPanel else VSurface)
+            .background(VSurface)
             .navigationBarsPadding()
     ) {
         if (isSpeaking) {
@@ -65,7 +74,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(236.dp)
+                    .height(AnnouncementWaveHeight)
             )
         }
 
@@ -106,47 +115,40 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(if (isSpeaking) 64.dp else 66.dp))
+            Spacer(modifier = Modifier.height(ANNOUNCE_BUTTON_GAP))
 
+            // Size and gap are the same in both states so the button cannot shift
+            // when you tap it — only fill, rim and shadow change. The shadow is a
+            // draw-only modifier, so dropping it while speaking costs no layout.
             Box(
-                modifier = Modifier.size(if (isSpeaking) 118.dp else 120.dp),
+                modifier = Modifier
+                    .size(ANNOUNCE_BUTTON)
+                    .then(
+                        if (isSpeaking) Modifier
+                        else Modifier.shadow(2.dp, CircleShape, spotColor = VShadow)
+                    )
+                    .clip(CircleShape)
+                    .background(if (isSpeaking) VAccentBlue else VSurface)
+                    .then(
+                        if (isSpeaking) Modifier
+                        else Modifier.border(1.dp, VBorder, CircleShape)
+                    )
+                    .clickable { isSpeaking = !isSpeaking },
                 contentAlignment = Alignment.Center
             ) {
-                if (!isSpeaking) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .shadow(2.dp, CircleShape, spotColor = VShadow)
-                            .clip(CircleShape)
-                            .background(VSurface)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(if (isSpeaking) 118.dp else 120.dp)
-                        .clip(CircleShape)
-                        .background(if (isSpeaking) VAccentBlue else VSurface)
-                        .border(
-                            width = if (isSpeaking) 0.dp else 1.dp,
-                            color = VBorder,
-                            shape = CircleShape
-                        )
-                        .clickable { isSpeaking = !isSpeaking },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_announce),
-                        contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
-                        tint = if (isSpeaking) Color.White else VAccentBlue,
-                        modifier = Modifier.size(46.dp)
-                    )
-                }
-            }
-
-            if (!isSpeaking) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_announce),
+                    contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
+                    tint = if (isSpeaking) Color.White else VAccentBlue,
+                    modifier = Modifier.size(46.dp)
+                )
             }
         }
     }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun AnnouncementSheetContentPreview() {
+    VikoTheme { AnnouncementSheetContent(onClose = {}) }
 }
