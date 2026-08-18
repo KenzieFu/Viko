@@ -18,6 +18,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -97,6 +99,22 @@ class BadgeAudioServer(context: Context) {
         private const val IDLE_TIMEOUT_MS = 400
 
         private const val REBIND_DELAY_MS = 2_000L
+
+        /**
+         * Writes each received utterance to a WAV under the app's external files
+         * dir, for diagnosing bad audio off the real phone path. Set false to
+         * turn off; it costs one file write per utterance and nothing else.
+         *
+         * The point is that a log can only report what the manager *decided*
+         * about a chunk. When speech arrives distorted, the bytes themselves are
+         * the evidence, and this is the only place they exist unmodified —
+         * [AudioTrack] is a sink, not something that can be read back.
+         */
+        private const val DEBUG_CAPTURE = true
+
+        /** Cap on one captured utterance, so a stuck stream cannot eat storage. */
+        private const val CAPTURE_MAX_SECONDS = 30
+        private const val CAPTURE_MAX_BYTES = SAMPLE_RATE * 2 * CAPTURE_MAX_SECONDS
     }
 
     private val appContext = context.applicationContext
@@ -122,6 +140,14 @@ class BadgeAudioServer(context: Context) {
     private var captureJob: Job? = null
 
     private var track: AudioTrack? = null
+
+    /**
+     * Buffers the utterance currently arriving, when [DEBUG_CAPTURE] is on.
+     * Buffered rather than streamed to disk purely so the WAV header can be
+     * written once with the real length — 30s of 16kHz mono is under a megabyte,
+     * which is a different scale of problem from the badge's ~400KB of RAM.
+     */
+    private var capture: ByteArrayOutputStream? = null
 
     /**
      * Sequence counter for outgoing audio, reset per utterance so the badge sees
@@ -221,6 +247,11 @@ class BadgeAudioServer(context: Context) {
 
         val audioLength = length - audioOffset
         if (audioLength <= 0) return
+
+        if (DEBUG_CAPTURE) {
+            val sink = capture ?: ByteArrayOutputStream().also { capture = it }
+            if (sink.size() < CAPTURE_MAX_BYTES) sink.write(data, audioOffset, audioLength)
+        }
         play(data, audioOffset, audioLength)
     }
 
@@ -271,6 +302,46 @@ class BadgeAudioServer(context: Context) {
 
     private fun stopPlayback() {
         track?.takeIf { it.playState == AudioTrack.PLAYSTATE_PLAYING }?.stop()
+        if (DEBUG_CAPTURE) writeCapture()
+    }
+
+    /**
+     * Flushes the buffered utterance to `badge_audio.wav`, overwriting the
+     * previous one. Called from the same idle timeout that stops playback, so
+     * one press of PTT produces one file with no button to remember to press.
+     *
+     * Pull it with:
+     *   adb pull /sdcard/Android/data/com.example.viko/files/badge_audio.wav
+     */
+    private fun writeCapture() {
+        val pcm = capture?.takeIf { it.size() > 0 }?.toByteArray() ?: return
+        capture = null
+        val target = File(appContext.getExternalFilesDir(null), "badge_audio.wav")
+        try {
+            target.outputStream().use { out ->
+                out.write(wavHeader(pcm.size))
+                out.write(pcm)
+            }
+            Log.i(TAG, "captured ${"%.1f".format(pcm.size / 2f / SAMPLE_RATE)}s -> ${target.absolutePath}")
+        } catch (e: IOException) {
+            Log.w(TAG, "could not write capture", e)
+        }
+    }
+
+    /** Canonical 44-byte mono PCM16 RIFF header. */
+    private fun wavHeader(pcmBytes: Int): ByteArray {
+        val byteRate = SAMPLE_RATE * 2
+        val out = ByteArrayOutputStream(44)
+        fun ascii(s: String) = out.write(s.toByteArray(Charsets.US_ASCII))
+        fun le32(v: Int) = out.write(byteArrayOf(
+            v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte()))
+        fun le16(v: Int) = out.write(byteArrayOf(v.toByte(), (v shr 8).toByte()))
+
+        ascii("RIFF"); le32(36 + pcmBytes); ascii("WAVE")
+        ascii("fmt "); le32(16); le16(1); le16(1)      // PCM, mono
+        le32(SAMPLE_RATE); le32(byteRate); le16(2); le16(16)
+        ascii("data"); le32(pcmBytes)
+        return out.toByteArray()
     }
 
     /**
