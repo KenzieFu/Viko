@@ -104,6 +104,16 @@ class BadgeAudioServer(context: Context) {
     /** Last known IP per `device_id`. Rewritten whenever a badge is heard from. */
     private val badgeAddresses = ConcurrentHashMap<String, InetAddress>()
 
+    /**
+     * Last `sequence` seen per badge, purely so [onChunkReceived] can report
+     * gaps. Chunks are numbered consecutively from 0 at every `ptt_start`, so a
+     * jump means the network ate 20ms of speech — audible as a click or a
+     * clipped syllable, and impossible to diagnose from the badge, which has no
+     * idea its datagram never arrived. If this stays quiet while audio still
+     * sounds rough, the problem is capture-side, not transport.
+     */
+    private val lastSequence = ConcurrentHashMap<String, Int>()
+
     /** Bound in [start]; also used by [sendTo], so both directions share one port. */
     @Volatile
     private var socket: DatagramSocket? = null
@@ -197,6 +207,16 @@ class BadgeAudioServer(context: Context) {
             // an encoder is integrated. Playing it as PCM would be loud noise.
             Log.w(TAG, "dropping $deviceId chunk: audio_format=$format, only $PCM16 is decodable")
             return
+        }
+
+        val sequence = header.optInt("sequence", -1)
+        if (sequence >= 0) {
+            val previous = lastSequence.put(deviceId, sequence)
+            // sequence <= previous means a new utterance restarted the counter.
+            if (previous != null && sequence > previous + 1) {
+                Log.w(TAG, "$deviceId lost ${sequence - previous - 1} chunk(s) " +
+                    "(${(sequence - previous - 1) * 20}ms) before seq $sequence")
+            }
         }
 
         val audioLength = length - audioOffset
