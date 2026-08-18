@@ -55,6 +55,11 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    // On-device translation. The models themselves are not packaged - see
+    // data/ai/TranslationPipeline.
+    implementation(libs.onnxruntime.android)
+    implementation(libs.djl.tokenizers)
+    runtimeOnly(libs.djl.tokenizer.native)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -1,6 +1,7 @@
 package com.example.viko.di
 
 import android.content.Context
+import com.example.viko.data.ai.TranslationPipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
@@ -44,6 +45,13 @@ class AppContainer(context: Context) {
      * — so it is exposed rather than hidden behind [badgeRegistry].
      */
     val badgeAudio: BadgeAudioServer = BadgeAudioServer(context)
+
+    /**
+     * Vietnamese to Korean, on device. Loads nothing until a model is actually
+     * present ([TranslationPipeline.isReady]), so constructing it on every
+     * launch costs nothing.
+     */
+    val translation: TranslationPipeline = TranslationPipeline(context)
 
     /**
      * The badge control channel (TCP 5001 + mDNS). Started by
