@@ -1,0 +1,30 @@
+[
+  {
+    "audio": "vi_sample.wav",
+    "direction": "vi2ko",
+    "asr": "hàng đục này đang gấp em làm nhanh tay hơn một chút được không.",
+    "asr_normalized": "hàng đục này đang gấp em làm nhanh tay hơn một chút được không",
+    "tag": "BUSY",
+    "mt_input": "<BUSY> hàng đục này đang gấp em làm nhanh tay hơn một chút được không.",
+    "mt": "이 물건 급해요. 조금 더 빨리 할 수 있어요.",
+    "timings_s": {
+      "asr": 9.45,
+      "tag": 0.14,
+      "mt": 1.699
+    }
+  },
+  {
+    "audio": "ko_sample.wav",
+    "direction": "ko2vi",
+    "asr": "무낭이 급해서 그러는데 조금만 더 서술에 주실래요",
+    "asr_normalized": "무낭이 급해서 그러는데 조금만 더 서술에 주실래요",
+    "tag": "ERROR",
+    "mt_input": "<ERROR> 무낭이 급해서 그러는데 조금만 더 서술에 주실래요",
+    "mt": "Thùng trống đang vội, mình thêm một chút vào bản ghi chú nhé.",
+    "timings_s": {
+      "asr": 1.138,
+      "tag": 0.025,
+      "mt": 1.964
+    }
+  }
+]

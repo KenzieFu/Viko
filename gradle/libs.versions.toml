@@ -15,11 +15,15 @@ ksp = "2.2.10-2.0.2"
 # them, and 1.22 diverges from the torch reference on the golden fixture.
 onnxruntime = "1.29.0"
 djl = "0.33.0"
+# Pure-Java FFT. Whisper needs a 400-point transform and 400 = 2^4 x 5^2, so a
+# radix-2 implementation cannot do it; JTransforms handles mixed radix.
+jtransforms = "3.1"
 
 [libraries]
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 djl-tokenizers = { group = "ai.djl.huggingface", name = "tokenizers", version.ref = "djl" }
 djl-tokenizer-native = { group = "ai.djl.android", name = "tokenizer-native", version.ref = "djl" }
+jtransforms = { group = "com.github.wendykierp", name = "JTransforms", version.ref = "jtransforms" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

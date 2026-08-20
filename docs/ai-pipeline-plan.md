@@ -223,12 +223,48 @@ stop matching what the tagger was trained on.
 
 ### Phase 3 — ASR
 
-- [ ] `data/ai/WhisperAsr.kt`, parameterized by language, instantiated twice.
-- [ ] Log-mel 80 x 3000: `n_fft` 400, hop 160, 16 kHz, 30 s zero-padded.
-- [ ] Forced prefix `<|vi|>` / `<|ko|>` + `<|transcribe|><|notimestamps|>`. Never
-      auto-detect — see Traps.
+- [x] `data/ai/LogMel.kt` — log-mel in Kotlin, since it is not in the graph. Pinned to
+      `WhisperFeatureExtractor` by `LogMelTest` (6 tests, passing on device): matches the
+      reference mean/std/min/max to full float precision.
+- [x] `data/ai/WhisperAsr.kt`, parameterized by language.
+- [x] Forced prefix `<|vi|>`(50278) / `<|ko|>`(50264) + `<|transcribe|>`(50359) +
+      `<|notimestamps|>`(50363). Never auto-detect.
+- [x] `WhisperAsrTest` passing on device: **CER 0.032** against the reference transcript
+      (one word, `đục` -> `đợt`), well inside the reference's own 4.14 CER on clean audio.
 - [ ] `data/ai/SpeechPipeline.kt` — the port of `Cascade.run()`, including its LRU cache
       keyed on the normalized transcript.
+- [ ] Korean: `export_encoder_dynamic.py ko`, then push `whisper-ko`.
+
+**Measured, and how it got there.** First working version was **13.7 s** — unusable. Three
+changes took it to **2.19 s**:
+
+| | encoder | decode | total |
+|---|---|---|---|
+| as first written (2 threads, 30 s window) | 11.5 s | 2.0 s | 13.7 s |
+| 4 threads | 6.0 s | 1.7 s | 7.8 s |
+| + variable window | **1.27 s** | **0.88 s** | **2.19 s** |
+
+- **Threads 2 -> 4.** The encoder is 85% of ASR and parallelises well on 8 cores. Kept
+  below the core count so badge audio playback is not starved.
+- **Variable-length encoder.** `export_encoder_dynamic.py` re-exports with a dynamic time
+  axis; `LogMel.framesFor` then sizes the window to the audio. optimum bakes in
+  `[batch, 80, 3000]`, so a 4.6 s utterance paid for 30 s. Attention is quadratic in
+  length, hence 10x on the encoder alone.
+- **The mel filterbank is sparse.** Mel filters are triangles, so 80 x 201 x frames is
+  mostly multiplying by zero. Walking only the non-zero span halved mel extraction, 614 ms
+  -> 319 ms, bit-identical output.
+
+### Whole cascade, measured on the Redmi 13
+
+| stage | warm |
+|---|---|
+| ASR (incl. mel) | 2.19 s |
+| tagger | 0.09 s |
+| MT | 1.06 s |
+| **total** | **~3.3 s** |
+
+The Python reference is 1.94 s on an M-series Mac. TTS is still to come but is Google's and
+runs on its own thread.
 
 ### Phase 4 — the seam
 
@@ -361,7 +397,30 @@ Each of these is measured in the reference repo, not speculative.
 7. **Attention masks are additive floats** — `0.0` keep, `-100.0` mask. Not booleans, and
    not `-3.4e38`; the large sentinel destroys the int8 range.
 
-8. **int8 matmul is not bit-reproducible across CPUs, and it changes the words.**
+8. **Whisper will not stop without trailing silence.** Cut the window to exactly the
+   speech and it never emits `<|endoftext|>` — it loops the same sentence to the token
+   cap. Measured on the 4.6 s reference clip:
+
+   ```
+     +0.0s padding -> 220 tokens, ran away, sentence repeated 9 times
+     +1.4s         ->  24 tokens, terminated, one word off
+     +5.4s         ->  23 tokens, terminated, exact match with the reference
+    +25.4s (full)  ->  23 tokens, terminated, exact match
+   ```
+
+   `LogMel.PAD_FRAMES` (5 s) is therefore load-bearing, not a safety margin. Everything
+   past it buys only encoder time. `WhisperAsr` also stops when the last 12 tokens repeat
+   the 12 before them — the padding fixes the cause, that bounds the damage.
+
+9. **`quantize_dynamic` on Whisper's convolutions emits `ConvInteger`**, which ORT's CPU
+   provider has no kernel for below 1.29 — the session fails to load rather than running
+   slowly. Quantize `op_types_to_quantize=["MatMul"]`, as optimum does.
+
+10. **Encoder activation drift is not a useful correctness signal under int8.** The
+    optimum-exported encoder that transcribes at CER 0.032 measures **56%** drift against
+    fp32 torch. Judge an export by the transcript, not by activation distance.
+
+11. **int8 matmul is not bit-reproducible across CPUs, and it changes the words.**
    The golden fixture's `이 물건 급해요...` comes out of this phone as
    `이 물건 빨리 올라와요...` — same sentence shape and ending, one phrase different,
    diverging at generated token index 2 on a single marginal argmax.

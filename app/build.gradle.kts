@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.onnxruntime.android)
     implementation(libs.djl.tokenizers)
     runtimeOnly(libs.djl.tokenizer.native)
+    implementation(libs.jtransforms)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
