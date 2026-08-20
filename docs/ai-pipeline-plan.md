@@ -384,6 +384,23 @@ process.** Run one test class at a time. Production holds a single long-lived pi
 from `AppContainer`, so this is a test-harness artifact rather than an app bug — but it is
 a reminder that these sessions must never be opened per-utterance.
 
+## Verified offline, 2026-08-20
+
+The whole point of the product, checked rather than assumed. With Wi-Fi **and** mobile
+data disabled on the Redmi 13 (`ping 8.8.8.8` -> `Network is unreachable`):
+
+```
+  LogMelTest             OK (6 tests)
+  WhisperAsrTest         OK (3 tests)
+  TagClassifierTest      OK (5 tests)
+  VietnameseVoiceTest    OK (4 tests)
+  TranslationPipeline    OK
+```
+
+Both voices resolve to genuinely local data — `vi-VN-language` and `ko-kr-x-ism-local`,
+both quality 400 — after installing voice data once. Vietnamese synthesis: **28 ms** for
+2.45 s of speech, 39152 samples, exactly 16 kHz. Negligible next to the ~3.3 s cascade.
+
 ## The TTS trap that nearly shipped
 
 **`setLanguage` returning success does not mean the phone can speak offline**, and this
