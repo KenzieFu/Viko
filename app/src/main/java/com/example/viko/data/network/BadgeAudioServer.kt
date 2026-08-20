@@ -83,13 +83,24 @@ class BadgeAudioServer(context: Context) {
         private const val CHUNK_NANOS = CHUNK_MS * 1_000_000
 
         /**
-         * Chunks sent at full speed before real-time pacing begins.
+         * Chunks sent faster than real time before steady pacing begins.
          *
          * Matches `dma_buf_count` in the badge's I2S config (8 x 320 frames), so
-         * the ring is full when its speaker starts. Raising this adds latency
-         * before the worker hears anything; lowering it brings back the stutter.
+         * the ring is full by the time its speaker starts draining. Raising this
+         * adds latency before the worker hears anything; lowering it brings back
+         * the stutter.
          */
         private const val PREROLL_CHUNKS = 8
+
+        /**
+         * How much faster than real time the pre-roll goes.
+         *
+         * 4x delivers 160ms of audio in 40ms — a useful lead without ever putting
+         * more than a couple of datagrams in the badge's 6-deep UDP mailbox at
+         * once. Sending flat out overflows it and loses exactly the chunks the
+         * pre-roll was supposed to deliver.
+         */
+        private const val PREROLL_SPEEDUP = 4
 
         /** Must match AUDIO_FORMAT in PacketProtocol.h. */
         private const val PCM16 = "pcm16"
@@ -557,13 +568,24 @@ class BadgeAudioServer(context: Context) {
             offset += length
             chunk++
 
-            // Pre-roll: the first PREROLL_CHUNKS go out as fast as the socket
-            // takes them, to fill the badge's I2S DMA ring before its speaker
-            // starts draining it. The badge allocates 8 x 320 frames of slack for
-            // exactly this; pacing from the very first chunk leaves that ring one
-            // chunk deep, so any Wi-Fi retransmit underruns and the speaker
-            // stutters. Filling it first buys ~160ms of cushion for the rest.
-            if (chunk <= PREROLL_CHUNKS) continue
+            // Pre-roll: send the opening chunks FASTER than real time, but not
+            // flat out.
+            //
+            // The point is to get a lead in the badge's I2S ring before its
+            // speaker starts draining, so a Wi-Fi retransmit does not underrun it.
+            // The trap is that lwIP on ESP-IDF holds only CONFIG_LWIP_UDP_RECVMBOX_SIZE
+            // datagrams — 6 by default — and the badge cannot drain them until its
+            // loop comes round. Blasting eight in under a millisecond therefore
+            // overflows the very queue this is trying to fill, and lwIP drops the
+            // overflow before the firmware sees it.
+            //
+            // So pre-roll runs at PREROLL_SPEEDUP x real time: still building a
+            // lead, but slowly enough that the mailbox never holds more than a
+            // couple at once.
+            if (chunk <= PREROLL_CHUNKS) {
+                delay(CHUNK_MS / PREROLL_SPEEDUP)
+                continue
+            }
 
             // Pace against a deadline computed from the start, NOT delay(20ms) per
             // chunk. A fixed delay is 20ms *plus* scheduling overhead every time,
@@ -571,7 +593,10 @@ class BadgeAudioServer(context: Context) {
             // real time and the badge starves halfway through. Anchoring to
             // startedAt means a late chunk is followed by a shorter wait rather
             // than pushing everything after it further behind.
-            val dueAt = startedAt + (chunk - PREROLL_CHUNKS) * CHUNK_NANOS
+            // The pre-roll already consumed real time, so the deadline clock starts
+            // from where it left off rather than from zero.
+            val dueAt = startedAt + PREROLL_CHUNKS * CHUNK_NANOS / PREROLL_SPEEDUP +
+                (chunk - PREROLL_CHUNKS) * CHUNK_NANOS
             val waitMs = (dueAt - System.nanoTime()) / 1_000_000
             if (waitMs > 0) delay(waitMs)
         }
