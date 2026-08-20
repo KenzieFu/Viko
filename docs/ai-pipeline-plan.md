@@ -384,6 +384,50 @@ process.** Run one test class at a time. Production holds a single long-lived pi
 from `AppContainer`, so this is a test-harness artifact rather than an app bug — but it is
 a reminder that these sessions must never be opened per-utterance.
 
+## Verified against the real sockets, 2026-08-20
+
+Driven by `tools/fake_badge.py` from the IOT-Wowki repo — no ESP32 involved, but the
+actual TCP 5001 / UDP 5002 wire path rather than a fixture.
+
+```
+python3 tools/fake_badge.py <phone-ip> talk Viko-Ai/onevoice_e2e/samples/vi_sample.wav
+```
+
+Everything worked first time:
+
+- `device_register` -> the badge appeared as an online worker (`WR-001` / Nguyen /
+  Production Line 2), auto-created, no pairing step.
+- `ptt_start` -> buffer opened; 232 chunks played live while arriving.
+- `ptt_end` -> `WR-001 utterance: 73728 samples, 4.608s` — the seam captured the whole
+  turn exactly.
+- Cascade -> `'hàng đợt này đang gấp em làm nhanh tay hơn một chút được không.'` ->
+  `<BUSY>` -> `'이 라인 급해요. 조금 더 빨리 할 수 있을까요?'`
+- Both messages persisted to Room with source and target text.
+- Second identical utterance hit the LRU cache — MT skipped entirely.
+
+### Latency in the real app is worse than the benchmark, and unexplained
+
+| | encoder | decode | ASR total |
+|---|---|---|---|
+| instrumented test, fresh phone | 1.27 s | 0.88 s | **2.19 s** |
+| instrumented test, after an hour of load | ~2.0 s | ~1.7 s | **3.5 s** |
+| **inside the running app** | **4.6 s** | **5.5 s** | **10.1 s** |
+
+Two separate effects. The phone slows ~1.6x under sustained load — not thermal
+(`Thermal Status: 0`, CPU at 2.4 of 2.8 GHz), so probably a sustained-clock policy. And
+on top of that the **app path is ~3x the instrumented path on identical input**, which is
+not explained. The app is `top-app`, foreground, same process, same 4 threads.
+
+Candidates not yet eliminated: Compose recomposing an animated background continuously,
+the `AudioTrack` thread, or the two `TextToSpeech` engine connections held open. Worth
+profiling before trusting any latency figure quoted from the instrumented tests — those
+are a floor, not what a supervisor experiences.
+
+Also seen throughout playback: `playback behind: dropped 640 bytes`, repeatedly. The
+fake badge streams slightly faster than real time and `AudioTrack`'s buffer cannot
+absorb it. Harmless from a laptop; worth re-checking against real firmware, which is
+paced by its own I2S clock.
+
 ## Verified offline, 2026-08-20
 
 The whole point of the product, checked rather than assumed. With Wi-Fi **and** mobile
