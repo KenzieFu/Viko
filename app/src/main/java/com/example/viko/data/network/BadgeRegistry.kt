@@ -3,6 +3,7 @@ package com.example.viko.data.network
 import android.util.Log
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.SpeechPipeline
+import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
@@ -33,7 +34,8 @@ class BadgeRegistry(
     private val alerts: AlertRepository,
     private val messages: MessageRepository,
     private val speech: SpeechPipeline,
-    private val speaker: Speaker
+    private val speaker: Speaker,
+    private val voice: VietnameseVoice
 ) {
 
     fun start(scope: CoroutineScope) {
@@ -47,6 +49,9 @@ class BadgeRegistry(
         // socket, and it must not compete with the audio thread for IO workers.
         audio.onUtterance = { deviceId, pcm ->
             scope.launch(Dispatchers.Default) { translate(deviceId, pcm) }
+        }
+        audio.onSupervisorUtterance = { deviceId, pcm ->
+            scope.launch(Dispatchers.Default) { answer(deviceId, pcm) }
         }
     }
 
@@ -167,6 +172,50 @@ class BadgeRegistry(
                 )
             }
         }
+    }
+
+    /**
+     * One supervisor turn: Korean speech in, Vietnamese spoken out of the badge.
+     *
+     * The mirror of [translate], sharing every stage — the same tagger, the same
+     * MT weights with the direction flipped, and the same silence gate. Only the
+     * ends differ: `whisper-ko` instead of `whisper-vi`, and the result goes back
+     * over UDP as bytes rather than out of this phone's speaker.
+     *
+     * The badge already heard the raw Korean live while the button was held, so a
+     * failure here costs the translation, not the channel.
+     */
+    private suspend fun answer(deviceId: String, pcm: ByteArray) {
+        val result = runCatching {
+            speech.process(pcm, sourceLanguage = "ko", targetLanguage = "vi")
+        }.getOrElse {
+            Log.e(TAG, "reverse cascade failed for $deviceId", it)
+            return
+        }
+        val vietnamese = result.translation?.takeIf { it.isNotBlank() } ?: return
+
+        val audioBytes = voice.synthesise(vietnamese)
+        if (audioBytes == null) {
+            Log.w(TAG, "could not synthesise Vietnamese for $deviceId")
+            return
+        }
+        audio.sendPcm(deviceId, audioBytes)
+
+        val worker = workers.getWorker(deviceId)
+        messages.addMessage(
+            TranslationMessage(
+                id = "$deviceId-sup-${System.currentTimeMillis()}",
+                workerId = deviceId,
+                workerName = worker?.name ?: deviceId,
+                channelId = worker?.channelId.orEmpty(),
+                originalText = result.transcript.orEmpty(),
+                translatedText = vietnamese,
+                originalLang = result.sourceLanguage,
+                targetLang = result.targetLanguage,
+                timestamp = Instant.now().toString()
+            )
+        )
+        Log.i(TAG, "$deviceId <- '${result.transcript}' -> <${result.tag}> -> '$vietnamese'")
     }
 
     private companion object {

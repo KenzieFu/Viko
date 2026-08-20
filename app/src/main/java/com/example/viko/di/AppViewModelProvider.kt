@@ -38,6 +38,7 @@ object AppViewModelProvider {
             DirectCallViewModel(
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
+                messageRepository = container().messageRepository,
                 audio = container().badgeAudio
             )
         }

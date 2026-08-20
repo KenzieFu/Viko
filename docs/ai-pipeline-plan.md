@@ -292,8 +292,16 @@ runs on its own thread.
 - [x] `BadgeRegistry` consumes `onUtterance`, runs the cascade on `Dispatchers.Default`
       (CPU-bound inference, and it must not compete with audio for IO workers), persists
       a `TranslationMessage` and speaks the Korean. No schema change needed.
-- [ ] `DirectCallUiState.translation` stops being hardcoded `null` — the messages are
-      stored but no screen reads them yet.
+- [x] `DirectCallScreen` shows the transcript. `TranscriptCard` leads with the Korean and
+      keeps the Vietnamese underneath — the original is the only way to notice the
+      translation went wrong, and it does: ASR mishears and MT loses ~12 chrF++ on real
+      ASR text.
+      **Not gated on `SPEAKING`.** The old condition was
+      `translation != null && isMemberTalking`, which could never fire: the cascade runs
+      on the whole turn and lands seconds after the button is released.
+      The tag is deliberately **not** shown. It exists to condition MT, and an `SOS`
+      badge a supervisor might come to trust is worse than none when the reference
+      measures 26 of 105 real emergencies missed.
 
 ### Phase 6 — Flow B
 
@@ -375,6 +383,38 @@ ONNX Runtime is unaffected, it links its C++ runtime statically.
 process.** Run one test class at a time. Production holds a single long-lived pipeline
 from `AppContainer`, so this is a test-harness artifact rather than an app bug — but it is
 a reminder that these sessions must never be opened per-utterance.
+
+## The TTS trap that nearly shipped
+
+**`setLanguage` returning success does not mean the phone can speak offline**, and this
+is the single most dangerous finding in the project so far.
+
+Google's engine reports a language as available on the strength of a **server-side**
+voice, with no local data at all. `isLanguageAvailable` and `setLanguage` both return
+success. On a desk with Wi-Fi everything works. On the factory floor — which has no
+internet *by design* — synthesis fails with a bare `error status code: -4`, and the
+supervisor's reply silently never reaches the badge.
+
+Measured on the test device, which reported both languages available:
+
+```
+vi: 11 voice(s), all need a network (vi-vn-x-vic-server, vi-vn-x-vie-local, ...)
+ko:  9 voice(s), all need a network (ko-kr-x-koc-network, ko-kr-x-kod-local, ...)
+```
+
+Note the entries named `-local`: advertised, never downloaded. So the check is not "is
+there a voice" but "is there a voice that does not need a network" —
+`Voice.isNetworkConnectionRequired` plus `KEY_FEATURE_NOT_INSTALLED`. That is what
+`OfflineVoice.kt` does, and both `Speaker` and `VietnameseVoice` refuse to report Ready
+without one.
+
+**Deployment step, mandatory, and easy to forget:** every phone needs Korean *and*
+Vietnamese voice data installed **while it still has internet**, before it goes to the
+floor. `adb shell am start -a android.speech.tts.engine.INSTALL_TTS_DATA` opens the right
+screen. Roughly 20-50MB per language, one time, then fully offline.
+
+Before this check existed, `Speaker` reported Ready on a phone with no Korean voice and
+Flow A's speech would have failed with nothing logged.
 
 ## Traps
 

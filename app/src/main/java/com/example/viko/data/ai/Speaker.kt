@@ -67,6 +67,10 @@ class Speaker(context: Context) : Closeable {
             TextToSpeech.LANG_NOT_SUPPORTED ->
                 Status.Unavailable("this text-to-speech engine has no Korean voice")
             else -> {
+                // Available is not the same as usable offline — see selectOfflineVoice.
+                if (selectOfflineVoice(tts, KOREAN) == null) {
+                    return Status.Unavailable(noOfflineVoiceMessage("Korean"))
+                }
                 tts.setAudioAttributes(
                     AudioAttributes.Builder()
                         // MEDIA at loudspeaker volume, matching BadgeAudioServer's

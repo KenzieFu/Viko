@@ -3,6 +3,7 @@ package com.example.viko.di
 import android.content.Context
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.SpeechPipeline
+import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.data.ai.TagClassifier
 import com.example.viko.data.ai.TranslationPipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
@@ -83,6 +84,13 @@ class AppContainer(context: Context) {
     /** Korean out of the loudspeaker. No model — Android's built-in engine. */
     val speaker = Speaker(context)
 
+    /**
+     * Vietnamese back to the badge. Separate from [speaker] because that direction
+     * needs bytes for a UDP socket, not playback, which is a different API path
+     * entirely.
+     */
+    val vietnameseVoice = VietnameseVoice(context)
+
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
         audio = badgeAudio,
@@ -91,7 +99,8 @@ class AppContainer(context: Context) {
         alerts = alertRepository,
         messages = messageRepository,
         speech = speechPipeline,
-        speaker = speaker
+        speaker = speaker,
+        voice = vietnameseVoice
     )
 
 

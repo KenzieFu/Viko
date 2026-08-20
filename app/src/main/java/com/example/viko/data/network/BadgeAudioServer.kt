@@ -75,6 +75,9 @@ class BadgeAudioServer(context: Context) {
         private const val CHUNK_SAMPLES = 320
         private const val CHUNK_BYTES = CHUNK_SAMPLES * 2
 
+        /** How much wall-clock time one chunk represents. */
+        private const val CHUNK_MS = 1000L * CHUNK_SAMPLES / SAMPLE_RATE
+
         /** Must match AUDIO_FORMAT in PacketProtocol.h. */
         private const val PCM16 = "pcm16"
 
@@ -134,6 +137,16 @@ class BadgeAudioServer(context: Context) {
      */
     @Volatile
     var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
+
+    /**
+     * Called when the supervisor releases the talk button, with everything the
+     * phone mic captured. The mirror of [onUtterance] for the other direction.
+     */
+    @Volatile
+    var onSupervisorUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
+
+    /** The supervisor's turn, accumulating while they hold the button. */
+    private var outgoing: ByteArrayOutputStream? = null
 
     /** Bound in [start]; also used by [sendTo], so both directions share one port. */
     @Volatile
@@ -362,6 +375,8 @@ class BadgeAudioServer(context: Context) {
         }
 
         outgoingSequence = 0
+        val recorded = ByteArrayOutputStream()
+        outgoing = recorded
         captureJob = scope.launch(Dispatchers.IO) {
             val record = newRecord() ?: return@launch
             try {
@@ -373,6 +388,10 @@ class BadgeAudioServer(context: Context) {
                     val read = record.read(chunk, 0, CHUNK_BYTES)
                     if (read <= 0) continue
                     sendTo(deviceId, target, chunk, read)
+                    // Tee, exactly as the receive path does: the badge hears the
+                    // supervisor's own voice immediately, and the translation
+                    // follows a few seconds later from this copy.
+                    if (recorded.size() < MAX_UTTERANCE_BYTES) recorded.write(chunk, 0, read)
                 }
             } finally {
                 runCatching { record.stop() }
@@ -382,9 +401,49 @@ class BadgeAudioServer(context: Context) {
         return null
     }
 
-    fun stopTalking() {
+    fun stopTalking(deviceId: String? = null) {
         captureJob?.cancel()
         captureJob = null
+        val pcm = outgoing?.toByteArray()
+        outgoing = null
+        if (deviceId != null && pcm != null && pcm.isNotEmpty()) {
+            Log.i(TAG, "supervisor turn: ${pcm.size / 2} samples, ${pcm.size / (SAMPLE_RATE * 2f)}s")
+            onSupervisorUtterance?.invoke(deviceId, pcm)
+        }
+    }
+
+    /**
+     * Sends an already-prepared PCM16 buffer to a badge — synthesised Vietnamese,
+     * rather than the live mic.
+     *
+     * **Paced in real time.** The badge has a small jitter buffer sized for one
+     * chunk per 20ms, and firing a whole utterance at wire speed overruns it: the
+     * chunks arrive faster than its DAC drains them and the tail is dropped. The
+     * mic path gets this pacing for free from the blocking `AudioRecord.read`;
+     * here it has to be deliberate.
+     *
+     * Suspends for roughly the duration of the audio. Returns false if the badge's
+     * address is unknown or the socket is down.
+     */
+    suspend fun sendPcm(deviceId: String, pcm: ByteArray): Boolean {
+        val target = badgeAddresses[deviceId] ?: run {
+            Log.w(TAG, "cannot send to $deviceId: no address known")
+            return false
+        }
+        if (socket == null) {
+            Log.w(TAG, "cannot send to $deviceId: audio socket not bound")
+            return false
+        }
+        outgoingSequence = 0
+        var offset = 0
+        while (offset < pcm.size) {
+            val length = minOf(CHUNK_BYTES, pcm.size - offset)
+            sendTo(deviceId, target, pcm.copyOfRange(offset, offset + length), length)
+            offset += length
+            delay(CHUNK_MS)
+        }
+        Log.i(TAG, "sent ${pcm.size / 2} samples to $deviceId")
+        return true
     }
 
     private fun newRecord(): AudioRecord? {

@@ -157,14 +157,15 @@ fun DirectCallScreen(
 
         CallerIdentity(worker = worker, isMemberTalking = isMemberTalking)
 
-        // The transcript card has nothing to show until ASR/NMT lands — speech
-        // is carried as live audio, not text. Until then the slot is used for
-        // the one thing worth saying: why a press to talk did nothing.
+        // An error about a press that did nothing outranks a transcript: it is
+        // about right now, while the transcript is about the turn just finished.
         when {
-            uiState.translation != null && isMemberTalking ->
-                TranslationCard(text = uiState.translation.orEmpty())
-
             uiState.talkError != null -> TranslationCard(text = uiState.talkError)
+
+            uiState.translation != null || uiState.transcript != null -> TranscriptCard(
+                translation = uiState.translation,
+                original = uiState.transcript
+            )
         }
 
         Spacer(modifier = Modifier.weight(1f))
@@ -241,6 +242,52 @@ private fun TranslationCard(text: String) {
     }
 }
 
+/**
+ * What the member just said, translated, with the original underneath.
+ *
+ * The Korean leads because it is the only line the supervisor can act on. The
+ * Vietnamese stays visible rather than being hidden behind a toggle, because it
+ * is the only way to notice the translation went wrong — and it does go wrong:
+ * ASR mishears, and the reference measures MT losing ~12 chrF++ on real ASR text.
+ * A supervisor who can see both has a chance of catching it.
+ *
+ * Either half may be missing. No models pushed means no translation and no
+ * transcript at all; a model present but MT failing leaves the transcript alone,
+ * which is still worth showing.
+ */
+@Composable
+private fun TranscriptCard(translation: String?, original: String?) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(VSurfaceVariant)
+            .padding(horizontal = 18.dp, vertical = 16.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = translation ?: original.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VOnSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            // Only a second line when there is genuinely a second thing to say.
+            if (translation != null && !original.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = original,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VOnSurfaceSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
 /** Push-to-talk. The glow lives inside this slot, so it cannot reach the card. */
 @Composable
 private fun PushToTalkSlot(
@@ -314,7 +361,8 @@ private fun DirectCallScreenListeningPreview() {
             uiState = DirectCallUiState(
                 worker = previewWorker(name = "Budi", status = WorkerStatus.SPEAKING),
                 callState = CallState.LISTENING,
-                translation = "Mesin nomor tiga berhenti, saya perlu bantuan."
+                transcript = "hàng đục này đang gấp em làm nhanh tay hơn một chút được không",
+                translation = "이 물건 급해요. 조금 더 빨리 할 수 있어요."
             ),
             onBack = {}, onToggleTalking = {}
         )
@@ -334,6 +382,42 @@ private fun DirectCallScreenIdlePreview() {
 }
 
 /** Worker not resolved — the escape hatch, easy to break and hard to reach by hand. */
+/**
+ * Models are pushed by hand, so a phone with none is the shipping default — the
+ * supervisor hears the worker live and sees nothing. Worth being able to look at,
+ * since it is the state most installs will actually be in.
+ */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenNoModelsPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Sari", status = WorkerStatus.SPEAKING),
+                callState = CallState.LISTENING
+            ),
+            onBack = {},
+            onToggleTalking = {}
+        )
+    }
+}
+
+/** ASR worked but MT did not — the transcript alone is still worth showing. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenTranscriptOnlyPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Sari"),
+                transcript = "máy ép bị kẹt rồi dừng lại ngay"
+            ),
+            onBack = {},
+            onToggleTalking = {}
+        )
+    }
+}
+
 @Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
 private fun DirectCallScreenMissingWorkerPreview() {
