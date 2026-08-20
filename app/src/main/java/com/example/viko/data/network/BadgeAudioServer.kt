@@ -19,7 +19,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -156,6 +159,26 @@ class BadgeAudioServer(context: Context) {
      */
     @Volatile
     var relayLiveAudio: Boolean = false
+
+    /** Write every received utterance to `files/captures/` as a WAV, for diagnosis. */
+    @Volatile
+    var dumpUtterances: Boolean = false
+
+    /**
+     * Whether the supervisor's raw microphone is streamed to the badge while they
+     * hold the button.
+     *
+     * **Off by default, for the same two reasons as [relayLiveAudio].** The badge
+     * plays it out of its own speaker, the phone's microphone picks that back up,
+     * and it loops — the platform echo canceller cannot help, because it only
+     * knows about audio *this phone* plays. And the worker is Vietnamese: raw
+     * Korean is noise to them.
+     *
+     * The translated Vietnamese still arrives a few seconds later via
+     * [sendPcm], which is the only thing the worker can actually use.
+     */
+    @Volatile
+    var relayLiveMic: Boolean = false
 
     /**
      * Called when the supervisor releases the talk button, with everything the
@@ -351,9 +374,70 @@ class BadgeAudioServer(context: Context) {
         val buffer = utterances.remove(deviceId) ?: return
         val pcm = buffer.toByteArray()
         if (pcm.isEmpty()) return
-        Log.i(TAG, "$deviceId utterance: ${pcm.size / 2} samples, ${pcm.size / (SAMPLE_RATE * 2f)}s")
+        Log.i(
+            TAG,
+            "$deviceId utterance: ${pcm.size / 2} samples, " +
+                "${pcm.size / (SAMPLE_RATE * 2f)}s, ${describe(pcm)}"
+        )
+        if (dumpUtterances) dump(deviceId, pcm)
         onUtterance?.invoke(deviceId, pcm)
     }
+
+    /**
+     * Peak, RMS and DC offset of an utterance — the three numbers that separate
+     * the ways badge audio goes wrong, all of which sound alike.
+     *
+     * - peak at or near 32767 is clipping; the analog stage is railing before the
+     *   ADC sees it and mic gain cannot help, only hurt.
+     * - a large DC offset means the ADC baseline is off, which sounds like a thump
+     *   and drags every mel frame with it.
+     * - rms far below peak is a mic that is mostly silence with occasional spikes,
+     *   i.e. a gate cutting speech rather than noise.
+     */
+    private fun describe(pcm: ByteArray): String {
+        val n = pcm.size / 2
+        if (n == 0) return "empty"
+        var peak = 0
+        var sum = 0.0
+        var dc = 0.0
+        for (i in 0 until n) {
+            val v = ((pcm[i * 2 + 1].toInt() shl 8) or (pcm[i * 2].toInt() and 0xFF)).toShort().toInt()
+            if (kotlin.math.abs(v) > peak) peak = kotlin.math.abs(v)
+            sum += v.toDouble() * v
+            dc += v
+        }
+        val rms = kotlin.math.sqrt(sum / n)
+        return "peak $peak, rms ${"%.0f".format(rms)}, dc ${"%.0f".format(dc / n)}" +
+            if (peak >= 32000) "  ** CLIPPING **" else ""
+    }
+
+    /**
+     * Writes the utterance to `files/captures/` as a playable WAV.
+     *
+     * Off by default. Badge audio that transcribes wrongly is nearly impossible to
+     * diagnose by ear over a factory floor, and this is the only way to get the
+     * exact bytes the ASR saw onto a workstation where they can be looked at.
+     */
+    private fun dump(deviceId: String, pcm: ByteArray) {
+        runCatching {
+            val dir = File(appContext.getExternalFilesDir(null), "captures").apply { mkdirs() }
+            val file = File(dir, "$deviceId-${System.currentTimeMillis()}.wav")
+            file.outputStream().use { out ->
+                out.write(wavHeader(pcm.size))
+                out.write(pcm)
+            }
+            Log.i(TAG, "wrote ${file.absolutePath}")
+        }.onFailure { Log.w(TAG, "could not dump utterance", it) }
+    }
+
+    /** Canonical 44-byte PCM16 mono header. */
+    private fun wavHeader(dataBytes: Int): ByteArray =
+        ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(36 + dataBytes); put("WAVE".toByteArray())
+            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1)
+            putInt(SAMPLE_RATE); putInt(SAMPLE_RATE * 2); putShort(2); putShort(16)
+            put("data".toByteArray()); putInt(dataBytes)
+        }.array()
 
     /**
      * Records the IP a badge was last seen at. Called with the source address of
@@ -406,10 +490,9 @@ class BadgeAudioServer(context: Context) {
                     // 20ms, no sleep needed and no drift.
                     val read = record.read(chunk, 0, CHUNK_BYTES)
                     if (read <= 0) continue
-                    sendTo(deviceId, target, chunk, read)
-                    // Tee, exactly as the receive path does: the badge hears the
-                    // supervisor's own voice immediately, and the translation
-                    // follows a few seconds later from this copy.
+                    if (relayLiveMic) sendTo(deviceId, target, chunk, read)
+                    // Always buffered, whether or not it is also relayed: this copy
+                    // is what gets transcribed and translated.
                     if (recorded.size() < MAX_UTTERANCE_BYTES) recorded.write(chunk, 0, read)
                 }
             } finally {
