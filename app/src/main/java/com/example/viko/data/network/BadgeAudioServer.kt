@@ -54,12 +54,13 @@ import java.util.concurrent.ConcurrentHashMap
  * control message via [rememberBadge] — so the manager can talk to a badge that
  * has not spoken yet.
  *
- * **Where translation goes.** Received audio is played as-is, so the supervisor
- * hears the worker live. That is a working voice link, not a translated one:
- * the ASR/NMT/TTS pipeline does not exist yet. When it does, it belongs between
- * [onChunkReceived] and [play] — feed the incoming chunk to ASR, and send the
- * TTS output back with [sendTo] instead of pushing the phone mic. The transport
- * needs no changes for that; both directions already carry arbitrary PCM16.
+ * **Where translation goes.** Received audio is still played as-is, so the
+ * supervisor hears the worker live with no pipeline latency in the way. In
+ * parallel it is accumulated per badge, and the silence that ends a push-to-talk
+ * press hands the whole utterance to [onUtterance] — which
+ * `com.example.viko.data.ai.VoicePipeline` answers, sending Korean back through
+ * [sendUtterance]. Nothing here knows what a translation is; the transport just
+ * grew an utterance boundary and a way to push a finished buffer.
  */
 class BadgeAudioServer(context: Context) {
 
