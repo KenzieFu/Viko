@@ -80,6 +80,16 @@ class BadgeAudioServer(context: Context) {
 
         /** How much wall-clock time one chunk represents. */
         private const val CHUNK_MS = 1000L * CHUNK_SAMPLES / SAMPLE_RATE
+        private const val CHUNK_NANOS = CHUNK_MS * 1_000_000
+
+        /**
+         * Chunks sent at full speed before real-time pacing begins.
+         *
+         * Matches `dma_buf_count` in the badge's I2S config (8 x 320 frames), so
+         * the ring is full when its speaker starts. Raising this adds latency
+         * before the worker hears anything; lowering it brings back the stutter.
+         */
+        private const val PREROLL_CHUNKS = 8
 
         /** Must match AUDIO_FORMAT in PacketProtocol.h. */
         private const val PCM16 = "pcm16"
@@ -538,13 +548,41 @@ class BadgeAudioServer(context: Context) {
         }
         outgoingSequence = 0
         var offset = 0
+        var chunk = 0
+        val startedAt = System.nanoTime()
+
         while (offset < pcm.size) {
             val length = minOf(CHUNK_BYTES, pcm.size - offset)
             sendTo(deviceId, target, pcm.copyOfRange(offset, offset + length), length)
             offset += length
-            delay(CHUNK_MS)
+            chunk++
+
+            // Pre-roll: the first PREROLL_CHUNKS go out as fast as the socket
+            // takes them, to fill the badge's I2S DMA ring before its speaker
+            // starts draining it. The badge allocates 8 x 320 frames of slack for
+            // exactly this; pacing from the very first chunk leaves that ring one
+            // chunk deep, so any Wi-Fi retransmit underruns and the speaker
+            // stutters. Filling it first buys ~160ms of cushion for the rest.
+            if (chunk <= PREROLL_CHUNKS) continue
+
+            // Pace against a deadline computed from the start, NOT delay(20ms) per
+            // chunk. A fixed delay is 20ms *plus* scheduling overhead every time,
+            // so it compounds: over a long utterance the phone sends slower than
+            // real time and the badge starves halfway through. Anchoring to
+            // startedAt means a late chunk is followed by a shorter wait rather
+            // than pushing everything after it further behind.
+            val dueAt = startedAt + (chunk - PREROLL_CHUNKS) * CHUNK_NANOS
+            val waitMs = (dueAt - System.nanoTime()) / 1_000_000
+            if (waitMs > 0) delay(waitMs)
         }
-        Log.i(TAG, "sent ${pcm.size / 2} samples to $deviceId")
+
+        val elapsed = (System.nanoTime() - startedAt) / 1_000_000
+        val audioMs = pcm.size / 2 * 1000L / SAMPLE_RATE
+        Log.i(
+            TAG,
+            "sent ${pcm.size / 2} samples (${audioMs}ms of audio) to $deviceId in ${elapsed}ms" +
+                if (elapsed > audioMs + 500) "  ** SLOWER THAN REAL TIME — badge will stutter **" else ""
+        )
         return true
     }
 
