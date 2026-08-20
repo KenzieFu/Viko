@@ -1,6 +1,8 @@
 package com.example.viko.di
 
 import android.content.Context
+import com.example.viko.data.ai.Speaker
+import com.example.viko.data.ai.SpeechPipeline
 import com.example.viko.data.ai.TagClassifier
 import com.example.viko.data.ai.TranslationPipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
@@ -52,14 +54,6 @@ class AppContainer(context: Context) {
      * [com.example.viko.VikoApplication]; it writes straight into the
      * repositories above, so no screen depends on it directly.
      */
-    val badgeRegistry = BadgeRegistry(
-        server = BadgeControlServer(context),
-        audio = badgeAudio,
-        workers = workerRepository,
-        channels = channelRepository,
-        alerts = alertRepository
-    )
-
     /**
      * On-device Vietnamese <-> Korean translation.
      *
@@ -78,6 +72,28 @@ class AppContainer(context: Context) {
      * independently: a phone with the tagger but no translator should still tag.
      */
     val tagClassifier = TagClassifier(context)
+
+    /**
+     * Speech in, translated text out — the whole cascade, in the order the
+     * reference defines. Holds the ASR models lazily, so a phone that only ever
+     * hears badge Vietnamese never maps the Korean model's 451MB.
+     */
+    val speechPipeline = SpeechPipeline(context, tagClassifier, translationPipeline)
+
+    /** Korean out of the loudspeaker. No model — Android's built-in engine. */
+    val speaker = Speaker(context)
+
+    val badgeRegistry = BadgeRegistry(
+        server = BadgeControlServer(context),
+        audio = badgeAudio,
+        workers = workerRepository,
+        channels = channelRepository,
+        alerts = alertRepository,
+        messages = messageRepository,
+        speech = speechPipeline,
+        speaker = speaker
+    )
+
 
     val databaseSeeder = DatabaseSeeder(
         workerRepository = workerRepository,

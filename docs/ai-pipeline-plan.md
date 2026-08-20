@@ -231,9 +231,9 @@ stop matching what the tagger was trained on.
       `<|notimestamps|>`(50363). Never auto-detect.
 - [x] `WhisperAsrTest` passing on device: **CER 0.032** against the reference transcript
       (one word, `đục` -> `đợt`), well inside the reference's own 4.14 CER on clean audio.
-- [ ] `data/ai/SpeechPipeline.kt` — the port of `Cascade.run()`, including its LRU cache
-      keyed on the normalized transcript.
-- [ ] Korean: `export_encoder_dynamic.py ko`, then push `whisper-ko`.
+- [x] `data/ai/SpeechPipeline.kt` — the port of `Cascade.run()`, with its LRU cache keyed
+      on the normalised transcript and lazy per-language ASR.
+- [x] Korean encoder re-exported dynamic and pushed. On-device set is now **2.8 GB**.
 
 **Measured, and how it got there.** First working version was **13.7 s** — unusable. Three
 changes took it to **2.19 s**:
@@ -268,18 +268,32 @@ runs on its own thread.
 
 ### Phase 4 — the seam
 
-- [ ] Utterance buffer in `BadgeAudioServer`, flushed on `ptt_end`.
-- [ ] Callback from `BadgeRegistry`, which already parses `ptt_start`/`ptt_end`.
-- [ ] Do **not** trigger on `IDLE_TIMEOUT_MS` — that is a clock-drift heuristic, not an
-      utterance boundary.
+- [x] Utterance buffer in `BadgeAudioServer`, per `device_id`, flushed on `ptt_end` via
+      an `onUtterance` callback. Capped at 30s so a lost `ptt_end` cannot grow it without
+      bound.
+- [x] Driven by `ptt_start`/`ptt_end` from `BadgeRegistry`, **not** `IDLE_TIMEOUT_MS` —
+      that is a clock-drift heuristic and a pause in speech is not the end of a turn.
+- [x] **Tee, not intercept.** `play()` is untouched and still gets every chunk the moment
+      it arrives, so the live voice link survives any failure downstream.
+- [x] Silence gate in `SpeechPipeline`, before ASR. Whisper does not return empty for
+      silence, it **invents** — fed one second of zeros this build produced
+      *"một tình yêu thích nhất là tình yêu thích nhất là tình yêu."* Speaking words
+      nobody said is the worst failure available here. The threshold is deliberately low
+      (RMS 200): it catches a dead mic or a tapped button, not a quiet voice under
+      factory noise.
 
 ### Phase 5 — output (Flow A complete)
 
-- [ ] `data/ai/Speaker.kt` — `TextToSpeech` ko-KR. Check `isLanguageAvailable` at
-      startup, not on first use.
-- [ ] Persist `TranslationMessage`. No schema change — it already carries
-      `originalText`, `translatedText`, `originalLang`, `targetLang`.
-- [ ] `DirectCallUiState.translation` stops being hardcoded `null`.
+- [x] `data/ai/Speaker.kt` — `TextToSpeech` ko-KR, `QUEUE_FLUSH` so a newer utterance
+      interrupts a stale one, `USAGE_MEDIA` so it comes out of the loudspeaker rather
+      than the earpiece. Language checked at construction and exposed as `status`, not
+      discovered on first use: a missing voice fails **silently**, which on this channel
+      is the worst behaviour available.
+- [x] `BadgeRegistry` consumes `onUtterance`, runs the cascade on `Dispatchers.Default`
+      (CPU-bound inference, and it must not compete with audio for IO workers), persists
+      a `TranslationMessage` and speaks the Korean. No schema change needed.
+- [ ] `DirectCallUiState.translation` stops being hardcoded `null` — the messages are
+      stored but no screen reads them yet.
 
 ### Phase 6 — Flow B
 

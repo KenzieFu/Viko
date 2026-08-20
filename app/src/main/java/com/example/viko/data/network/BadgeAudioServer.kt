@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -97,12 +98,42 @@ class BadgeAudioServer(context: Context) {
         private const val IDLE_TIMEOUT_MS = 400
 
         private const val REBIND_DELAY_MS = 2_000L
+
+        /**
+         * Ceiling on a buffered utterance — 30s, which is also the longest window
+         * Whisper can read. Exists because `ptt_end` can be lost: UDP audio keeps
+         * arriving but the TCP packet that ends the turn may never come, and an
+         * unbounded buffer would then grow until the process dies.
+         */
+        private const val MAX_UTTERANCE_BYTES = SAMPLE_RATE * 2 * 30
     }
 
     private val appContext = context.applicationContext
 
     /** Last known IP per `device_id`. Rewritten whenever a badge is heard from. */
     private val badgeAddresses = ConcurrentHashMap<String, InetAddress>()
+
+    /**
+     * Speech accumulating between `ptt_start` and `ptt_end`, per badge.
+     *
+     * A **tee**, not an interception: [play] still gets every chunk the moment it
+     * arrives, so the supervisor hears the worker live and the voice link keeps
+     * working even if nothing downstream does. Transcription happens afterwards
+     * from this copy.
+     *
+     * Keyed by `device_id` so two badges holding their buttons at once do not
+     * interleave into one another's utterance.
+     */
+    private val utterances = ConcurrentHashMap<String, ByteArrayOutputStream>()
+
+    /**
+     * Called on `ptt_end` with the whole utterance as PCM16.
+     *
+     * Invoked on the receive thread, so the handler must hand off immediately —
+     * the cascade takes seconds and this loop has datagrams waiting.
+     */
+    @Volatile
+    var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
     /** Bound in [start]; also used by [sendTo], so both directions share one port. */
     @Volatile
@@ -202,6 +233,17 @@ class BadgeAudioServer(context: Context) {
         val audioLength = length - audioOffset
         if (audioLength <= 0) return
         play(data, audioOffset, audioLength)
+
+        // Tee into the utterance buffer if this badge is mid-turn. After play(),
+        // deliberately: a failure here must never cost the supervisor the live audio.
+        utterances[deviceId]?.let { buffer ->
+            if (buffer.size() + audioLength <= MAX_UTTERANCE_BYTES) {
+                buffer.write(data, audioOffset, audioLength)
+            } else if (buffer.size() < MAX_UTTERANCE_BYTES) {
+                Log.w(TAG, "$deviceId utterance hit ${MAX_UTTERANCE_BYTES / (SAMPLE_RATE * 2)}s, truncating")
+                buffer.write(data, audioOffset, MAX_UTTERANCE_BYTES - buffer.size())
+            }
+        }
     }
 
     /**
@@ -251,6 +293,34 @@ class BadgeAudioServer(context: Context) {
 
     private fun stopPlayback() {
         track?.takeIf { it.playState == AudioTrack.PLAYSTATE_PLAYING }?.stop()
+    }
+
+    /**
+     * Starts collecting an utterance for this badge. Called on `ptt_start`.
+     *
+     * A second `ptt_start` without an intervening `ptt_end` discards whatever was
+     * buffered rather than concatenating: the badge rebooted or a packet was lost,
+     * and half of one turn glued to another transcribes as nonsense.
+     */
+    fun beginUtterance(deviceId: String) {
+        if (utterances.put(deviceId, ByteArrayOutputStream()) != null) {
+            Log.w(TAG, "$deviceId started a new turn without ending the last — discarding it")
+        }
+    }
+
+    /**
+     * Ends the utterance and hands it to [onUtterance]. Called on `ptt_end`.
+     *
+     * Silent if nothing was buffered, which happens routinely: a badge whose
+     * button was tapped rather than held sends both control packets with no audio
+     * between them.
+     */
+    fun endUtterance(deviceId: String) {
+        val buffer = utterances.remove(deviceId) ?: return
+        val pcm = buffer.toByteArray()
+        if (pcm.isEmpty()) return
+        Log.i(TAG, "$deviceId utterance: ${pcm.size / 2} samples, ${pcm.size / (SAMPLE_RATE * 2f)}s")
+        onUtterance?.invoke(deviceId, pcm)
     }
 
     /**
