@@ -1,6 +1,8 @@
 package com.example.viko.di
 
 import android.content.Context
+import com.example.viko.data.ai.TagClassifier
+import com.example.viko.data.ai.TranslationPipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
@@ -57,6 +59,25 @@ class AppContainer(context: Context) {
         channels = channelRepository,
         alerts = alertRepository
     )
+
+    /**
+     * On-device Vietnamese <-> Korean translation.
+     *
+     * Constructed eagerly because the constructor only resolves a directory path —
+     * the ~1.8GB of ONNX sessions behind it are opened on first use, so a phone with
+     * no models pushed (the default) never pays for one.
+     *
+     * Shared rather than per-screen: one set of graphs is all the device can afford,
+     * and both directions run through the same weights.
+     */
+    val translationPipeline = TranslationPipeline(context)
+
+    /**
+     * Predicts the context tag that [translationPipeline] expects on its input.
+     * Separate objects rather than one because they are pushed, and fail,
+     * independently: a phone with the tagger but no translator should still tag.
+     */
+    val tagClassifier = TagClassifier(context)
 
     val databaseSeeder = DatabaseSeeder(
         workerRepository = workerRepository,

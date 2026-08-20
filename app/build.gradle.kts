@@ -52,6 +52,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.viewmodel.savedstate)
+    // On-device inference. ONNX Runtime runs the exported graphs; DJL supplies the
+    // HuggingFace tokenizers, whose native .so must come from the Android artifact.
+    // The models themselves are never packaged — see scripts/push-models.sh.
+    implementation(libs.onnxruntime.android)
+    implementation(libs.djl.tokenizers)
+    runtimeOnly(libs.djl.tokenizer.native)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
