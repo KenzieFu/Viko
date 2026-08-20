@@ -384,6 +384,34 @@ process.** Run one test class at a time. Production holds a single long-lived pi
 from `AppContainer`, so this is a test-harness artifact rather than an app bug — but it is
 a reminder that these sessions must never be opened per-utterance.
 
+## Real badge findings, 2026-08-20
+
+First run against actual ESP32 hardware rather than `fake_badge.py`. It associates and
+registers, and the audio is bad in two distinct ways that need separating.
+
+**Echoing — ours, not the firmware's.** The phone played arriving badge speech out its
+loudspeaker the instant it arrived, and with badge and phone in one room that feeds
+straight back into the badge's mic. `relayLiveAudio` is now **false by default**.
+
+That reverses an earlier decision, and the earlier reasoning was wrong in a specific way:
+relaying live looked free because it kept the intercom working with no models. But the
+supervisor is *Korean* — the Vietnamese being played at them is noise they cannot use,
+and the translated Korean arrives seconds later regardless. The only thing muting costs
+is proof the link is alive, which the SPEAKING indicator and the new "Translating…" card
+already provide.
+
+**Gibberish — firmware side, and expected.** The badge mic is a three-pin **analog**
+module read through the C3's ADC, not an I2S mic. The firmware's own comments are blunt
+about the ceiling: speech peaks at `swing ~1770` out of ~2048, already close to railing
+the analog stage. `wearable_badge_network.ino` ships the A/B for it — set
+`VIKO_GATE_ENABLED 0` to bypass the noise gate: if raw sounds clean and gated sounds
+raspy the gate is mistuned, and if raw is hissy too it is the mic and no firmware change
+helps.
+
+**This matters for the transcript, not for what the supervisor hears.** The Korean is
+Google TTS and is clean regardless. But garbage into ASR is garbage out, so bad badge
+audio shows up as a wrong transcript rather than as bad sound.
+
 ## Verified against the real sockets, 2026-08-20
 
 Driven by `tools/fake_badge.py` from the IOT-Wowki repo — no ESP32 involved, but the

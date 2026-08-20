@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.data.network.BadgeAudioServer
+import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
@@ -26,6 +27,12 @@ data class DirectCallUiState(
     /** [transcript] rendered in Korean for the supervisor. */
     val translation: String? = null,
     /**
+     * The cascade is running on this member's last turn. With live relay off
+     * there is otherwise nothing between the button being released and the
+     * Korean arriving, and silence reads as a broken link.
+     */
+    val isTranslating: Boolean = false,
+    /**
      * Set when the supervisor pressed talk and nothing could be sent — no mic
      * permission, or the badge has never been heard from so we have no address
      * for it. Silence with a lit-up button would be the worst possible feedback.
@@ -37,6 +44,7 @@ class DirectCallViewModel(
     savedStateHandle: SavedStateHandle,
     workerRepository: WorkerRepository,
     messageRepository: MessageRepository,
+    badgeRegistry: BadgeRegistry,
     private val audio: BadgeAudioServer
 ) : ViewModel() {
 
@@ -54,12 +62,15 @@ class DirectCallViewModel(
     private val latestMessage = messageRepository.observeMessagesFor(workerId)
         .map { it.firstOrNull() }
 
+    private val translating = badgeRegistry.translating.map { workerId in it }
+
     val uiState: StateFlow<DirectCallUiState> = combine(
         workerRepository.observeWorker(workerId),
         talking,
         talkError,
-        latestMessage
-    ) { worker, isTalking, error, message ->
+        latestMessage,
+        translating
+    ) { worker, isTalking, error, message, isTranslating ->
         DirectCallUiState(
             worker = worker,
             // The member holding their badge button is the authority: their
@@ -76,6 +87,7 @@ class DirectCallViewModel(
             // never once visible.
             transcript = message?.originalText?.takeIf { it.isNotBlank() },
             translation = message?.translatedText?.takeIf { it.isNotBlank() },
+            isTranslating = isTranslating,
             talkError = error
         )
     }.stateIn(

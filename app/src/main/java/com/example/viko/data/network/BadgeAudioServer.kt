@@ -139,6 +139,25 @@ class BadgeAudioServer(context: Context) {
     var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
     /**
+     * Whether arriving badge speech is played out of the phone's loudspeaker.
+     *
+     * **Off by default, and that is a change of mind.** Relaying live seemed free
+     * — it kept the intercom working with no models and gave instant feedback.
+     * On real hardware in one room it does two bad things: the phone's speaker
+     * feeds straight back into the badge's mic and howls, and the supervisor is
+     * Korean, so the Vietnamese they are being played is noise they cannot use.
+     *
+     * The translated Korean arrives a few seconds later either way, so the only
+     * thing lost by muting is proof the link is alive — which the SPEAKING
+     * indicator already gives.
+     *
+     * Turn it on to debug the transport, or if the badge is far enough from the
+     * phone that feedback is not a risk.
+     */
+    @Volatile
+    var relayLiveAudio: Boolean = false
+
+    /**
      * Called when the supervisor releases the talk button, with everything the
      * phone mic captured. The mirror of [onUtterance] for the other direction.
      */
@@ -245,7 +264,7 @@ class BadgeAudioServer(context: Context) {
 
         val audioLength = length - audioOffset
         if (audioLength <= 0) return
-        play(data, audioOffset, audioLength)
+        if (relayLiveAudio) play(data, audioOffset, audioLength)
 
         // Tee into the utterance buffer if this badge is mid-turn. After play(),
         // deliberately: a failure here must never cost the supervisor the live audio.

@@ -14,6 +14,10 @@ import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.type.WorkerStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
@@ -37,6 +41,21 @@ class BadgeRegistry(
     private val speaker: Speaker,
     private val voice: VietnameseVoice
 ) {
+
+    /**
+     * `device_id`s whose speech is being transcribed and translated right now.
+     *
+     * The cascade takes seconds, and with the live relay off there is otherwise
+     * nothing at all between the worker letting go of the button and the Korean
+     * arriving — the supervisor cannot tell "thinking" from "broken". Screens
+     * observe this to say which.
+     */
+    private val _translating = MutableStateFlow<Set<String>>(emptySet())
+    val translating: StateFlow<Set<String>> = _translating.asStateFlow()
+
+    private fun markTranslating(deviceId: String, active: Boolean) {
+        _translating.update { if (active) it + deviceId else it - deviceId }
+    }
 
     fun start(scope: CoroutineScope) {
         server.start(scope)
@@ -64,11 +83,16 @@ class BadgeRegistry(
      * — [BadgeAudioServer] played it as it arrived — and this simply adds nothing.
      */
     private suspend fun translate(deviceId: String, pcm: ByteArray) {
-        val result = runCatching {
+        markTranslating(deviceId, true)
+        val result = try {
             speech.process(pcm, sourceLanguage = "vi", targetLanguage = "ko")
-        }.getOrElse {
-            Log.e(TAG, "cascade failed for $deviceId", it)
+        } catch (e: Exception) {
+            Log.e(TAG, "cascade failed for $deviceId", e)
             return
+        } finally {
+            // In `finally`, so a crash or an unintelligible utterance clears the
+            // indicator too. A spinner that never stops is worse than no spinner.
+            markTranslating(deviceId, false)
         }
         if (!result.hasText) return
 
@@ -186,11 +210,14 @@ class BadgeRegistry(
      * failure here costs the translation, not the channel.
      */
     private suspend fun answer(deviceId: String, pcm: ByteArray) {
-        val result = runCatching {
+        markTranslating(deviceId, true)
+        val result = try {
             speech.process(pcm, sourceLanguage = "ko", targetLanguage = "vi")
-        }.getOrElse {
-            Log.e(TAG, "reverse cascade failed for $deviceId", it)
+        } catch (e: Exception) {
+            Log.e(TAG, "reverse cascade failed for $deviceId", e)
             return
+        } finally {
+            markTranslating(deviceId, false)
         }
         val vietnamese = result.translation?.takeIf { it.isNotBlank() } ?: return
 

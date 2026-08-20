@@ -39,6 +39,7 @@ object AppViewModelProvider {
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
                 messageRepository = container().messageRepository,
+                badgeRegistry = container().badgeRegistry,
                 audio = container().badgeAudio
             )
         }

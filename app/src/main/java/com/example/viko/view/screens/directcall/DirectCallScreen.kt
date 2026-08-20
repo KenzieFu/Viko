@@ -16,12 +16,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +58,7 @@ import com.example.viko.components.MissingWorker
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.CallState
+import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
@@ -162,6 +166,10 @@ fun DirectCallScreen(
         when {
             uiState.talkError != null -> TranslationCard(text = uiState.talkError)
 
+            // Outranks the previous transcript: the stale line underneath would
+            // read as the answer to what was just said.
+            uiState.isTranslating -> TranslatingCard()
+
             uiState.translation != null || uiState.transcript != null -> TranscriptCard(
                 translation = uiState.translation,
                 original = uiState.transcript
@@ -239,6 +247,44 @@ private fun TranslationCard(text: String) {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+/**
+ * Shown while the cascade runs on the turn that just ended.
+ *
+ * Earns its place because the badge audio is no longer relayed live: between the
+ * worker releasing the button and the Korean arriving there is now several
+ * seconds of nothing, and silence is indistinguishable from a dead link. This is
+ * the only thing telling the supervisor the phone is working.
+ */
+@Composable
+private fun TranslatingCard() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(VSurfaceVariant)
+            .padding(horizontal = 18.dp, vertical = 16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = VAccentBlue
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Translating…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = VOnSurfaceSecondary
+            )
+        }
     }
 }
 
@@ -370,6 +416,22 @@ private fun DirectCallScreenListeningPreview() {
 }
 
 /** Idle — nobody talking. */
+/** The gap the muted live relay created — several seconds of otherwise nothing. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun DirectCallScreenTranslatingPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Sari"),
+                isTranslating = true
+            ),
+            onBack = {},
+            onToggleTalking = {}
+        )
+    }
+}
+
 @Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
 @Composable
 private fun DirectCallScreenIdlePreview() {
