@@ -168,6 +168,11 @@ fun DirectCallScreen(
 
             // Outranks the previous transcript: the stale line underneath would
             // read as the answer to what was just said.
+            uiState.voiceOnly -> TranslationCard(
+                text = "Live voice • Translation off\n" +
+                    "Tap the microphone to talk; tap again to stop. Take turns with the wearable."
+            )
+
             uiState.isTranslating -> TranslatingCard()
 
             uiState.translation != null || uiState.transcript != null -> TranscriptCard(

@@ -38,7 +38,7 @@ class AppContainer(context: Context) {
 
     /**
      * Badge discovery and BLE provisioning. Held as [BleDeviceScanner] rather
-     * than [DeviceScanner] because the pairing sheet also asks it whether
+     * than [com.example.viko.domain.team.repository.DeviceScanner] because the pairing sheet also asks it whether
      * Bluetooth and its permissions are actually available before scanning.
      */
     val deviceScanner: BleDeviceScanner = BleDeviceScanner(context)
@@ -65,31 +65,31 @@ class AppContainer(context: Context) {
      * Shared rather than per-screen: one set of graphs is all the device can afford,
      * and both directions run through the same weights.
      */
-    val translationPipeline = TranslationPipeline(context)
+    val translationPipeline by lazy { TranslationPipeline(context) }
 
     /**
      * Predicts the context tag that [translationPipeline] expects on its input.
      * Separate objects rather than one because they are pushed, and fail,
      * independently: a phone with the tagger but no translator should still tag.
      */
-    val tagClassifier = TagClassifier(context)
+    val tagClassifier by lazy { TagClassifier(context) }
 
     /**
      * Speech in, translated text out — the whole cascade, in the order the
      * reference defines. Holds the ASR models lazily, so a phone that only ever
      * hears badge Vietnamese never maps the Korean model's 451MB.
      */
-    val speechPipeline = SpeechPipeline(context, tagClassifier, translationPipeline)
+    val speechPipeline by lazy { SpeechPipeline(context, tagClassifier, translationPipeline) }
 
     /** Korean out of the loudspeaker. No model — Android's built-in engine. */
-    val speaker = Speaker(context)
+    val speaker by lazy { Speaker(context) }
 
     /**
      * Vietnamese back to the badge. Separate from [speaker] because that direction
      * needs bytes for a UDP socket, not playback, which is a different API path
      * entirely.
      */
-    val vietnameseVoice = VietnameseVoice(context)
+    val vietnameseVoice by lazy { VietnameseVoice(context) }
 
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
@@ -98,9 +98,9 @@ class AppContainer(context: Context) {
         channels = channelRepository,
         alerts = alertRepository,
         messages = messageRepository,
-        speech = speechPipeline,
-        speaker = speaker,
-        voice = vietnameseVoice
+        speech = { speechPipeline },
+        speaker = { speaker },
+        voice = { vietnameseVoice }
     )
 
 

@@ -37,9 +37,9 @@ class BadgeRegistry(
     private val channels: ChannelRepository,
     private val alerts: AlertRepository,
     private val messages: MessageRepository,
-    private val speech: SpeechPipeline,
-    private val speaker: Speaker,
-    private val voice: VietnameseVoice
+    private val speech: () -> SpeechPipeline,
+    private val speaker: () -> Speaker,
+    private val voice: () -> VietnameseVoice
 ) {
 
     /**
@@ -58,9 +58,13 @@ class BadgeRegistry(
     }
 
     fun start(scope: CoroutineScope) {
+        // Subscribe before accepting packets: SharedFlow has no replay.
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            server.packets.collect(::apply)
+        }
         server.start(scope)
         audio.start(scope)
-        scope.launch { server.packets.collect(::apply) }
+        if (!VoiceMode.TRANSLATION_ENABLED) return
 
         // Runs on the receive thread, so it must not block: the cascade takes
         // seconds and there are datagrams queued behind it. Dispatchers.Default
@@ -85,7 +89,7 @@ class BadgeRegistry(
     private suspend fun translate(deviceId: String, pcm: ByteArray) {
         markTranslating(deviceId, true)
         val result = try {
-            speech.process(pcm, sourceLanguage = "vi", targetLanguage = "ko")
+            speech().process(pcm, sourceLanguage = "vi", targetLanguage = "ko")
         } catch (e: Exception) {
             Log.e(TAG, "cascade failed for $deviceId", e)
             return
@@ -113,7 +117,7 @@ class BadgeRegistry(
 
         // Only speak a real translation. Reading the Vietnamese aloud to a Korean
         // supervisor would be worse than the silence, and they already heard it.
-        result.translation?.takeIf { it.isNotBlank() }?.let { speaker.speak(it) }
+        result.translation?.takeIf { it.isNotBlank() }?.let { speaker().speak(it) }
         Log.i(TAG, "$deviceId: '${result.transcript}' -> <${result.tag}> -> '${result.translation}'")
     }
 
@@ -212,7 +216,7 @@ class BadgeRegistry(
     private suspend fun answer(deviceId: String, pcm: ByteArray) {
         markTranslating(deviceId, true)
         val result = try {
-            speech.process(pcm, sourceLanguage = "ko", targetLanguage = "vi")
+            speech().process(pcm, sourceLanguage = "ko", targetLanguage = "vi")
         } catch (e: Exception) {
             Log.e(TAG, "reverse cascade failed for $deviceId", e)
             return
@@ -221,7 +225,7 @@ class BadgeRegistry(
         }
         val vietnamese = result.translation?.takeIf { it.isNotBlank() } ?: return
 
-        val audioBytes = voice.synthesise(vietnamese)
+        val audioBytes = voice().synthesise(vietnamese)
         if (audioBytes == null) {
             Log.w(TAG, "could not synthesise Vietnamese for $deviceId")
             return

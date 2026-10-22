@@ -5,18 +5,25 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -28,6 +35,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The manager side of the badge **audio** channel — the other half of
@@ -44,24 +52,10 @@ import java.util.concurrent.ConcurrentHashMap
  * [2 bytes big-endian header length N][N bytes JSON header][raw PCM16 audio]
  * ```
  *
- * Nothing is buffered to a file or waited for: a chunk that arrives is written
- * straight to the speaker, and a chunk captured from the phone mic goes straight
- * out. Latency is one chunk plus whatever [AudioTrack] is holding, not the
- * length of the utterance. That matters at both ends — the badge cannot hold a
- * whole utterance in RAM either.
- *
- * Badges are addressed by `device_id`, never by IP: DHCP leases change on every
- * reconnect (Detailed System.docx, "Topology"). The IP behind an id is learned
- * from whatever packet arrived most recently — a UDP chunk here, or a TCP
- * control message via [rememberBadge] — so the manager can talk to a badge that
- * has not spoken yet.
- *
- * **Where translation goes.** Received audio is played as-is, so the supervisor
- * hears the worker live. That is a working voice link, not a translated one:
- * the ASR/NMT/TTS pipeline does not exist yet. When it does, it belongs between
- * [onChunkReceived] and [play] — feed the incoming chunk to ASR, and send the
- * TTS output back with [sendTo] instead of pushing the phone mic. The transport
- * needs no changes for that; both directions already carry arbitrary PCM16.
+ * A bounded FIFO separates UDP intake from blocking speaker writes. Voice-only
+ * mode bypasses all utterance collection and AI; the existing AI seam is kept.
+ * Playback is half duplex and selects one badge at a time.
+
  */
 class BadgeAudioServer(context: Context) {
 
@@ -81,26 +75,6 @@ class BadgeAudioServer(context: Context) {
         /** How much wall-clock time one chunk represents. */
         private const val CHUNK_MS = 1000L * CHUNK_SAMPLES / SAMPLE_RATE
         private const val CHUNK_NANOS = CHUNK_MS * 1_000_000
-
-        /**
-         * Chunks sent faster than real time before steady pacing begins.
-         *
-         * Matches `dma_buf_count` in the badge's I2S config (8 x 320 frames), so
-         * the ring is full by the time its speaker starts draining. Raising this
-         * adds latency before the worker hears anything; lowering it brings back
-         * the stutter.
-         */
-        private const val PREROLL_CHUNKS = 8
-
-        /**
-         * How much faster than real time the pre-roll goes.
-         *
-         * 4x delivers 160ms of audio in 40ms — a useful lead without ever putting
-         * more than a couple of datagrams in the badge's 6-deep UDP mailbox at
-         * once. Sending flat out overflows it and loses exactly the chunks the
-         * pre-roll was supposed to deliver.
-         */
-        private const val PREROLL_SPEEDUP = 4
 
         /** Must match AUDIO_FORMAT in PacketProtocol.h. */
         private const val PCM16 = "pcm16"
@@ -162,44 +136,16 @@ class BadgeAudioServer(context: Context) {
     @Volatile
     var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
-    /**
-     * Whether arriving badge speech is played out of the phone's loudspeaker.
-     *
-     * **Off by default, and that is a change of mind.** Relaying live seemed free
-     * — it kept the intercom working with no models and gave instant feedback.
-     * On real hardware in one room it does two bad things: the phone's speaker
-     * feeds straight back into the badge's mic and howls, and the supervisor is
-     * Korean, so the Vietnamese they are being played is noise they cannot use.
-     *
-     * The translated Korean arrives a few seconds later either way, so the only
-     * thing lost by muting is proof the link is alive — which the SPEAKING
-     * indicator already gives.
-     *
-     * Turn it on to debug the transport, or if the badge is far enough from the
-     * phone that feedback is not a risk.
-     */
+    /** Live relay is the default for the voice-only build. */
     @Volatile
-    var relayLiveAudio: Boolean = false
+    var relayLiveAudio: Boolean = !VoiceMode.TRANSLATION_ENABLED
 
     /** Write every received utterance to `files/captures/` as a WAV, for diagnosis. */
     @Volatile
     var dumpUtterances: Boolean = false
 
-    /**
-     * Whether the supervisor's raw microphone is streamed to the badge while they
-     * hold the button.
-     *
-     * **Off by default, for the same two reasons as [relayLiveAudio].** The badge
-     * plays it out of its own speaker, the phone's microphone picks that back up,
-     * and it loops — the platform echo canceller cannot help, because it only
-     * knows about audio *this phone* plays. And the worker is Vietnamese: raw
-     * Korean is noise to them.
-     *
-     * The translated Vietnamese still arrives a few seconds later via
-     * [sendPcm], which is the only thing the worker can actually use.
-     */
     @Volatile
-    var relayLiveMic: Boolean = false
+    var relayLiveMic: Boolean = !VoiceMode.TRANSLATION_ENABLED
 
     /**
      * Called when the supervisor releases the talk button, with everything the
@@ -209,7 +155,15 @@ class BadgeAudioServer(context: Context) {
     var onSupervisorUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
     /** The supervisor's turn, accumulating while they hold the button. */
-    private var outgoing: ByteArrayOutputStream? = null
+    private val _isTalking = MutableStateFlow(false)
+    val isTalking = _isTalking.asStateFlow()
+    private val _captureError = MutableStateFlow<String?>(null)
+    val captureError = _captureError.asStateFlow()
+    @Volatile private var submitSupervisorTurn = false
+    private val senderMutex = Mutex()
+    private val playback = PcmPlaybackQueue()
+    private var playbackJob: Job? = null
+    private var lastStatsMs = 0L
 
     /** Bound in [start]; also used by [sendTo], so both directions share one port. */
     @Volatile
@@ -224,7 +178,7 @@ class BadgeAudioServer(context: Context) {
      * Sequence counter for outgoing audio, reset per utterance so the badge sees
      * a stream starting at 0 exactly as its own does.
      */
-    private var outgoingSequence = 0
+    private var outgoingSequence = 0L
 
     val hasMicPermission: Boolean
         get() = ContextCompat.checkSelfPermission(
@@ -237,6 +191,7 @@ class BadgeAudioServer(context: Context) {
      */
     fun start(scope: CoroutineScope) {
         if (receiveJob != null) return
+        playbackJob = scope.launch(Dispatchers.IO) { playbackLoop() }
         receiveJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
@@ -251,10 +206,10 @@ class BadgeAudioServer(context: Context) {
                     // Losing the bind (Wi-Fi off, port taken) must not silently
                     // end audio for the rest of the process lifetime.
                     Log.e(TAG, "audio socket failed, rebinding in ${REBIND_DELAY_MS}ms", e)
-                    delay(REBIND_DELAY_MS)
+                    delay(REBIND_DELAY_MS.milliseconds)
                 } finally {
                     socket = null
-                    stopPlayback()
+                    playback.clear()
                 }
             }
         }
@@ -265,11 +220,10 @@ class BadgeAudioServer(context: Context) {
         val packet = DatagramPacket(buffer, buffer.size)
         while (isActive) {
             try {
+                packet.length = buffer.size // DatagramPacket shrinks after a short datagram
                 bound.receive(packet)
-            } catch (e: SocketTimeoutException) {
-                // Nothing for IDLE_TIMEOUT_MS — the utterance is over. stop()
-                // (not pause/flush) so the tail already queued still plays out.
-                stopPlayback()
+            } catch (_: SocketTimeoutException) {
+                // The playback worker independently drains its queue and releases on idle.
                 continue
             }
             onChunkReceived(packet)
@@ -294,22 +248,25 @@ class BadgeAudioServer(context: Context) {
         }.getOrNull() ?: return
         val deviceId = header.optString("device_id").ifEmpty { return }
 
-        // Learn where this badge is now. Its DHCP lease may have changed since
-        // it registered, and this is the freshest evidence we have.
+        if (header.optString("type") != "audio" ||
+            header.optString("audio_format") != PCM16 ||
+            header.optInt("sample_rate", SAMPLE_RATE) != SAMPLE_RATE ||
+            header.optInt("channels", 1) != 1) return
+        val audioLength = length - audioOffset
+        val sequence = header.optLong("sequence", -1)
+        if (audioLength !in 2..CHUNK_BYTES || audioLength % 2 != 0 ||
+            sequence !in 0..0xffffffffL) return
         badgeAddresses[deviceId] = packet.address
-
-        val format = header.optString("audio_format", PCM16)
-        if (format != PCM16) {
-            // Opus is what the docx specifies and what firmware will send once
-            // an encoder is integrated. Playing it as PCM would be loud noise.
-            Log.w(TAG, "dropping $deviceId chunk: audio_format=$format, only $PCM16 is decodable")
-            return
+        if (relayLiveAudio && !_isTalking.value) {
+            playback.offer(deviceId, sequence, data.copyOfRange(audioOffset, length),
+                android.os.SystemClock.elapsedRealtime())
         }
 
-        val audioLength = length - audioOffset
-        if (audioLength <= 0) return
-        if (relayLiveAudio) play(data, audioOffset, audioLength)
-
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastStatsMs >= 5000) {
+            lastStatsMs = now
+            Log.i(TAG, "playback ${playback.stats()}")
+        }
         // Tee into the utterance buffer if this badge is mid-turn. After play(),
         // deliberately: a failure here must never cost the supervisor the live audio.
         utterances[deviceId]?.let { buffer ->
@@ -322,27 +279,53 @@ class BadgeAudioServer(context: Context) {
         }
     }
 
-    /**
-     * ponytail: one shared [AudioTrack], so two badges talking at once are mixed
-     * by interleaving rather than actually mixed — it would sound garbled. PTT
-     * plus a supervisor watching one member makes that rare. Give each
-     * `device_id` its own track, or sum them, if group channels ever go live.
-     */
+    /** The sole owner of AudioTrack; the receive thread never waits for the DAC. */
+    private suspend fun CoroutineScope.playbackLoop() {
+        var lastPlayed = 0L
+        try {
+            while (isActive) {
+                if (_isTalking.value) {
+                    playback.clear()
+                    releasePlayback()
+                    delay(10.milliseconds)
+                    continue
+                }
+                val frame = playback.poll(40)
+                if (frame == null) {
+                    if (android.os.SystemClock.elapsedRealtime() - lastPlayed > IDLE_TIMEOUT_MS)
+                        releasePlayback()
+                    continue
+                }
+                try {
+                    if (track == null) delay(40.milliseconds) // small startup prefill for Wi-Fi jitter
+                    if (_isTalking.value) continue
+                    if (android.os.SystemClock.elapsedRealtime() - frame.receivedMs > 180) continue
+                    play(frame.pcm, 0, frame.pcm.size)
+                    lastPlayed = android.os.SystemClock.elapsedRealtime()
+                } catch (e: RuntimeException) {
+                    Log.e(TAG, "speaker unavailable", e)
+                    releasePlayback()
+                }
+            }
+        } finally { releasePlayback() }
+    }
+
     private fun play(data: ByteArray, offset: Int, length: Int) {
         val active = track ?: newTrack().also { track = it }
         if (active.playState != AudioTrack.PLAYSTATE_PLAYING) active.play()
-
-        // Non-blocking: if the buffer is full we are already behind, and
-        // blocking here would stall the receive loop and drop datagrams the OS
-        // is holding. Losing the tail of one chunk is the cheaper failure.
-        val written = active.write(data, offset, length, AudioTrack.WRITE_NON_BLOCKING)
-        if (written < length) Log.w(TAG, "playback behind: dropped ${length - written} bytes")
+        var written = 0
+        while (written < length) {
+            val count = active.write(data, offset + written, length - written, AudioTrack.WRITE_BLOCKING)
+            if (count <= 0) throw IllegalStateException("AudioTrack write failed: $count")
+            written += count
+        }
     }
 
     private fun newTrack(): AudioTrack {
         val minBuffer = AudioTrack.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
+        check(minBuffer > 0) { "16kHz speaker output unavailable" }
         return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -360,15 +343,18 @@ class BadgeAudioServer(context: Context) {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            // 4x the minimum: enough slack to ride out Wi-Fi jitter without
-            // adding audible delay (min is typically well under 100ms here).
-            .setBufferSizeInBytes(maxOf(minBuffer, CHUNK_BYTES) * 4)
+            // Respect the device minimum; target 60ms rather than 4x minimum.
+            .setBufferSizeInBytes(maxOf(minBuffer, CHUNK_BYTES * 3))
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
     }
 
-    private fun stopPlayback() {
-        track?.takeIf { it.playState == AudioTrack.PLAYSTATE_PLAYING }?.stop()
+    private fun releasePlayback() {
+        track?.let {
+            runCatching { it.pause(); it.flush() }
+            it.release()
+        }
+        track = null
     }
 
     /**
@@ -379,6 +365,7 @@ class BadgeAudioServer(context: Context) {
      * and half of one turn glued to another transcribes as nonsense.
      */
     fun beginUtterance(deviceId: String) {
+        if (!VoiceMode.TRANSLATION_ENABLED) return
         if (utterances.put(deviceId, ByteArrayOutputStream()) != null) {
             Log.w(TAG, "$deviceId started a new turn without ending the last — discarding it")
         }
@@ -480,8 +467,11 @@ class BadgeAudioServer(context: Context) {
      * channel means sending each chunk to several addresses; add that when the
      * announcement sheet is wired up, not before.
      */
+    @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
     fun startTalking(deviceId: String, scope: CoroutineScope): String? {
-        if (captureJob != null) return null
+        _captureError.value = null
+        if (!scope.isActive) return "Call screen is closing"
+        if (captureJob?.isCompleted == false) return "Microphone already active or stopping"
         if (!hasMicPermission) {
             Log.w(TAG, "cannot talk: RECORD_AUDIO not granted")
             return "Microphone permission needed to talk"
@@ -498,41 +488,63 @@ class BadgeAudioServer(context: Context) {
             return "Badge offline — nothing has been heard from it yet"
         }
 
-        outgoingSequence = 0
-        val recorded = ByteArrayOutputStream()
-        outgoing = recorded
-        captureJob = scope.launch(Dispatchers.IO) {
-            val record = newRecord() ?: return@launch
+        _captureError.value = null
+        val record = newRecord() ?: return "Microphone unavailable — close other recording apps and retry"
+        try {
+            record.startRecording()
+            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING)
+        } catch (_: Exception) {
+            record.release()
+            return "Could not start the microphone"
+        }
+        _isTalking.value = true
+        submitSupervisorTurn = false
+        // ATOMIC guarantees the finally block runs even if this screen closes
+        // before the IO dispatcher starts the job (the recorder is already open).
+        captureJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+            val recorded = if (VoiceMode.TRANSLATION_ENABLED) ByteArrayOutputStream() else null
             try {
-                record.startRecording()
-                val chunk = ByteArray(CHUNK_BYTES)
-                while (isActive) {
-                    // Blocking read paces this loop at real time — one chunk per
-                    // 20ms, no sleep needed and no drift.
-                    val read = record.read(chunk, 0, CHUNK_BYTES)
-                    if (read <= 0) continue
-                    if (relayLiveMic) sendTo(deviceId, target, chunk, read)
-                    // Always buffered, whether or not it is also relayed: this copy
-                    // is what gets transcribed and translated.
-                    if (recorded.size() < MAX_UTTERANCE_BYTES) recorded.write(chunk, 0, read)
+                senderMutex.withLock {
+                    outgoingSequence = 0
+                    val chunk = ByteArray(CHUNK_BYTES)
+                    var filled = 0
+                    while (isActive && _isTalking.value) {
+                        val read = record.read(chunk, filled, CHUNK_BYTES - filled, AudioRecord.READ_BLOCKING)
+                        if (read < 0) throw IOException("AudioRecord read failed: $read")
+                        if (read == 0) { delay(1.milliseconds); continue }
+                        filled += read
+                        if (filled < CHUNK_BYTES) continue
+                        if (relayLiveMic) sendTo(deviceId, target, chunk, filled)
+                        recorded?.let {
+                            val keep = minOf(filled, MAX_UTTERANCE_BYTES - it.size())
+                            if (keep > 0) it.write(chunk, 0, keep)
+                        }
+                        filled = 0
+                    }
+                    if (filled > 0 && filled % 2 == 0 && relayLiveMic)
+                        sendTo(deviceId, target, chunk, filled)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _captureError.value = "Voice transmission stopped: ${e.message}"
+                Log.e(TAG, "microphone stream failed", e)
             } finally {
                 runCatching { record.stop() }
                 record.release()
+                _isTalking.value = false
+                if (submitSupervisorTurn && recorded != null && recorded.size() > 0)
+                    onSupervisorUtterance?.invoke(deviceId, recorded.toByteArray())
             }
         }
         return null
     }
 
     fun stopTalking(deviceId: String? = null) {
-        captureJob?.cancel()
-        captureJob = null
-        val pcm = outgoing?.toByteArray()
-        outgoing = null
-        if (deviceId != null && pcm != null && pcm.isNotEmpty()) {
-            Log.i(TAG, "supervisor turn: ${pcm.size / 2} samples, ${pcm.size / (SAMPLE_RATE * 2f)}s")
-            onSupervisorUtterance?.invoke(deviceId, pcm)
-        }
+        // Let the current blocking read finish (20ms), then release before allowing
+        // another capture. Never snapshot a buffer while its producer is writing.
+        submitSupervisorTurn = deviceId != null
+        _isTalking.value = false
     }
 
     /**
@@ -557,78 +569,44 @@ class BadgeAudioServer(context: Context) {
             Log.w(TAG, "cannot send to $deviceId: audio socket not bound")
             return false
         }
-        outgoingSequence = 0
-        var offset = 0
-        var chunk = 0
-        val startedAt = System.nanoTime()
-
-        while (offset < pcm.size) {
-            val length = minOf(CHUNK_BYTES, pcm.size - offset)
-            sendTo(deviceId, target, pcm.copyOfRange(offset, offset + length), length)
-            offset += length
-            chunk++
-
-            // Pre-roll: send the opening chunks FASTER than real time, but not
-            // flat out.
-            //
-            // The point is to get a lead in the badge's I2S ring before its
-            // speaker starts draining, so a Wi-Fi retransmit does not underrun it.
-            // The trap is that lwIP on ESP-IDF holds only CONFIG_LWIP_UDP_RECVMBOX_SIZE
-            // datagrams — 6 by default — and the badge cannot drain them until its
-            // loop comes round. Blasting eight in under a millisecond therefore
-            // overflows the very queue this is trying to fill, and lwIP drops the
-            // overflow before the firmware sees it.
-            //
-            // So pre-roll runs at PREROLL_SPEEDUP x real time: still building a
-            // lead, but slowly enough that the mailbox never holds more than a
-            // couple at once.
-            if (chunk <= PREROLL_CHUNKS) {
-                delay(CHUNK_MS / PREROLL_SPEEDUP)
-                continue
+        if (pcm.size % 2 != 0) return false
+        return try { senderMutex.withLock {
+            outgoingSequence = 0
+            var offset = 0
+            var deadline = System.nanoTime()
+            while (offset < pcm.size) {
+                val length = minOf(CHUNK_BYTES, pcm.size - offset)
+                sendTo(deviceId, target, pcm.copyOfRange(offset, offset + length), length)
+                offset += length
+                // No fast pre-roll or unbounded catch-up bursts after a stall.
+                deadline = maxOf(deadline + CHUNK_NANOS, System.nanoTime())
+                val waitMs = (deadline - System.nanoTime()) / 1_000_000
+                if (waitMs > 0) delay(waitMs.milliseconds)
             }
-
-            // Pace against a deadline computed from the start, NOT delay(20ms) per
-            // chunk. A fixed delay is 20ms *plus* scheduling overhead every time,
-            // so it compounds: over a long utterance the phone sends slower than
-            // real time and the badge starves halfway through. Anchoring to
-            // startedAt means a late chunk is followed by a shorter wait rather
-            // than pushing everything after it further behind.
-            // The pre-roll already consumed real time, so the deadline clock starts
-            // from where it left off rather than from zero.
-            val dueAt = startedAt + PREROLL_CHUNKS * CHUNK_NANOS / PREROLL_SPEEDUP +
-                (chunk - PREROLL_CHUNKS) * CHUNK_NANOS
-            val waitMs = (dueAt - System.nanoTime()) / 1_000_000
-            if (waitMs > 0) delay(waitMs)
+            true
+        } } catch (e: IOException) {
+            Log.w(TAG, "prepared audio transmission failed", e)
+            false
         }
-
-        val elapsed = (System.nanoTime() - startedAt) / 1_000_000
-        val audioMs = pcm.size / 2 * 1000L / SAMPLE_RATE
-        Log.i(
-            TAG,
-            "sent ${pcm.size / 2} samples (${audioMs}ms of audio) to $deviceId in ${elapsed}ms" +
-                if (elapsed > audioMs + 500) "  ** SLOWER THAN REAL TIME — badge will stutter **" else ""
-        )
-        return true
     }
 
     private fun newRecord(): AudioRecord? {
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
+        if (minBuffer <= 0) return null
         val record = try {
             @Suppress("MissingPermission") // checked in startTalking
             AudioRecord(
-                // VOICE_COMMUNICATION, not MIC: it enables the platform echo
-                // canceller and noise suppressor. Without it the badge audio
-                // coming out of this phone's speaker is picked straight back up
-                // by its mic and sent to the badge, which howls.
+                // Request the platform speech capture path. Processing varies by
+                // phone; half-duplex muting is our primary feedback protection.
                 MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
                 maxOf(minBuffer, CHUNK_BYTES * 4)
             )
-        } catch (e: IllegalArgumentException) {
+        } catch (e: RuntimeException) {
             Log.e(TAG, "cannot open mic at ${SAMPLE_RATE}Hz mono", e)
             return null
         }
@@ -646,11 +624,12 @@ class BadgeAudioServer(context: Context) {
      * since every badge listens on the same port.
      */
     private fun sendTo(deviceId: String, target: InetAddress, audio: ByteArray, length: Int) {
-        val bound = socket ?: return
+        val bound = socket ?: throw IOException("Audio socket unavailable")
         val header = JSONObject().apply {
             put("type", "audio")
             put("device_id", deviceId)
-            put("sequence", outgoingSequence++)
+            put("sequence", outgoingSequence)
+            outgoingSequence = (outgoingSequence + 1) and 0xffffffffL
             put("audio_format", PCM16)
         }.toString().toByteArray(Charsets.UTF_8)
 
@@ -660,12 +639,6 @@ class BadgeAudioServer(context: Context) {
         header.copyInto(frame, 2)
         audio.copyInto(frame, 2 + header.size, 0, length)
 
-        try {
-            bound.send(DatagramPacket(frame, frame.size, target, AUDIO_PORT))
-        } catch (e: IOException) {
-            // One lost chunk is 20ms of speech. Log and keep streaming rather
-            // than tearing down the whole utterance.
-            Log.w(TAG, "chunk to $deviceId dropped", e)
-        }
+        bound.send(DatagramPacket(frame, frame.size, target, AUDIO_PORT))
     }
 }

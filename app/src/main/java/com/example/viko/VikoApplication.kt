@@ -1,7 +1,6 @@
 package com.example.viko
 
 import android.app.Application
-import android.content.pm.ApplicationInfo
 import com.example.viko.di.AppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -26,15 +25,8 @@ class VikoApplication : Application() {
         // Listening starts with the process, not with a screen: a badge registers
         // as soon as it joins the Wi-Fi, whether or not anyone has the app open
         // on the Team tab.
-        // Debug builds capture every badge utterance to files/captures/*.wav.
-        // Badge audio that transcribes wrongly cannot be diagnosed by ear over a
-        // factory floor; this is the only way to get the exact bytes ASR saw onto
-        // a workstation. Never in release — it is unbounded and it is speech.
-        // ApplicationInfo rather than BuildConfig, which AGP does not generate
-        // unless the buildConfig feature is switched on — not worth enabling for
-        // one boolean.
-        container.badgeAudio.dumpUtterances =
-            applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        // Voice tests stream only: no saved recordings or inference.
+        container.badgeAudio.dumpUtterances = false
 
         container.badgeRegistry.start(applicationScope)
 

@@ -296,7 +296,7 @@ class BleProvisioner(context: Context) {
                             configChar,
                             payload,
                             BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                        ) == BluetoothGatt.GATT_SUCCESS
+                        ) == android.bluetooth.BluetoothStatusCodes.SUCCESS
                     } else {
                         @Suppress("DEPRECATION")
                         configChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
