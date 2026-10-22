@@ -70,9 +70,6 @@ class BleProvisioner(context: Context) {
     private val _devices = MutableStateFlow<List<NearbyDevice>>(emptyList())
     val devices: StateFlow<List<NearbyDevice>> = _devices.asStateFlow()
 
-    private val _isScanning = MutableStateFlow(false)
-    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
-
     val isBluetoothEnabled: Boolean get() = adapter?.isEnabled == true
 
     // ---------------------------------------------------------------- scanning
@@ -126,11 +123,9 @@ class BleProvisioner(context: Context) {
 
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "scan failed: $errorCode")
-                _isScanning.value = false
             }
         }
         scanCallback = cb
-        _isScanning.value = true
         scanner.startScan(listOf(filter), settings, cb)
         Log.i(TAG, "scan started")
     }
@@ -139,7 +134,6 @@ class BleProvisioner(context: Context) {
     fun stopScan() {
         val cb = scanCallback ?: return
         scanCallback = null
-        _isScanning.value = false
         runCatching { adapter?.bluetoothLeScanner?.stopScan(cb) }
     }
 
@@ -185,7 +179,7 @@ class BleProvisioner(context: Context) {
         suspendCancellableCoroutine { cont ->
             val device = try {
                 adapter?.getRemoteDevice(address)
-            } catch (e: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 null
             }
             if (device == null) {
