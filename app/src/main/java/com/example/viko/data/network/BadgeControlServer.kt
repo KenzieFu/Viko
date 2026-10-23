@@ -172,9 +172,8 @@ class BadgeControlServer(context: Context) {
             }
 
             override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                // Badges fall back to the bench IP in BadgeNetwork.h when mDNS
-                // fails, so this degrades rather than breaks.
-                Log.e(TAG, "mDNS registration failed ($errorCode) — badges must use the bench IP")
+                // Discovery requires the advertisement on the local router.
+                Log.e(TAG, "mDNS registration failed ($errorCode) — check Wi-Fi and reopen ViKo")
             }
 
             override fun onServiceUnregistered(info: NsdServiceInfo) = Unit

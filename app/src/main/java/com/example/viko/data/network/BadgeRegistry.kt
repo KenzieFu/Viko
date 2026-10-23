@@ -1,6 +1,8 @@
 package com.example.viko.data.network
 
 import android.util.Log
+import com.example.viko.data.team.scanner.WifiDeviceScanner
+import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.SpeechPipeline
 import com.example.viko.data.ai.VietnameseVoice
@@ -22,8 +24,8 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 
 /**
- * Turns badge control packets into stored state: a badge that registers becomes
- * an online [Worker], a held PTT button becomes [WorkerStatus.SPEAKING], and an
+ * Lists registrations for enrollment and updates already-enrolled workers.
+ * A held PTT button becomes [WorkerStatus.SPEAKING], and an
  * emergency press becomes an [EmergencyAlert]. Every screen already observes
  * these repositories, so nothing in the UI layer needs to know a socket exists.
  *
@@ -32,6 +34,7 @@ import java.time.Instant
  */
 class BadgeRegistry(
     private val server: BadgeControlServer,
+    private val discovery: WifiDeviceScanner,
     private val audio: BadgeAudioServer,
     private val workers: WorkerRepository,
     private val channels: ChannelRepository,
@@ -130,40 +133,19 @@ class BadgeRegistry(
         val known = workers.getWorker(packet.deviceId)
 
         when (packet) {
-            // addWorker is an upsert (WorkerDao inserts with REPLACE), so a badge
-            // re-registering after a reboot updates in place instead of duplicating.
-            is BadgePacket.Register -> workers.addWorker(
-                known?.copy(
-                    name = packet.workerName.ifEmpty { known.name },
-                    zone = packet.factoryZone,
-                    // deviceAddress is left alone: it holds the BLE address the
-                    // pairing sheet matched on, and the badge reports its *Wi-Fi*
-                    // MAC here. On an ESP32 those are different addresses, and
-                    // overwriting one with the other makes an enrolled badge look
-                    // unpaired and offerable again.
+            is BadgePacket.Register -> {
+                discovery.record(NearbyDevice(packet.deviceId, "ViKo ${packet.deviceId}",
+                    packet.source.hostAddress.orEmpty()))
+                // Discovery is not enrollment. Preserve the manager's name, zone and channel.
+                if (known != null) workers.updateWorker(known.copy(
+                    deviceAddress = packet.source.hostAddress.orEmpty(),
                     macAddress = packet.macAddress,
                     firmwareVersion = packet.firmwareVersion,
                     isOnline = true,
-                    isPaired = true,
-                    status = WorkerStatus.AVAILABLE
-                ) ?: Worker(
-                    id = packet.deviceId,
-                    name = packet.workerName.ifEmpty { packet.workerId },
-                    channelId = "",
-                    zone = packet.factoryZone,
-                    deviceAddress = packet.macAddress,
-                    macAddress = packet.macAddress,
-                    firmwareVersion = packet.firmwareVersion,
-                    // The register packet carries no battery — firmware has no
-                    // battery ADC wired yet. Corrected by the first emergency packet.
-                    batteryLevel = UNKNOWN_BATTERY,
-                    isOnline = true
-                )
-            )
+                    isPaired = true
+                ))
+            }
 
-            // A PTT from a badge we've never seen register is dropped rather than
-            // conjuring a nameless worker: the badge retries registration every
-            // 10s, so it will exist shortly and the next press will land.
             is BadgePacket.Ptt -> {
                 // The utterance boundary. Deliberately driven by the button and not
                 // by a silence timeout: BadgeAudioServer's IDLE_TIMEOUT_MS exists to
@@ -192,8 +174,8 @@ class BadgeRegistry(
                         // alert, and overwriting the first would hide it.
                         id = "${packet.deviceId}-${System.currentTimeMillis()}",
                         workerId = packet.deviceId,
-                        workerName = packet.workerName.ifEmpty { known?.name ?: packet.deviceId },
-                        zone = packet.zone.ifEmpty { known?.zone.orEmpty() },
+                        workerName = known?.name ?: packet.workerName.ifEmpty { packet.deviceId },
+                        zone = known?.zone ?: packet.zone,
                         team = known?.channelId?.let { channels.getChannel(it)?.name } ?: UNASSIGNED,
                         timeAgo = "Just now"
                     )

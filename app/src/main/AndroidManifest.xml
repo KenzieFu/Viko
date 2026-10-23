@@ -2,31 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- BLE provisioning (Android 12+ / API 31+). usesPermissionFlags="neverForLocation"
-         declares we don't derive location from BLE scans, which spares the user a
-         location-permission prompt on 12+. -->
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <!-- BLE provisioning (Android 11 and below). ACCESS_FINE_LOCATION is required
-         for BLE scanning to return ANY results pre-12 — without it the scan
-         silently succeeds and reports zero devices. Location Services must also
-         be switched on at the OS level on those versions. -->
-    <uses-permission
-        android:name="android.permission.BLUETOOTH"
-        android:maxSdkVersion="30" />
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_ADMIN"
-        android:maxSdkVersion="30" />
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
-
-    <uses-feature
-        android:name="android.hardware.bluetooth_le"
-        android:required="true" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Badge control channel. INTERNET is required to bind the TCP 5001 listener
          even though nothing here ever leaves the factory LAN — Android gates all

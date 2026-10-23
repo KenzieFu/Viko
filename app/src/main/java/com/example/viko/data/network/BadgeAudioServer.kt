@@ -2,6 +2,9 @@ package com.example.viko.data.network
 
 import android.Manifest
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -165,7 +168,12 @@ class BadgeAudioServer(context: Context) {
     private var playbackJob: Job? = null
     private var lastStatsMs = 0L
 
-    /** Bound in [start]; also used by [sendTo], so both directions share one port. */
+    private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
+    private fun wifiNetwork() = connectivity.allNetworks.firstOrNull {
+        connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
+
+    /** Bound to local Wi-Fi in [start]; both directions share this port. */
     @Volatile
     private var socket: DatagramSocket? = null
 
@@ -195,12 +203,18 @@ class BadgeAudioServer(context: Context) {
         receiveJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 try {
+                    val wifi = wifiNetwork()
+                    if (wifi == null) {
+                        delay(500)
+                        continue
+                    }
                     DatagramSocket(AUDIO_PORT).use { bound ->
+                        wifi.bindSocket(bound)
                         // soTimeout doubles as the silence detector below.
                         bound.soTimeout = IDLE_TIMEOUT_MS
                         socket = bound
                         Log.i(TAG, "audio channel listening on :$AUDIO_PORT")
-                        receiveLoop(bound)
+                        receiveLoop(bound, wifi)
                     }
                 } catch (e: IOException) {
                     // Losing the bind (Wi-Fi off, port taken) must not silently
@@ -215,10 +229,17 @@ class BadgeAudioServer(context: Context) {
         }
     }
 
-    private fun CoroutineScope.receiveLoop(bound: DatagramSocket) {
+    private fun CoroutineScope.receiveLoop(bound: DatagramSocket, wifi: android.net.Network) {
         val buffer = ByteArray(MAX_DATAGRAM)
         val packet = DatagramPacket(buffer, buffer.size)
+        var checkedAt = 0L
         while (isActive) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - checkedAt >= 1000) {
+                checkedAt = now
+                // A replaced/lost Wi-Fi network needs a fresh socket binding.
+                if (wifiNetwork() != wifi) return
+            }
             try {
                 packet.length = buffer.size // DatagramPacket shrinks after a short datagram
                 bound.receive(packet)

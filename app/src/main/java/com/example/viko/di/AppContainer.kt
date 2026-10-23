@@ -1,6 +1,9 @@
 package com.example.viko.di
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.SystemClock
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.SpeechPipeline
 import com.example.viko.data.ai.VietnameseVoice
@@ -15,7 +18,7 @@ import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.BadgeControlServer
 import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.data.team.repository.WorkerRepositoryImpl
-import com.example.viko.data.team.scanner.BleDeviceScanner
+import com.example.viko.data.team.scanner.WifiDeviceScanner
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.repository.MessageRepository
@@ -36,12 +39,16 @@ class AppContainer(context: Context) {
     val alertRepository: AlertRepository = AlertRepositoryImpl(database.alertDao())
     val messageRepository: MessageRepository = MessageRepositoryImpl(database.messageDao())
 
-    /**
-     * Badge discovery and BLE provisioning. Held as [BleDeviceScanner] rather
-     * than [com.example.viko.domain.team.repository.DeviceScanner] because the pairing sheet also asks it whether
-     * Bluetooth and its permissions are actually available before scanning.
-     */
-    val deviceScanner: BleDeviceScanner = BleDeviceScanner(context)
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    val deviceScanner = WifiDeviceScanner(
+        networkAvailable = {
+            connectivity.allNetworks.any { network ->
+                connectivity.getNetworkCapabilities(network)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            }
+        },
+        clock = SystemClock::elapsedRealtime
+    )
 
     /**
      * Live speech to and from badges (UDP 5002). Unlike the control channel this
@@ -93,6 +100,7 @@ class AppContainer(context: Context) {
 
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
+        discovery = deviceScanner,
         audio = badgeAudio,
         workers = workerRepository,
         channels = channelRepository,
