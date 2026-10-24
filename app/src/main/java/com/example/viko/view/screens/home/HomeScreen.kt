@@ -57,6 +57,18 @@ import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import com.example.viko.view.screens.home.components.EmergencyBanner
+import com.example.viko.view.screens.home.tutorial.TutorialOverlay
+import com.example.viko.view.screens.home.tutorial.TutorialStep
+import com.example.viko.view.screens.home.tutorial.TutorialTargets
+import com.example.viko.view.screens.onboarding.ReadyToGoOverlay
+import kotlinx.coroutines.delay
 import com.example.viko.view.screens.previewChannel
 import com.example.viko.view.screens.previewChannelSummary
 import com.example.viko.view.screens.previewWorker
@@ -88,17 +100,20 @@ fun HomeScreen(
     onOpenNotifications: () -> Unit,
     onOpenManageMembers: () -> Unit,
     onDirectCall: (String) -> Unit,
+    startTutorial: Boolean = false,
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(
         uiState = uiState,
+        startTutorial = startTutorial,
         onOpenNotifications = onOpenNotifications,
         onOpenManageMembers = onOpenManageMembers,
         onDirectCall = onDirectCall,
         onRenameWorker = viewModel::renameWorker,
         onRemoveWorker = viewModel::removeWorker,
-        onAssignWorkerToChannel = viewModel::assignWorkerToChannel
+        onAssignWorkerToChannel = viewModel::assignWorkerToChannel,
+        onResolveAlert = viewModel::resolveAlert
     )
 }
 
@@ -111,7 +126,9 @@ fun HomeScreen(
     onDirectCall: (String) -> Unit,
     onRenameWorker: (String, String) -> Unit,
     onRemoveWorker: (String) -> Unit,
-    onAssignWorkerToChannel: (String, String) -> Unit
+    onAssignWorkerToChannel: (String, String) -> Unit,
+    startTutorial: Boolean = false,
+    onResolveAlert: (String) -> Unit = {}
 ) {
     // Which sheet is open is view state, but it still has to survive an Activity
     // recreation — a rotation should not close the roster the supervisor opened.
@@ -126,7 +143,22 @@ fun HomeScreen(
     // First run is no longer Home's job: the splash routes a fresh install to
     // onboarding, which creates a channel and lands on Manage Channel with the
     // pairing sheet one tap away. Home opening its own sheet here would stack a
-    // second one underneath that.
+    // second one underneath that. What it does own is the tour, which the last
+    // step of onboarding hands over by route argument.
+    var introStage by rememberSaveable(startTutorial) {
+        mutableStateOf(if (startTutorial) IntroStage.ReadyToGo else IntroStage.None)
+    }
+    var tutorialStep by rememberSaveable { mutableStateOf(TutorialStep.PressAndHold) }
+    var targets by remember { mutableStateOf(TutorialTargets()) }
+
+    // The newest SOS, raised for a moment and then left to Notifications.
+    var dismissedAlertId by rememberSaveable { mutableStateOf<String?>(null) }
+    val bannerAlert = uiState.latestAlert?.takeIf { it.id != dismissedAlertId }
+    LaunchedEffect(bannerAlert?.id) {
+        val id = bannerAlert?.id ?: return@LaunchedEffect
+        delay(ALERT_BANNER_MS)
+        dismissedAlertId = id
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -136,7 +168,8 @@ fun HomeScreen(
                 activeAlertCount = uiState.activeAlertCount,
                 onSosTap = { showSosSheet = true },
                 onNotificationsTap = onOpenNotifications,
-                onSettingsTap = onOpenManageMembers
+                onSettingsTap = onOpenManageMembers,
+                onSosBounds = { targets = targets.copy(sos = it) }
             )
 
             if (uiState.hasNoChannels) {
@@ -154,8 +187,9 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(uiState.channels, key = { it.channel.id }) { summary ->
+                    itemsIndexed(uiState.channels, key = { _, it -> it.channel.id }) { index, summary ->
                         val isManagerTalking = talkingChannelId == summary.channel.id
+                        val isTourTarget = index == 0
                         ChannelCard(
                             summary = summary,
                             audioMode = when {
@@ -170,13 +204,41 @@ fun HomeScreen(
                             // One mic, one channel: while a channel is held, every
                             // other card goes inert so the only tap available is
                             // letting go of the one you are on.
-                            enabled = talkingChannelId == null || isManagerTalking
+                            enabled = talkingChannelId == null || isManagerTalking,
+                            onMicBounds = { bounds ->
+                                if (isTourTarget) targets = targets.copy(channelMic = bounds)
+                            },
+                            onChipBounds = { bounds ->
+                                if (isTourTarget) targets = targets.copy(channelChip = bounds)
+                            }
                         )
                     }
                 }
             }
 
-            MakeAnnouncementButton(onClick = { showAnnouncementSheet = true })
+            MakeAnnouncementButton(
+                onClick = { showAnnouncementSheet = true },
+                modifier = Modifier.onGloballyPositioned {
+                    targets = targets.copy(announcement = it.boundsInRoot())
+                }
+            )
+        }
+
+        if (bannerAlert != null) {
+            EmergencyBanner(
+                alert = bannerAlert,
+                onOpen = onOpenNotifications,
+                onDirectCall = { onDirectCall(bannerAlert.workerId) },
+                onResolve = {
+                    dismissedAlertId = bannerAlert.id
+                    onResolveAlert(bannerAlert.id)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 56.dp)
+            )
         }
     }
 
@@ -230,7 +292,52 @@ fun HomeScreen(
             )
         }
     }
+
+    when (introStage) {
+        IntroStage.None -> Unit
+
+        IntroStage.ReadyToGo -> ReadyToGoOverlay(
+            onStartTutorial = {
+                tutorialStep = TutorialStep.PressAndHold
+                introStage = IntroStage.Tutorial
+            },
+            onSkip = { introStage = IntroStage.None }
+        )
+
+        IntroStage.Tutorial -> {
+            // The last step is about a member row, which only exists once the
+            // channel's sheet is open — so the tour opens it.
+            LaunchedEffect(tutorialStep) {
+                if (tutorialStep == TutorialStep.DirectCall) {
+                    openTeamSheetChannelId = uiState.channels.firstOrNull()?.channel?.id
+                }
+            }
+            TutorialOverlay(
+                step = tutorialStep,
+                bounds = targets.boundsFor(tutorialStep),
+                onNext = {
+                    val next = tutorialStep.next()
+                    if (next == null) {
+                        openTeamSheetChannelId = null
+                        introStage = IntroStage.None
+                    } else {
+                        tutorialStep = next
+                    }
+                },
+                onSkipAll = {
+                    openTeamSheetChannelId = null
+                    introStage = IntroStage.None
+                }
+            )
+        }
+    }
 }
+
+/** Which first-run card, if any, is sitting over Home. */
+private enum class IntroStage { None, ReadyToGo, Tutorial }
+
+/** How long the SOS banner holds the screen before Notifications owns it. */
+private const val ALERT_BANNER_MS = 5_000L
 
 @Composable
 private fun NoTeamYet(onSetUpTeam: () -> Unit, modifier: Modifier = Modifier) {
@@ -263,7 +370,8 @@ private fun HomeTopBar(
     activeAlertCount: Int,
     onSosTap: () -> Unit,
     onNotificationsTap: () -> Unit,
-    onSettingsTap: () -> Unit
+    onSettingsTap: () -> Unit,
+    onSosBounds: (Rect) -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -275,6 +383,7 @@ private fun HomeTopBar(
     ) {
         Row(
             modifier = Modifier
+                .onGloballyPositioned { onSosBounds(it.boundsInRoot()) }
                 .shadow(2.dp, RoundedCornerShape(14.dp), spotColor = VShadow)
                 .clip(RoundedCornerShape(14.dp))
                 .background(VSurface)
@@ -335,9 +444,9 @@ private fun HomeTopBar(
 }
 
 @Composable
-private fun MakeAnnouncementButton(onClick: () -> Unit) {
+private fun MakeAnnouncementButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(VBackground)
             .padding(horizontal = 24.dp, vertical = 12.dp)

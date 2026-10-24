@@ -47,6 +47,10 @@ class ManageChannelViewModel(
         initialValue = ManageChannelUiState()
     )
 
+    fun removeMember(workerId: String) = viewModelScope.launch {
+        workerRepository.removeWorker(workerId)
+    }
+
     fun createChannel(name: String) = viewModelScope.launch {
         channelRepository.addChannel(Channel(id = "ch_${UUID.randomUUID()}", name = name.trim()))
     }

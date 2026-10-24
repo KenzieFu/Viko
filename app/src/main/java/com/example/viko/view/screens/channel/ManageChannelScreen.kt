@@ -50,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.R
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.view.screens.onboarding.TeamReadyOverlay
 import com.example.viko.view.screens.previewChannel
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VBrandOnDark
@@ -70,6 +71,8 @@ import com.example.viko.view.theme.VikoTheme
 fun ManageChannelScreen(
     onBack: (() -> Unit)?,
     onMemberClick: (String) -> Unit,
+    showTeamReady: Boolean = false,
+    onGoToHomepage: () -> Unit = {},
     viewModel: ManageChannelViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -91,8 +94,15 @@ fun ManageChannelScreen(
         ChannelDetailSheet(
             channel = openChannel,
             onMemberClick = onMemberClick,
+            onRemoveMember = viewModel::removeMember,
             onDismiss = { openChannelId = null }
         )
+    }
+
+    // Last beat of onboarding: the channel the supervisor just filled is behind
+    // the card, which is the whole point of showing it here and not on Home.
+    if (showTeamReady) {
+        TeamReadyOverlay(onGoToHomepage = onGoToHomepage)
     }
 
     if (showAddChannel) {

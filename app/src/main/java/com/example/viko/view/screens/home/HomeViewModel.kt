@@ -2,6 +2,7 @@ package com.example.viko.view.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.channel.repository.ChannelRepository
@@ -31,6 +32,12 @@ data class HomeUiState(
     val channels: List<ChannelSummary> = emptyList(),
     val unassignedToChannel: Map<String, List<Worker>> = emptyMap(),
     val activeAlertCount: Int = 0,
+    /**
+     * The newest unresolved SOS. Home raises it as a banner for a few seconds —
+     * a supervisor looking at the channel grid has to be told without having to
+     * open Notifications first.
+     */
+    val latestAlert: EmergencyAlert? = null,
     val hasMembers: Boolean = false,
     /**
      * False until the database has answered. Everything that reacts to "there is
@@ -49,7 +56,7 @@ data class HomeUiState(
 class HomeViewModel(
     private val workerRepository: WorkerRepository,
     channelRepository: ChannelRepository,
-    alertRepository: AlertRepository
+    private val alertRepository: AlertRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<HomeUiState> = combine(
@@ -64,6 +71,7 @@ class HomeViewModel(
                 channel.id to workers.filter { it.channelId != channel.id }
             },
             activeAlertCount = alerts.count { it.status == AlertStatus.ACTIVE },
+            latestAlert = alerts.lastOrNull { it.status == AlertStatus.ACTIVE },
             hasMembers = workers.isNotEmpty(),
             isLoaded = true
         )
@@ -72,6 +80,10 @@ class HomeViewModel(
         started = SharingStarted.WhileSubscribed(UI_STATE_TIMEOUT_MS),
         initialValue = HomeUiState()
     )
+
+    fun resolveAlert(alertId: String) = viewModelScope.launch {
+        alertRepository.resolveAlert(alertId)
+    }
 
     fun assignWorkerToChannel(workerId: String, channelId: String) = viewModelScope.launch {
         workerRepository.assignToChannel(workerId, channelId)

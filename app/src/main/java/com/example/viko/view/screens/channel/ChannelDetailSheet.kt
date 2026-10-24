@@ -1,6 +1,5 @@
 package com.example.viko.view.screens.channel
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,18 +7,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -32,17 +31,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.viko.R
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.view.screens.previewChannel
 import com.example.viko.view.screens.team.AddMemberFlow
+import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VBrand
@@ -62,6 +60,7 @@ import com.example.viko.view.theme.VikoTheme
 fun ChannelDetailSheet(
     channel: ChannelRowUiState,
     onMemberClick: (String) -> Unit,
+    onRemoveMember: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var showAddMember by rememberSaveable { mutableStateOf(false) }
@@ -77,7 +76,8 @@ fun ChannelDetailSheet(
             channel = channel,
             onSave = onDismiss,
             onAddMember = { showAddMember = true },
-            onMemberClick = onMemberClick
+            onMemberClick = onMemberClick,
+            onRemoveMember = onRemoveMember
         )
     }
 
@@ -91,7 +91,8 @@ fun ChannelDetailSheetContent(
     channel: ChannelRowUiState,
     onSave: () -> Unit,
     onAddMember: () -> Unit,
-    onMemberClick: (String) -> Unit
+    onMemberClick: (String) -> Unit,
+    onRemoveMember: (String) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -136,11 +137,19 @@ fun ChannelDetailSheetContent(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             channel.members.forEach { member ->
-                MemberRow(member = member, onClick = { onMemberClick(member.id) })
+                MemberRow(
+                    member = member,
+                    onClick = { onMemberClick(member.id) },
+                    onRemove = { onRemoveMember(member.id) }
+                )
             }
 
+            // Wide while the channel is empty, because then it is the only
+            // thing to do here; a small pill once there is a roster above it.
+            val isFirstMember = channel.members.isEmpty()
             Row(
                 modifier = Modifier
+                    .then(if (isFirstMember) Modifier.fillMaxWidth() else Modifier)
                     .height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(VSurface)
@@ -157,7 +166,7 @@ fun ChannelDetailSheetContent(
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    text = "Add New Member",
+                    text = if (isFirstMember) "Add New Member" else "Add New",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
@@ -168,15 +177,16 @@ fun ChannelDetailSheetContent(
 }
 
 @Composable
-private fun MemberRow(member: Worker, onClick: () -> Unit) {
+private fun MemberRow(member: Worker, onClick: () -> Unit, onRemove: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(VSurface)
+            .border(1.dp, VBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(start = 16.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -189,19 +199,14 @@ private fun MemberRow(member: Worker, onClick: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(
-            text = member.zone,
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.7f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Image(
-            painter = painterResource(id = R.drawable.ic_chevron_right_small),
-            contentDescription = null,
-            modifier = Modifier.size(width = 6.dp, height = 10.dp)
-        )
+        IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Remove ${member.name}",
+                tint = VAccentRed,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -213,7 +218,8 @@ private fun ChannelDetailSheetContentPreview() {
             channel = ChannelRowUiState(previewChannel("c1", "Operations"), emptyList()),
             onSave = {},
             onAddMember = {},
-            onMemberClick = {}
+            onMemberClick = {},
+            onRemoveMember = {}
         )
     }
 }

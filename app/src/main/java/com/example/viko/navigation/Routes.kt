@@ -7,6 +7,12 @@ package com.example.viko.navigation
  */
 object NavArgs {
     const val WORKER_ID = "workerId"
+
+    /** Home shows the "ready to go" card and offers the tour. */
+    const val START_TUTORIAL = "startTutorial"
+
+    /** Manage Channel shows the "your team ready" card over the new channel. */
+    const val SHOW_TEAM_READY = "showTeamReady"
 }
 
 sealed class Screen(val route: String) {
@@ -16,9 +22,15 @@ sealed class Screen(val route: String) {
     /** Onboarding: name the first team channel. Nothing works without one. */
     data object FirstChannel : Screen("first_channel")
 
-    data object Home : Screen("home")
+    data object Home : Screen("home?${NavArgs.START_TUTORIAL}={${NavArgs.START_TUTORIAL}}") {
+        fun createRoute(startTutorial: Boolean = false) = "home?${NavArgs.START_TUTORIAL}=$startTutorial"
+    }
 
-    data object ManageChannels : Screen("manage_channels")
+    data object ManageChannels :
+        Screen("manage_channels?${NavArgs.SHOW_TEAM_READY}={${NavArgs.SHOW_TEAM_READY}}") {
+        fun createRoute(showTeamReady: Boolean = false) =
+            "manage_channels?${NavArgs.SHOW_TEAM_READY}=$showTeamReady"
+    }
 
     data object Notifications : Screen("notifications")
 
