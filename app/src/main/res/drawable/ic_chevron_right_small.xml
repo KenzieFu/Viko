@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Figma "Icon" (node 1640:13940) — the chevron on a Manage Channel row. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="6dp"
+    android:height="10dp"
+    android:viewportWidth="5.66667"
+    android:viewportHeight="9.66667">
+    <path
+        android:pathData="M0.833333 8.83333L4.83333 4.83333L0.833333 0.833333"
+        android:strokeWidth="1.66667"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+</vector>

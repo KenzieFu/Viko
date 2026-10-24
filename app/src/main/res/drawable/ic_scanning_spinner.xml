@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Figma "Group 1" — the eight-spoke scan indicator beside the Nearby Device
+     title. The per-spoke alphas are the design's; rotating the whole drawable
+     is what makes it read as a spinner. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="17dp"
+    android:viewportWidth="16.3051"
+    android:viewportHeight="16.8422">
+    <path android:pathData="M8.01819 0.5V5.60173" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.2" android:strokeLineCap="round"/>
+    <path android:pathData="M13.6586 2.7251L10.0511 6.33256" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.2" android:strokeLineCap="round"/>
+    <path android:pathData="M8.01819 11.2405V16.3422" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.5" android:strokeLineCap="round"/>
+    <path android:pathData="M5.18154 10.3198L1.57408 13.9273" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeLineCap="round"/>
+    <path android:pathData="M15.8051 8.55542L10.7034 8.55542" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.4" android:strokeLineCap="round"/>
+    <path android:pathData="M13.7738 13.9272L10.1663 10.3198" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.4" android:strokeLineCap="round"/>
+    <path android:pathData="M5.60173 8.55542L0.5 8.55542" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeLineCap="round"/>
+    <path android:pathData="M5.71839 6.71228L2.11092 3.10482" android:strokeWidth="1"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.2" android:strokeLineCap="round"/>
+</vector>
