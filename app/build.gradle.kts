@@ -30,6 +30,8 @@ android {
         }
     }
     compileOptions {
+        // Backport java.time and the tokenizer's file APIs to Android 7 (API 24/25).
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -39,6 +41,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -52,10 +55,18 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.viewmodel.savedstate)
+    // On-device inference. ONNX Runtime runs the exported graphs; DJL supplies the
+    // HuggingFace tokenizers, whose native .so must come from the Android artifact.
+    // The models themselves are never packaged — see scripts/push-models.sh.
+    implementation(libs.onnxruntime.android)
+    implementation(libs.djl.tokenizers)
+    runtimeOnly(libs.djl.tokenizer.native)
+    implementation(libs.jtransforms)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

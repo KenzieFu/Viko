@@ -168,11 +168,28 @@ fun DirectCallScreen(
 
         CallerIdentity(worker = worker, isMemberTalking = isMemberTalking, isSupervisorTalking = isSupervisorTalking)
 
-        if (isMemberTalking) {
+        // Models are not on this phone, so the line is a plain relay. Saying so
+        // is the difference between "no Korean yet" and "no Korean coming".
+        if (uiState.voiceOnly) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Voice only \u2014 translation is off",
+                style = MaterialTheme.typography.bodyMedium,
+                color = VOnSurfaceSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 32.dp)
+            )
+        }
+
+        if (isMemberTalking || uiState.isTranslating) {
             // The member has the channel: their words, translated, take the
             // middle of the screen and the mic shrinks out of the way.
             Spacer(modifier = Modifier.height(40.dp))
-            TranscriptCard(text = uiState.translation)
+            TranscriptCard(
+                text = uiState.translation,
+                source = uiState.transcript,
+                isTranslating = uiState.isTranslating
+            )
             Spacer(modifier = Modifier.weight(0.4f))
             MicButton(state = MicState.Disabled, onClick = onToggleTalking)
             Spacer(modifier = Modifier.height(48.dp))
@@ -271,7 +288,11 @@ private fun DrawScope.drawMemberGlow() {
  * any text arrives, so the mic does not slide up and back as lines come in.
  */
 @Composable
-private fun TranscriptCard(text: String?) {
+private fun TranscriptCard(
+    text: String?,
+    source: String? = null,
+    isTranslating: Boolean = false
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -282,15 +303,39 @@ private fun TranscriptCard(text: String?) {
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (text != null) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyLarge,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                color = VOnSurface,
-                textAlign = TextAlign.Center
-            )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (text != null) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = VOnSurface,
+                    textAlign = TextAlign.Center
+                )
+            }
+            // What they actually said, under the Korean. The supervisor cannot
+            // read it, but seeing it is how they know the badge was heard.
+            if (source != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = source,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VOnSurfaceSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
+            // The cascade runs on the whole turn, so the Korean lands seconds
+            // after the member lets go. Without this the gap reads as a dead link.
+            if (isTranslating) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Translating\u2026",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VOnSurfaceSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

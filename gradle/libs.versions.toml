@@ -11,8 +11,23 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 room = "2.8.4"
 ksp = "2.2.10-2.0.2"
+# 1.29.0 deliberately, not 1.22: quantised-kernel behaviour changed between
+# them, and 1.22 diverges from the torch reference on the golden fixture.
+onnxruntime = "1.29.0"
+djl = "0.33.0"
+# Pure-Java FFT. Whisper needs a 400-point transform and 400 = 2^4 x 5^2, so a
+# radix-2 implementation cannot do it; JTransforms handles mixed radix.
+jtransforms = "3.1"
+desugarJdkLibs = "2.1.5"
+coroutinesTest = "1.9.0"
 
 [libraries]
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+djl-tokenizers = { group = "ai.djl.huggingface", name = "tokenizers", version.ref = "djl" }
+djl-tokenizer-native = { group = "ai.djl.android", name = "tokenizer-native", version.ref = "djl" }
+jtransforms = { group = "com.github.wendykierp", name = "JTransforms", version.ref = "jtransforms" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

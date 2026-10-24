@@ -1,6 +1,14 @@
 package com.example.viko.di
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.SystemClock
+import com.example.viko.data.ai.Speaker
+import com.example.viko.data.ai.SpeechPipeline
+import com.example.viko.data.ai.VietnameseVoice
+import com.example.viko.data.ai.TagClassifier
+import com.example.viko.data.ai.TranslationPipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
@@ -12,6 +20,7 @@ import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.data.settings.FactoryWifiRepositoryImpl
 import com.example.viko.data.team.repository.WorkerRepositoryImpl
 import com.example.viko.data.team.scanner.BleDeviceScanner
+import com.example.viko.data.team.scanner.WifiDeviceScanner
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.repository.MessageRepository
@@ -37,11 +46,32 @@ class AppContainer(context: Context) {
     val factoryWifiRepository: FactoryWifiRepository = FactoryWifiRepositoryImpl(context)
 
     /**
-     * Badge discovery and BLE provisioning. Held as [BleDeviceScanner] rather
-     * than [DeviceScanner] because the pairing sheet also asks it whether
-     * Bluetooth and its permissions are actually available before scanning.
+     * First-time pairing. Held as [BleDeviceScanner] rather than [DeviceScanner]
+     * because the pairing sheet also asks it whether Bluetooth and its
+     * permissions are actually available before scanning.
+     *
+     * This is the only way a badge that has never been on the factory Wi-Fi can
+     * be told the credentials — see [com.example.viko.data.team.ble.BleProvisioner].
      */
     val deviceScanner: BleDeviceScanner = BleDeviceScanner(context)
+
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+
+    /**
+     * Finding badges that are *already* provisioned, by mDNS on the factory
+     * network. A DHCP lease can move, so the registry re-reads a badge's address
+     * from here rather than trusting the one it paired with.
+     */
+    val wifiDiscovery = WifiDeviceScanner(
+        networkAvailable = {
+            connectivity.allNetworks.any { network ->
+                connectivity.getNetworkCapabilities(network)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            }
+        },
+        clock = SystemClock::elapsedRealtime
+    )
+
 
     /**
      * Live speech to and from badges (UDP 5002). Unlike the control channel this
@@ -55,13 +85,55 @@ class AppContainer(context: Context) {
      * [com.example.viko.VikoApplication]; it writes straight into the
      * repositories above, so no screen depends on it directly.
      */
+    /**
+     * On-device Vietnamese <-> Korean translation.
+     *
+     * Constructed eagerly because the constructor only resolves a directory path —
+     * the ~1.8GB of ONNX sessions behind it are opened on first use, so a phone with
+     * no models pushed (the default) never pays for one.
+     *
+     * Shared rather than per-screen: one set of graphs is all the device can afford,
+     * and both directions run through the same weights.
+     */
+    val translationPipeline by lazy { TranslationPipeline(context) }
+
+    /**
+     * Predicts the context tag that [translationPipeline] expects on its input.
+     * Separate objects rather than one because they are pushed, and fail,
+     * independently: a phone with the tagger but no translator should still tag.
+     */
+    val tagClassifier by lazy { TagClassifier(context) }
+
+    /**
+     * Speech in, translated text out — the whole cascade, in the order the
+     * reference defines. Holds the ASR models lazily, so a phone that only ever
+     * hears badge Vietnamese never maps the Korean model's 451MB.
+     */
+    val speechPipeline by lazy { SpeechPipeline(context, tagClassifier, translationPipeline) }
+
+    /** Korean out of the loudspeaker. No model — Android's built-in engine. */
+    val speaker by lazy { Speaker(context) }
+
+    /**
+     * Vietnamese back to the badge. Separate from [speaker] because that direction
+     * needs bytes for a UDP socket, not playback, which is a different API path
+     * entirely.
+     */
+    val vietnameseVoice by lazy { VietnameseVoice(context) }
+
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
+        discovery = wifiDiscovery,
         audio = badgeAudio,
         workers = workerRepository,
         channels = channelRepository,
-        alerts = alertRepository
+        alerts = alertRepository,
+        messages = messageRepository,
+        speech = { speechPipeline },
+        speaker = { speaker },
+        voice = { vietnameseVoice }
     )
+
 
     val databaseSeeder = DatabaseSeeder(
         workerRepository = workerRepository,
