@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.viko.view.theme.VBorder
+import com.example.viko.view.theme.VDragHandle
 import com.example.viko.view.theme.VikoTheme
 
 @Composable
@@ -21,23 +21,21 @@ fun VikoDragHandle() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp, bottom = 8.dp),
+            .padding(top = 16.dp, bottom = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
                 .width(38.dp)
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(VBorder)
+                .height(5.dp)
+                .clip(RoundedCornerShape(100.dp))
+                .background(VDragHandle)
         )
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun VikoDragHandlePreview() {
-    VikoTheme {
-        VikoDragHandle()
-    }
+    VikoTheme { VikoDragHandle() }
 }

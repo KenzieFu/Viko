@@ -1,16 +1,13 @@
 package com.example.viko.view.screens.team
 
-import com.example.viko.view.theme.VikoTheme
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,20 +20,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,28 +42,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.viko.components.InfoRow
+import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
-import com.example.viko.components.VikoTextField
+import com.example.viko.components.VikoFieldLabel
+import com.example.viko.components.VikoOutlinedField
+import com.example.viko.components.VikoPickerField
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.view.screens.channel.AddNewChannelSheetContent
 import com.example.viko.view.screens.channel.SelectChannelSheetContent
-import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VMicBlue
-import com.example.viko.view.theme.VOffline
+import com.example.viko.view.theme.VBackground
+import com.example.viko.view.theme.VBrand
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VSurface
-import com.example.viko.view.theme.VSurfaceVariant
 import com.example.viko.view.theme.VWarning
+import com.example.viko.view.theme.VikoTheme
 
+/**
+ * Pair a badge, name the person, pick their channel, save — all as one stack of
+ * sheets, because the channel picker has to be able to write back into a
+ * half-filled setup form.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddMemberFlow(
@@ -93,7 +95,7 @@ fun AddMemberFlow(
     ModalBottomSheet(
         onDismissRequest = dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = VSurface,
+        containerColor = VBackground,
         contentColor = VOnSurface,
         dragHandle = { VikoDragHandle() }
     ) {
@@ -107,7 +109,6 @@ fun AddMemberFlow(
                 addedCount = uiState.addedCount,
                 onSelect = viewModel::select,
                 onRescan = viewModel::rescan,
-                onDone = dismiss,
                 onClose = dismiss
             )
 
@@ -115,14 +116,11 @@ fun AddMemberFlow(
                 device = uiState.pairedDevice,
                 name = uiState.name,
                 onNameChange = viewModel::onNameChange,
-                zone = uiState.zone,
-                onZoneChange = viewModel::onZoneChange,
                 channelName = uiState.selectedChannelName,
                 canSave = uiState.canSave,
                 isProvisioning = uiState.isProvisioning,
                 error = uiState.error,
                 onPickChannel = { showChannelPicker = true },
-
                 onSave = viewModel::save,
                 onClose = dismiss
             )
@@ -132,7 +130,7 @@ fun AddMemberFlow(
     if (showChannelPicker) {
         ModalBottomSheet(
             onDismissRequest = { showChannelPicker = false },
-            containerColor = VSurface,
+            containerColor = VBackground,
             contentColor = VOnSurface,
             dragHandle = { VikoDragHandle() }
         ) {
@@ -141,7 +139,6 @@ fun AddMemberFlow(
                 selectedChannelId = uiState.selectedChannelId,
                 memberCounts = uiState.memberCounts,
                 onSelect = { channelId ->
-
                     viewModel.selectChannel(channelId)
                     showChannelPicker = false
                 },
@@ -154,7 +151,7 @@ fun AddMemberFlow(
     addChannelPrefill?.let { prefill ->
         ModalBottomSheet(
             onDismissRequest = { addChannelPrefill = null },
-            containerColor = VSurface,
+            containerColor = VBackground,
             contentColor = VOnSurface,
             dragHandle = { VikoDragHandle() }
         ) {
@@ -176,12 +173,11 @@ private fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
     isNetworkAvailable: Boolean,
-    error: String? = null,
+    error: String?,
     isEnrolled: (NearbyDevice) -> Boolean,
     addedCount: Int,
     onSelect: (NearbyDevice) -> Unit,
     onRescan: () -> Unit,
-    onDone: () -> Unit,
     onClose: () -> Unit
 ) {
     val rotation by rememberInfiniteTransition(label = "scan").animateFloat(
@@ -195,53 +191,74 @@ private fun NearbyDeviceSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 440.dp)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .navigationBarsPadding()
+            .padding(bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Wi-Fi badges",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                Icons.Default.Wifi,
-                contentDescription = null,
-                tint = VOnSurfaceSecondary,
-                modifier = Modifier
-                    .size(14.dp)
-                    .rotate(if (isScanning) rotation else 0f)
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Nearby Device",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Image(
+                    painter = painterResource(id = R.drawable.ic_scanning_spinner),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(width = 16.dp, height = 17.dp)
+                        .rotate(if (isScanning) rotation else 0f)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_close),
+                        contentDescription = "Close",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
+
+            Text(
+                text = "Pair your device to add a new member.",
+                fontSize = 16.sp,
+                color = Color.White.copy(alpha = 0.7f)
+            )
         }
 
-        Text(
-            text = "Connect the phone and badges to the same router. No internet needed.",
-            style = MaterialTheme.typography.bodySmall,
-            color = VOnSurfaceSecondary
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (error != null) Text(error, color = VWarning)
+        if (error != null) {
+            Text(text = error, fontSize = 14.sp, color = VWarning)
+        }
 
         if (devices.isEmpty()) {
             Text(
-
-                text = when {
-                    !isNetworkAvailable -> "Connect this phone to the router Wi-Fi first."
-                    else -> "Waiting for badges on this Wi-Fi (up to 15 seconds). " +
-                        "Keep ViKo open. Check the badge console shows the same router SSID " +
-                        "and disable guest/client isolation on the router."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = VOnSurfaceSecondary
+                text = if (isScanning) "Scanning…" else "No devices found",
+                fontSize = 16.sp,
+                color = Color.White.copy(alpha = 0.3f)
             )
+            // The design stops at "No devices found"; on a real floor the next
+            // question is always "why", and it is nearly always the router.
+            if (!isNetworkAvailable) {
+                Text(
+                    text = "Connect this phone to the router Wi-Fi first.",
+                    fontSize = 14.sp,
+                    color = VOnSurfaceSecondary
+                )
+            } else if (!isScanning) {
+                Text(
+                    text = "Badges must be on the same router, with guest/client " +
+                        "isolation switched off.",
+                    fontSize = 14.sp,
+                    color = VOnSurfaceSecondary
+                )
+            }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 devices.forEach { device ->
@@ -254,20 +271,15 @@ private fun NearbyDeviceSheetContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        VikoBlueButton(text = "Scan again", onClick = onRescan)
-
         if (addedCount > 0) {
-            Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = "$addedCount member${if (addedCount == 1) "" else "s"} added",
-                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp,
                 color = VOnSurfaceSecondary
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            VikoBlueButton(text = "Done", onClick = onDone)
-            Spacer(modifier = Modifier.height(12.dp))
         }
+
+        VikoBlueButton(text = "Scan again", onClick = onRescan, enabled = !isScanning)
     }
 }
 
@@ -280,33 +292,34 @@ private fun NearbyDeviceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(52.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(VSurfaceVariant)
-
+            .background(VSurface)
             .clickable(enabled = !isEnrolled, onClick = onSelect)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = device.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (isEnrolled) VOnSurfaceSecondary else VOnSurface
-            )
-            Text(
-
-                text = device.address,
-                fontSize = 11.sp,
-                color = VOnSurfaceSecondary
-            )
-        }
+        Text(
+            text = device.name,
+            modifier = Modifier.weight(1f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isEnrolled) VOnSurfaceSecondary else Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         if (isEnrolled) {
-            Text("Paired", color = VOnSurfaceSecondary, fontSize = 12.sp)
+            Text(text = "Paired", fontSize = 12.sp, color = VOnSurfaceSecondary)
         } else {
-            Text("Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(14.dp))
+            Text(text = "Pair Device", fontSize = 12.sp, color = Color.White)
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                Icons.Default.Link,
+                contentDescription = null,
+                tint = VBrand,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
@@ -316,8 +329,6 @@ private fun SetupMemberSheetContent(
     device: NearbyDevice?,
     name: String,
     onNameChange: (String) -> Unit,
-    zone: String,
-    onZoneChange: (String) -> Unit,
     channelName: String?,
     canSave: Boolean,
     isProvisioning: Boolean,
@@ -331,155 +342,121 @@ private fun SetupMemberSheetContent(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(bottom = 20.dp)
             .navigationBarsPadding()
+            .padding(bottom = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
+            IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_close),
+                    contentDescription = "Close",
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 
-        DeviceIllustration(modifier = Modifier.align(Alignment.CenterHorizontally))
-
-        Spacer(modifier = Modifier.height(20.dp))
+        Image(
+            painter = painterResource(id = R.drawable.viko_badge_device),
+            contentDescription = null,
+            modifier = Modifier.size(171.dp)
+        )
 
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Text("Name", fontSize = 11.sp, color = VOnSurfaceSecondary)
-                VikoTextField(
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                VikoFieldLabel("Name")
+                VikoOutlinedField(
                     value = name,
                     onValueChange = onNameChange,
-                    placeholder = "Enter Member Name",
-                    modifier = Modifier.fillMaxWidth()
+                    placeholder = "Enter Member Name"
                 )
             }
 
-            HorizontalDivider(color = VBorder)
-
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Text("Factory zone", fontSize = 11.sp, color = VOnSurfaceSecondary)
-                VikoTextField(
-                    value = zone,
-                    onValueChange = onZoneChange,
-                    placeholder = "e.g. Production Line 2",
-                    modifier = Modifier.fillMaxWidth()
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                VikoFieldLabel("Channel")
+                VikoPickerField(
+                    value = channelName.orEmpty(),
+                    placeholder = "Select Channel",
+                    onClick = onPickChannel
                 )
             }
 
-            HorizontalDivider(color = VBorder)
-
-            Row(
+            // What the badge told us about itself. Read-only: it is reported,
+            // not configured.
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onPickChannel)
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(VSurface)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Channel", fontSize = 11.sp, color = VOnSurfaceSecondary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = channelName ?: "Select Channel",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (channelName != null) VOnSurface else VOnSurfaceSecondary
-                    )
-                }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = VOnSurfaceSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
+                DeviceFactRow("Device Address", device?.address ?: "Unknown")
+                DeviceFactRow("Device ID", device?.id ?: "Unknown")
             }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text("Member details are saved on this phone. The badge is already connected to Wi-Fi.",
-            style = MaterialTheme.typography.bodySmall, color = VOnSurfaceSecondary)
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            InfoRow("Device Address", device?.address ?: "Unknown")
-            InfoRow("Device ID", device?.id ?: "Unknown")
         }
 
         if (error != null) {
-            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = error,
-                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = 14.sp,
                 color = VWarning
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        VikoBlueButton(
-            text = if (isProvisioning) "Checking connection…" else "Add member",
-            enabled = canSave,
-            onClick = onSave
-        )
-
         if (isProvisioning) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(14.dp),
                     strokeWidth = 2.dp,
-                    color = VMicBlue
+                    color = VBrand
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Keep both devices connected to the same router.",
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 12.sp,
                     color = VOnSurfaceSecondary
                 )
             }
         }
+
+        VikoBlueButton(
+            text = if (isProvisioning) "Checking connection…" else "Save",
+            enabled = canSave,
+            onClick = onSave
+        )
     }
 }
 
-/**
- * Stand-in for the 3D earpiece render in Figma. Replace with the real asset
- * once design exports it — drop a PNG in res/drawable and swap this out.
- */
+/** A `label — value` line inside the badge facts card. */
 @Composable
-private fun DeviceIllustration(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(112.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(VOnSurface.copy(alpha = 0.85f)),
-        contentAlignment = Alignment.Center
+private fun DeviceFactRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(VSurfaceVariant)
-                .border(3.dp, VOffline, CircleShape)
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFFFEFEFE)
         )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .size(14.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(VWarning)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = value,
+            fontSize = 12.sp,
+            color = Color(0xFFFEFEFE).copy(alpha = 0.5f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -492,53 +469,53 @@ private fun previewDevice(id: String, name: String) =
  * [AddMemberFlow] itself — that wraps everything in a ModalBottomSheet, which
  * has no host to render into inside a preview.
  */
-@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun NearbyDeviceSheetContentPreview() {
     VikoTheme {
         NearbyDeviceSheetContent(
             devices = listOf(
-                previewDevice("33", "ViKo-A1B2"),
-                previewDevice("66", "ViKo-C3D4"),
-                previewDevice("99", "ViKo-E5F6")
+                previewDevice("33", "Device 1"),
+                previewDevice("66", "Device 2"),
+                previewDevice("99", "Device 3")
             ),
             isScanning = true,
             isNetworkAvailable = true,
+            error = null,
             isEnrolled = { it.id == "99" },
             addedCount = 1,
-            onSelect = {}, onRescan = {}, onDone = {}, onClose = {}
+            onSelect = {}, onRescan = {}, onClose = {}
         )
     }
 }
 
-/** Scanning with nothing found yet. */
-@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+/** Scan finished with nothing on the network. */
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
-private fun NearbyDeviceSheetContentScanningPreview() {
+private fun NearbyDeviceSheetContentEmptyPreview() {
     VikoTheme {
         NearbyDeviceSheetContent(
             devices = emptyList(),
-            isScanning = true,
+            isScanning = false,
             isNetworkAvailable = true,
+            error = null,
             isEnrolled = { false },
             addedCount = 0,
-            onSelect = {}, onRescan = {}, onDone = {}, onClose = {}
+            onSelect = {}, onRescan = {}, onClose = {}
         )
     }
 }
 
 /** Setup filled in and ready to save. */
-@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun SetupMemberSheetContentPreview() {
     VikoTheme {
         SetupMemberSheetContent(
-            device = previewDevice("33", "ViKo-A1B2"),
-            name = "Budi",
+            device = previewDevice("33", "Device 1"),
+            name = "Le Khanh Linh",
             onNameChange = {},
-            zone = "Production Line 2",
-            onZoneChange = {},
-            channelName = "Warehouse",
+            channelName = "Operations",
             canSave = true,
             isProvisioning = false,
             error = null,
@@ -548,20 +525,18 @@ private fun SetupMemberSheetContentPreview() {
 }
 
 /** Setup still empty — Save dim, which is the state that is easy to get wrong. */
-@Preview(showBackground = true, backgroundColor = 0xFF1C1C1E)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun SetupMemberSheetContentEmptyPreview() {
     VikoTheme {
         SetupMemberSheetContent(
-            device = previewDevice("33", "ViKo-A1B2"),
+            device = previewDevice("33", "Device 1"),
             name = "",
             onNameChange = {},
-            zone = "",
-            onZoneChange = {},
             channelName = null,
             canSave = false,
             isProvisioning = false,
-            error = "Badge disconnected. Check the router connection.",
+            error = null,
             onPickChannel = {}, onSave = {}, onClose = {}
         )
     }

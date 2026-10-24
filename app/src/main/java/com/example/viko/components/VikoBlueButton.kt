@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -13,13 +12,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.viko.view.theme.VActivePanel
-import com.example.viko.view.theme.VMicBlue
+import androidx.compose.ui.unit.sp
+import com.example.viko.view.theme.VBrandOnDark
 import com.example.viko.view.theme.VikoTheme
 
 /**
- * Figma's blue action button (Save / Continue). Disabled is the same blue gone
- * dim rather than grey, which is how the design shows "not filled in yet".
+ * Figma's blue action button — Continue on onboarding, Save on the setup sheet.
+ *
+ * Disabled is the same blue at half strength rather than grey: the design uses
+ * it to say "not filled in yet", and a grey button reads as permanently dead.
  */
 @Composable
 fun VikoBlueButton(
@@ -32,24 +33,28 @@ fun VikoBlueButton(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp),
+            .height(56.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = VMicBlue,
+            containerColor = VBrandOnDark,
             contentColor = Color.White,
-            disabledContainerColor = VActivePanel,
+            disabledContainerColor = VBrandOnDark.copy(alpha = 0.5f),
             disabledContentColor = Color.White.copy(alpha = 0.5f)
         )
     ) {
-        Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(text = text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun VikoBlueButtonPreview() {
-    VikoTheme {
-        VikoBlueButton(text = "Save", onClick = {})
-    }
+    VikoTheme { VikoBlueButton(text = "Continue", onClick = {}) }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
+@Composable
+private fun VikoBlueButtonDisabledPreview() {
+    VikoTheme { VikoBlueButton(text = "Continue", onClick = {}, enabled = false) }
 }

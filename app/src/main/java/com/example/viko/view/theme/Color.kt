@@ -11,20 +11,37 @@ import androidx.compose.ui.graphics.Color
 
 // Page + surfaces (each step is lighter than the one before it — that
 // difference is what makes a card read as a card, so keep them distinct)
-val VBackground = Color(0xFF0D0D0F)      // page behind everything
-val VSurface = Color(0xFF1C1C1E)         // cards, sheets, top-bar buttons
-val VSurfaceVariant = Color(0xFF262628)  // chips / insets sitting on a card
-val VBorder = Color(0xFF2E2E30)          // hairline outlines and dividers
+val VBackground = Color(0xFF1C1D20)      // page behind everything (dark/main-background)
+val VSurface = Color(0xFF2E3033)         // cards, sheets, rows (dark/secondary-background)
+val VSurfaceVariant = Color(0xFF26272A)  // chips / insets sitting between page and card
+val VBorder = Color(0xFF323236)          // hairline outlines on buttons and cards
+val VFieldBorder = Color(0xFF383838)     // the outline of a text field at rest
 val VShadow = Color(0x66000000)          // elevation spot color
+
+/**
+ * The sheet grabber. Lighter than [VBorder] because it sits on the sheet, not
+ * on the page, and has to stay findable against it.
+ */
+val VDragHandle = Color(0xFF494949)
 
 // Text
 val VOnSurface = Color(0xFFF2F2F2)          // primary text + icons
 val VOnSurfaceSecondary = Color(0xFF8E8E93) // labels, captions, chevrons
+val VFieldText = Color(0xFFF5F5F5)          // what the supervisor has typed into a field
 
 // Accents
 val VAccentRed = Color(0xFFFF383C)   // SOS / emergency only — nothing else
 val VAccentBlue = Color(0xFF3B82F6)  // talk state, badges, links
 val VMicBlue = Color(0xFF2563EB)     // the filled mic circle while talking
+
+/**
+ * The brand blue. The filled circle behind a `+`, the link glyph on a pairing
+ * row, and the focused outline of the channel-name field all use it at full
+ * strength; [VBrandOnDark] is the same hue dropped back far enough to carry a
+ * 56dp button without glowing off a dark page.
+ */
+val VBrand = Color(0xFF0062FF)
+val VBrandOnDark = Color(0xFF003D9E)
 
 /**
  * The ring around the talking mic circle, and the channel name under it — the

@@ -35,7 +35,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,7 +60,6 @@ import com.example.viko.di.AppViewModelProvider
 import com.example.viko.view.screens.previewChannel
 import com.example.viko.view.screens.previewChannelSummary
 import com.example.viko.view.screens.previewWorker
-import com.example.viko.view.screens.team.AddMemberFlow
 import com.example.viko.view.screens.home.components.AnnouncementSheetContent
 import com.example.viko.view.screens.home.components.ChannelAudioMode
 import com.example.viko.view.screens.home.components.ChannelCard
@@ -125,23 +123,10 @@ fun HomeScreen(
     // that ends when the screen goes away.
     var talkingChannelId by remember { mutableStateOf<String?>(null) }
 
-    // First run: nothing is paired, so pairing IS the first step. The sheet opens
-    // over an empty Home, which is what the design shows — Home is the result of
-    // onboarding, not a screen you land on with a factory already configured.
-    // Saveable, and offered only once: with plain remember an Activity recreation
-    // reset the flag and onboarding re-opened over whatever the supervisor was
-    // doing.
-    var showAddMember by rememberSaveable { mutableStateOf(false) }
-    var onboardingOffered by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(uiState.needsOnboarding) {
-        if (uiState.needsOnboarding && !onboardingOffered) {
-            onboardingOffered = true
-            showAddMember = true
-        }
-    }
-    if (showAddMember) {
-        AddMemberFlow(onDismiss = { showAddMember = false })
-    }
+    // First run is no longer Home's job: the splash routes a fresh install to
+    // onboarding, which creates a channel and lands on Manage Channel with the
+    // pairing sheet one tap away. Home opening its own sheet here would stack a
+    // second one underneath that.
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -158,7 +143,7 @@ fun HomeScreen(
                 // Nothing paired yet. No phantom channels — the grid stays empty
                 // until onboarding creates real ones.
                 NoTeamYet(
-                    onPairDevice = { showAddMember = true },
+                    onSetUpTeam = onOpenManageMembers,
                     modifier = Modifier.weight(1f)
                 )
             } else {
@@ -248,7 +233,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun NoTeamYet(onPairDevice: () -> Unit, modifier: Modifier = Modifier) {
+private fun NoTeamYet(onSetUpTeam: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -263,13 +248,13 @@ private fun NoTeamYet(onPairDevice: () -> Unit, modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Pair an earpiece to add your first member.",
+            text = "Create a channel and pair an earpiece to add your first member.",
             style = MaterialTheme.typography.bodyMedium,
             color = VOnSurfaceSecondary,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(20.dp))
-        VikoBlueButton(text = "Pair Device", onClick = onPairDevice)
+        VikoBlueButton(text = "Set Up Team", onClick = onSetUpTeam)
     }
 }
 
