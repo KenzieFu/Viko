@@ -9,6 +9,9 @@ import androidx.navigation.navArgument
 import com.example.viko.view.screens.channel.ManageChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
+import com.example.viko.view.screens.onboarding.FirstChannelScreen
+import com.example.viko.view.screens.splash.SplashDestination
+import com.example.viko.view.screens.splash.SplashScreen
 import com.example.viko.view.screens.notifications.NotificationsScreen
 import com.example.viko.view.screens.settings.SettingsScreen
 import com.example.viko.view.screens.team.ManageMemberScreen
@@ -27,10 +30,48 @@ import com.example.viko.view.screens.team.MemberDetailScreen
 fun AppNavigation() {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = Screen.Home.route) {
+    NavHost(navController = navController, startDestination = Screen.Splash.route) {
 
-        composable(Screen.Home.route) {
+        composable(Screen.Splash.route) {
+            SplashScreen(
+                onFinished = { destination ->
+                    val next = when (destination) {
+                        SplashDestination.Onboarding -> Screen.FirstChannel.route
+                        SplashDestination.Home -> Screen.Home.createRoute()
+                    }
+                    navController.navigate(next) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.FirstChannel.route) {
+            FirstChannelScreen(
+                onChannelCreated = {
+                    // Land on Home and push Manage Channel on top of it, so the
+                    // supervisor can carry on adding members and Back still has
+                    // somewhere sensible to go. Manage Channel carries the
+                    // "your team ready" card, which only makes sense there.
+                    navController.navigate(Screen.Home.createRoute()) {
+                        popUpTo(Screen.FirstChannel.route) { inclusive = true }
+                    }
+                    navController.navigate(Screen.ManageChannels.createRoute(showTeamReady = true))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Home.route,
+            arguments = listOf(
+                navArgument(NavArgs.START_TUTORIAL) {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { entry ->
             HomeScreen(
+                startTutorial = entry.arguments?.getBoolean(NavArgs.START_TUTORIAL) == true,
                 onOpenNotifications = { navController.navigate(Screen.Notifications.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onDirectCall = { workerId ->
@@ -52,7 +93,7 @@ fun AppNavigation() {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenManageMembers = { navController.navigate(Screen.ManageMembers.createRoute()) },
-                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.route) }
+                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.createRoute()) }
             )
         }
 
@@ -81,11 +122,27 @@ fun AppNavigation() {
             )
         }
 
-        composable(Screen.ManageChannels.route) {
+        composable(
+            route = Screen.ManageChannels.route,
+            arguments = listOf(
+                navArgument(NavArgs.SHOW_TEAM_READY) {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { entry ->
             ManageChannelScreen(
+                showTeamReady = entry.arguments?.getBoolean(NavArgs.SHOW_TEAM_READY) == true,
                 onBack = { navController.popBackStack() },
                 onChannelClick = { channelId ->
                     navController.navigate(Screen.ManageMembers.createRoute(channelId))
+                },
+                onGoToHomepage = {
+                    // Replace the onboarding stack: Home is the top of the app
+                    // from here, and it opens offering the tour.
+                    navController.navigate(Screen.Home.createRoute(startTutorial = true)) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }

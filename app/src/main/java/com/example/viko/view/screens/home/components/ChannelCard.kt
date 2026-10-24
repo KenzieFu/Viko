@@ -32,6 +32,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -78,7 +81,13 @@ fun ChannelCard(
     audioMode: ChannelAudioMode,
     onMicTap: () -> Unit,
     onChipTap: () -> Unit,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    /**
+     * Reports where the mic and the member chip ended up, so the first-run tour
+     * can cut a hole around them. Only the first card on Home bothers.
+     */
+    onMicBounds: (Rect) -> Unit = {},
+    onChipBounds: (Rect) -> Unit = {}
 ) {
     val isActive = summary.isActive && enabled
     val contentAlpha = if (isActive) 1f else INACTIVE_ALPHA
@@ -113,6 +122,7 @@ fun ChannelCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             MemberCountChip(
+                modifier = Modifier.onGloballyPositioned { onChipBounds(it.boundsInRoot()) },
                 onlineCount = summary.onlineCount,
                 totalCount = summary.totalCount,
                 contentAlpha = contentAlpha,
@@ -138,7 +148,9 @@ fun ChannelCard(
                 // made the block taller the moment a channel went live — which
                 // Center then paid for by sliding the label down and the mic up.
                 Box(
-                    modifier = Modifier.size(MIC_SLOT),
+                    modifier = Modifier
+                        .size(MIC_SLOT)
+                        .onGloballyPositioned { onMicBounds(it.boundsInRoot()) },
                     contentAlignment = Alignment.Center
                 ) {
                     // Every branch below draws into the same MIC_SLOT box at the
@@ -188,10 +200,11 @@ private fun MemberCountChip(
     totalCount: Int,
     contentAlpha: Float,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(VSurfaceVariant)

@@ -10,6 +10,8 @@ import com.example.viko.view.screens.channel.ManageChannelViewModel
 import com.example.viko.view.screens.directcall.DirectCallViewModel
 import com.example.viko.view.screens.home.HomeViewModel
 import com.example.viko.view.screens.notifications.NotificationsViewModel
+import com.example.viko.view.screens.onboarding.FirstChannelViewModel
+import com.example.viko.view.screens.splash.SplashViewModel
 import com.example.viko.view.screens.settings.SettingsViewModel
 import com.example.viko.view.screens.team.AddMemberViewModel
 import com.example.viko.view.screens.team.ManageMemberViewModel
@@ -31,6 +33,12 @@ object AppViewModelProvider {
                 channelRepository = container().channelRepository,
                 alertRepository = container().alertRepository
             )
+        }
+        initializer {
+            SplashViewModel(channelRepository = container().channelRepository)
+        }
+        initializer {
+            FirstChannelViewModel(channelRepository = container().channelRepository)
         }
         initializer {
             NotificationsViewModel(alertRepository = container().alertRepository)
