@@ -25,6 +25,9 @@ class VikoApplication : Application() {
         // Listening starts with the process, not with a screen: a badge registers
         // as soon as it joins the Wi-Fi, whether or not anyone has the app open
         // on the Team tab.
+        // Voice tests stream only: no saved recordings or inference.
+        container.badgeAudio.dumpUtterances = false
+
         container.badgeRegistry.start(applicationScope)
 
         if (SEED_DEMO_DATA) {
