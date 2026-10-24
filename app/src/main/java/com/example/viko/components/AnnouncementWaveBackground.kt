@@ -96,7 +96,7 @@ private const val WAVE_MIN_RADIUS = 0.40f
 /** Alpha of a newborn ring; it fades linearly to zero as it expands. */
 private const val WAVE_MAX_ALPHA = 0.18f
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun AnnouncementWaveBackgroundPreview() {
     VikoTheme {

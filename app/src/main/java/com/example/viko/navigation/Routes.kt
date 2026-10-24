@@ -7,6 +7,7 @@ package com.example.viko.navigation
  */
 object NavArgs {
     const val WORKER_ID = "workerId"
+    const val CHANNEL_ID = "channelId"
 }
 
 sealed class Screen(val route: String) {
@@ -14,7 +15,15 @@ sealed class Screen(val route: String) {
 
     data object Notifications : Screen("notifications")
 
-    data object ManageMembers : Screen("manage_members")
+    data object Settings : Screen("settings")
+
+    /** [NavArgs.CHANNEL_ID] is optional: set, the roster opens filtered to that channel. */
+    data object ManageMembers : Screen("manage_members?${NavArgs.CHANNEL_ID}={${NavArgs.CHANNEL_ID}}") {
+        fun createRoute(channelId: String? = null) =
+            if (channelId == null) "manage_members" else "manage_members?${NavArgs.CHANNEL_ID}=$channelId"
+    }
+
+    data object ManageChannels : Screen("manage_channels")
 
     data object DirectCall : Screen("direct_call/{${NavArgs.WORKER_ID}}") {
         fun createRoute(workerId: String) = "direct_call/$workerId"
@@ -22,9 +31,5 @@ sealed class Screen(val route: String) {
 
     data object MemberDetail : Screen("member_detail/{${NavArgs.WORKER_ID}}") {
         fun createRoute(workerId: String) = "member_detail/$workerId"
-    }
-
-    data object SelectChannel : Screen("select_channel/{${NavArgs.WORKER_ID}}") {
-        fun createRoute(workerId: String) = "select_channel/$workerId"
     }
 }

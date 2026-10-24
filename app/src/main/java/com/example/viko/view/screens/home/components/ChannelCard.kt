@@ -318,7 +318,7 @@ private fun ChannelCardPreviewFrame(content: @Composable () -> Unit) {
 }
 
 /** Talking: navy panel, blue ring, outline mic, blue label — the Figma state. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardTalkingPreview() {
     ChannelCardPreviewFrame {
@@ -327,7 +327,7 @@ private fun ChannelCardTalkingPreview() {
 }
 
 /** Speaker: neutral panel, white circle, blue icon, white label. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardListeningPreview() {
     ChannelCardPreviewFrame {
@@ -336,7 +336,7 @@ private fun ChannelCardListeningPreview() {
 }
 
 /** Ready: people on the channel, nobody talking — the new middle state. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardReadyPreview() {
     ChannelCardPreviewFrame {
@@ -356,7 +356,7 @@ private fun previewEmptyChannelSummary(name: String) = ChannelSummary(
  * time hides the fact that empty and ready are the same drawing at different
  * opacity.
  */
-@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardGridPreview() {
     ChannelCardGrid(talkingOnOperations = false)
@@ -366,7 +366,7 @@ private fun ChannelCardGridPreview() {
  * Holding Operations' mic: every other channel is faded and inert, so the grid
  * shows one live card among disabled ones — the state Home puts them in.
  */
-@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(widthDp = 380, showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardGridTalkingPreview() {
     ChannelCardGrid(talkingOnOperations = true)
@@ -402,7 +402,7 @@ private fun ChannelCardGrid(talkingOnOperations: Boolean) {
 }
 
 /** 0/5 — nobody on the channel. The whole tile fades and the mic stops responding. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardEmptyPreview() {
     ChannelCardPreviewFrame {
@@ -411,7 +411,7 @@ private fun ChannelCardEmptyPreview() {
 }
 
 /** A name long enough to test the ellipsis at half width. */
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardLongNamePreview() {
     ChannelCardPreviewFrame {

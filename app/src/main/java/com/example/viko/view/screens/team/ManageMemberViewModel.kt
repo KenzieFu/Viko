@@ -1,18 +1,19 @@
 package com.example.viko.view.screens.team
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
+import com.example.viko.navigation.NavArgs
 import com.example.viko.utils.UI_STATE_TIMEOUT_MS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 /** A worker plus the channel name the list needs — resolved once, in the VM. */
 data class MemberRow(
@@ -24,16 +25,24 @@ data class ManageMemberUiState(
     val members: List<MemberRow> = emptyList(),
     val channels: List<Channel> = emptyList(),
     val searchQuery: String = "",
-    val filterChannelId: String? = null
-)
+    val filterChannelId: String? = null,
+    /** False until Room has answered — "no members yet" must not flash on a full roster. */
+    val isLoaded: Boolean = false
+) {
+    /** Nothing paired at all, as opposed to a search or filter that matched nobody. */
+    val hasNoMembers: Boolean get() = isLoaded && members.isEmpty() && searchQuery.isBlank() && filterChannelId == null
+}
 
 class ManageMemberViewModel(
-    private val workerRepository: WorkerRepository,
+    savedStateHandle: SavedStateHandle,
+    workerRepository: WorkerRepository,
     channelRepository: ChannelRepository
 ) : ViewModel() {
 
     private val searchQuery = MutableStateFlow("")
-    private val filterChannelId = MutableStateFlow<String?>(null)
+
+    /** Starts on the channel Manage Channel was showing, when it sent us here. */
+    private val filterChannelId = MutableStateFlow(savedStateHandle.get<String>(NavArgs.CHANNEL_ID))
 
     val uiState: StateFlow<ManageMemberUiState> = combine(
         workerRepository.observeWorkers(),
@@ -48,7 +57,8 @@ class ManageMemberViewModel(
                 .map { MemberRow(it, channelNames[it.channelId] ?: UNKNOWN_CHANNEL) },
             channels = channels,
             searchQuery = query,
-            filterChannelId = channelFilter
+            filterChannelId = channelFilter,
+            isLoaded = true
         )
     }.stateIn(
         scope = viewModelScope,
@@ -64,10 +74,6 @@ class ManageMemberViewModel(
         filterChannelId.value = channelId
     }
 
-    fun removeWorker(workerId: String) = viewModelScope.launch {
-        workerRepository.removeWorker(workerId)
-    }
-
     private fun Worker.matches(query: String, channelFilter: String?): Boolean {
         val matchesSearch = query.isBlank() || name.contains(query.trim(), ignoreCase = true)
         val matchesChannel = channelFilter == null || channelId == channelFilter
@@ -75,6 +81,6 @@ class ManageMemberViewModel(
     }
 
     private companion object {
-        const val UNKNOWN_CHANNEL = "Unknown"
+        const val UNKNOWN_CHANNEL = "Unassigned"
     }
 }

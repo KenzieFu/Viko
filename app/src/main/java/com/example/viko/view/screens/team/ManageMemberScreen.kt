@@ -1,18 +1,12 @@
 package com.example.viko.view.screens.team
 
-import com.example.viko.type.WorkerStatus
-import com.example.viko.view.theme.VikoTheme
-import com.example.viko.view.screens.previewWorker
-import com.example.viko.view.screens.previewChannel
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,52 +21,54 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.viko.components.MemberAvatar
-import com.example.viko.components.StatusDot
-import com.example.viko.components.VikoTextField
+import com.example.viko.components.AddPillButton
+import com.example.viko.components.ScreenHeader
+import com.example.viko.components.SearchField
 import com.example.viko.di.AppViewModelProvider
-import com.example.viko.view.theme.VAccentRed
+import com.example.viko.domain.channel.model.Channel
+import com.example.viko.view.screens.previewChannel
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.screens.team.components.MemberStatusLine
+import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VBackground
-import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VSurfaceVariant
+import com.example.viko.view.theme.VikoTheme
 
-/** The full roster, searchable and filterable, with add and delete. */
+/**
+ * The full roster, searchable and filterable by channel. Deliberately no delete
+ * on a row — a member is removed from Member Details or a team sheet's edit
+ * mode, where the confirmation lives.
+ */
 @Composable
 fun ManageMemberScreen(
     onBack: () -> Unit,
@@ -84,7 +80,6 @@ fun ManageMemberScreen(
         uiState = uiState,
         onBack = onBack,
         onMemberClick = onMemberClick,
-        onRemoveWorker = viewModel::removeWorker,
         onSearchQueryChange = viewModel::onSearchQueryChange,
         onChannelFilterChange = viewModel::onChannelFilterChange
     )
@@ -95,14 +90,9 @@ fun ManageMemberScreen(
     uiState: ManageMemberUiState,
     onBack: () -> Unit,
     onMemberClick: (String) -> Unit,
-    onRemoveWorker: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onChannelFilterChange: (String?) -> Unit
 ) {
-    // Saveable, so a rotation does not dismiss the dialog or the sheet. The id,
-    // not the Worker — a data class is not saveable.
-    var deleteTargetId by rememberSaveable { mutableStateOf<String?>(null) }
-
     // Adding a member is a stack of bottom sheets over this screen, not a
     // separate route — see AddMemberFlow for why.
     var showAddMember by rememberSaveable { mutableStateOf(false) }
@@ -111,288 +101,204 @@ fun ManageMemberScreen(
         AddMemberFlow(onDismiss = { showAddMember = false })
     }
 
-    if (deleteTargetId != null) {
-        DeleteMemberDialog(
-            onConfirm = {
-                deleteTargetId?.let(onRemoveWorker)
-                deleteTargetId = null
-            },
-            onDismiss = { deleteTargetId = null }
-        )
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VBackground)
     ) {
         Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        ScreenHeader(
+            title = "Manage Member",
+            onBack = onBack,
+            onAdd = { showAddMember = true },
+            addContentDescription = "Add Member"
+        )
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VOnSurface)
-            }
-            Text(
-                text = "Manage Member",
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.weight(1f)
-            )
-            // Blue circle, white glyph — the same control as the one in Select
-            // Channel. It was a VOnSurface circle with a VOnPrimary icon, which
-            // the dark palette turned into near-white on near-white.
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(VMicBlue)
-                    .clickable { showAddMember = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    "Add Member",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurface)
-                .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Search, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            VikoTextField(
+            SearchField(
                 value = uiState.searchQuery,
                 onValueChange = onSearchQueryChange,
                 placeholder = "Search Member",
                 modifier = Modifier.weight(1f)
             )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Channel filter chips must scroll: with four channels the last one ran
-        // off the right edge and rendered as a column of single letters.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = uiState.filterChannelId == null,
-                onClick = { onChannelFilterChange(null) },
-                label = { Text("All", fontSize = 12.sp) },
-                shape = RoundedCornerShape(8.dp)
+            ChannelFilterButton(
+                channels = uiState.channels,
+                selectedChannelId = uiState.filterChannelId,
+                onSelect = onChannelFilterChange
             )
-            uiState.channels.forEach { channel ->
-                FilterChip(
-                    selected = uiState.filterChannelId == channel.id,
-                    onClick = {
-                        onChannelFilterChange(
-                            channel.id.takeUnless { it == uiState.filterChannelId }
-                        )
-                    },
-                    label = { Text(channel.name, fontSize = 12.sp) },
-                    shape = RoundedCornerShape(8.dp)
-                )
-            }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        HorizontalDivider(color = VBorder)
+        Spacer(modifier = Modifier.height(24.dp))
 
-        if (uiState.members.isEmpty()) {
-            EmptyRoster(onAddMember = { showAddMember = true })
-        } else {
-            LazyColumn {
-                items(uiState.members, key = { it.worker.id }) { row ->
-                    MemberRosterItem(
-                        row = row,
-                        onClick = { onMemberClick(row.worker.id) },
-                        onDelete = { deleteTargetId = row.worker.id }
-                    )
-                    HorizontalDivider(color = VBorder, modifier = Modifier.padding(start = 80.dp))
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { showAddMember = true },
-                            modifier = Modifier.height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, VBorder),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = VOnSurface)
-                        ) {
-                            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Add Member")
-                        }
-                    }
-                    Spacer(modifier = Modifier.navigationBarsPadding())
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MemberRosterItem(
-    row: MemberRow,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        MemberAvatar(name = row.worker.name, size = 48.dp)
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = row.worker.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = VOnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                StatusDot(isOnline = row.worker.isOnline)
+        when {
+            uiState.hasNoMembers -> Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                 Text(
-                    text = "${row.channelName} • ${row.worker.zone}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VOnSurfaceSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "No member yet",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = VOnSurfaceSecondary.copy(alpha = 0.7f)
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                AddPillButton(text = "Add Member", onClick = { showAddMember = true })
+            }
+
+            uiState.isLoaded && uiState.members.isEmpty() -> Text(
+                text = "No member found",
+                style = MaterialTheme.typography.bodyLarge,
+                color = VOnSurfaceSecondary.copy(alpha = 0.7f),
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+
+            else -> LazyColumn(
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.navigationBarsPadding()
+            ) {
+                items(uiState.members, key = { it.worker.id }) { row ->
+                    MemberRosterItem(row = row, onClick = { onMemberClick(row.worker.id) })
+                }
             }
         }
+    }
+}
 
-        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+/** The funnel beside the search: narrows the roster to one channel. */
+@Composable
+private fun ChannelFilterButton(
+    channels: List<Channel>,
+    selectedChannelId: String?,
+    onSelect: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
             Icon(
-                Icons.Default.Delete,
-                contentDescription = "Delete ${row.worker.name}",
-                tint = VOnSurfaceSecondary,
-                modifier = Modifier.size(20.dp)
+                Icons.Default.FilterAlt,
+                contentDescription = "Filter by channel",
+                // Blue while a filter is on, so a short list never looks like the
+                // whole roster.
+                tint = if (selectedChannelId != null) VAccentBlue else VOnSurface
             )
         }
-    }
-}
-
-@Composable
-private fun EmptyRoster(onAddMember: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = VSurface
         ) {
-            Icon(Icons.Default.Person, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(48.dp))
-            Text("No members found", color = VOnSurfaceSecondary)
-            OutlinedButton(
-                onClick = onAddMember,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, VBorder)
-            ) {
-                Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Add Member", color = VOnSurface)
+            FilterMenuItem(label = "All Channels", isSelected = selectedChannelId == null) {
+                onSelect(null)
+                expanded = false
+            }
+            channels.forEach { channel ->
+                FilterMenuItem(label = channel.name, isSelected = selectedChannelId == channel.id) {
+                    onSelect(channel.id)
+                    expanded = false
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DeleteMemberDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = VSurface,
-        shape = RoundedCornerShape(20.dp),
-        title = { Text("Delete member?", style = MaterialTheme.typography.headlineSmall) },
-        text = {
-            Text(
-                "Your paired devices data will be deleted and has to setup a new one later.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VOnSurfaceSecondary
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = VAccentRed),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Delete")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, VBorder)
-            ) {
-                Text("Cancel", color = VOnSurface)
-            }
+private fun FilterMenuItem(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, color = VOnSurface) },
+        onClick = onClick,
+        trailingIcon = if (isSelected) {
+            { Icon(Icons.Default.Check, contentDescription = "Selected", tint = VAccentBlue) }
+        } else {
+            null
         }
     )
 }
 
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Composable
+private fun MemberRosterItem(row: MemberRow, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(VSurface)
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = row.worker.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = VOnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ChannelChip(name = row.channelName)
+                Spacer(modifier = Modifier.width(8.dp))
+                MemberStatusLine(worker = row.worker)
+            }
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = VOnSurfaceSecondary,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/** `OPERATIONS` — the member's channel as a small outlined tag. */
+@Composable
+private fun ChannelChip(name: String) {
+    Text(
+        text = name.uppercase(),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.5.sp,
+        color = VOnSurfaceSecondary,
+        maxLines = 1,
+        modifier = Modifier
+            .border(1.dp, VSurfaceVariant, RoundedCornerShape(4.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    )
+}
+
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ManageMemberScreenPreview() {
     VikoTheme {
         ManageMemberScreen(
             uiState = ManageMemberUiState(
                 members = listOf(
-                    MemberRow(previewWorker("01", "Budi", "c1", WorkerStatus.SPEAKING), "Warehouse"),
-                    MemberRow(previewWorker("02", "Sari", "c1"), "Warehouse"),
-                    MemberRow(previewWorker("03", "Andi", "c2", isOnline = false, batteryLevel = 12), "Assembly")
+                    MemberRow(previewWorker("01", "Tran Hoang Nam", "c1", zone = "Central Building", batteryLevel = 70), "Operations"),
+                    MemberRow(previewWorker("02", "Nguyen Minh Tam", "c1", zone = "Central Building", batteryLevel = 10), "Operations"),
+                    MemberRow(previewWorker("03", "Pham Bao Anh", "c1", isOnline = false), "Operations")
                 ),
-                channels = listOf(previewChannel("c1", "Warehouse"), previewChannel("c2", "Assembly"))
+                channels = listOf(previewChannel("c1", "Operations"), previewChannel("c2", "Maintenance")),
+                isLoaded = true
             ),
-            onBack = {}, onMemberClick = {}, onRemoveWorker = {},
-            onSearchQueryChange = {}, onChannelFilterChange = {}
+            onBack = {}, onMemberClick = {}, onSearchQueryChange = {}, onChannelFilterChange = {}
         )
     }
 }
 
 /** Search that matched nothing — distinct from having no members at all. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ManageMemberScreenNoResultsPreview() {
     VikoTheme {
         ManageMemberScreen(
             uiState = ManageMemberUiState(
                 channels = listOf(previewChannel("c1", "Warehouse")),
-                searchQuery = "zzz"
+                searchQuery = "zzz",
+                isLoaded = true
             ),
-            onBack = {}, onMemberClick = {}, onRemoveWorker = {},
-            onSearchQueryChange = {}, onChannelFilterChange = {}
+            onBack = {}, onMemberClick = {}, onSearchQueryChange = {}, onChannelFilterChange = {}
         )
     }
 }

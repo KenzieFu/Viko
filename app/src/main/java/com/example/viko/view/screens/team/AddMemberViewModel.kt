@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.channel.repository.ChannelRepository
+import com.example.viko.domain.settings.model.FactoryWifi
+import com.example.viko.domain.settings.repository.FactoryWifiRepository
 import com.example.viko.domain.team.model.BadgeSetup
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.domain.team.model.Worker
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -34,11 +37,13 @@ data class AddMemberUiState(
     val pairedDevice: NearbyDevice? = null,
     val name: String = "",
     val zone: String = "",
-    val wifiSsid: String = "",
-    val wifiPassword: String = "",
+    /**
+     * The factory-wide network every badge is written onto. Comes from Settings,
+     * not this form: every access point shares one SSID and password.
+     */
+    val factoryWifi: FactoryWifi = FactoryWifi(),
     val selectedChannelId: String = "",
     val channels: List<Channel> = emptyList(),
-    val memberCounts: Map<String, Int> = emptyMap(),
     /** BLE addresses of badges already on the roster — they cannot be set up twice. */
     val enrolledAddresses: Set<String> = emptySet(),
     /** True while the badge is being written over BLE — Save shows a spinner. */
@@ -51,14 +56,14 @@ data class AddMemberUiState(
     val selectedChannelName: String? get() = channels.find { it.id == selectedChannelId }?.name
 
     /**
-     * Save both stores the member and writes the badge, so the Wi-Fi the badge
-     * has to join is as required as the name and the channel — provisioning
+     * Save both stores the member and writes the badge, so the factory Wi-Fi
+     * has to be set as surely as the name and the channel — provisioning
      * without an SSID produces a badge that saves a blank network and never
      * comes back.
      */
     val canSave: Boolean
         get() = name.isNotBlank() && selectedChannelName != null &&
-            wifiSsid.isNotBlank() && !isProvisioning
+            factoryWifi.isConfigured && !isProvisioning
 
     fun isEnrolled(device: NearbyDevice): Boolean = device.address in enrolledAddresses
 }
@@ -78,6 +83,7 @@ class AddMemberViewModel(
     private val savedStateHandle: SavedStateHandle,
     private val workerRepository: WorkerRepository,
     private val channelRepository: ChannelRepository,
+    private val factoryWifiRepository: FactoryWifiRepository,
     private val deviceScanner: DeviceScanner
 ) : ViewModel() {
 
@@ -87,11 +93,12 @@ class AddMemberViewModel(
     val uiState: StateFlow<AddMemberUiState> = combine(
         form,
         channelRepository.observeChannels(),
-        workerRepository.observeWorkers()
-    ) { state, channels, workers ->
+        workerRepository.observeWorkers(),
+        factoryWifiRepository.observeFactoryWifi()
+    ) { state, channels, workers, wifi ->
         state.copy(
             channels = channels,
-            memberCounts = workers.groupingBy { it.channelId }.eachCount(),
+            factoryWifi = wifi,
             // deviceAddress, not macAddress: deviceAddress is the BLE address the
             // scan reports, while macAddress is the Wi-Fi one the badge sends
             // later over the control channel. They differ on an ESP32.
@@ -124,9 +131,9 @@ class AddMemberViewModel(
 
     /**
      * Selecting a badge only moves the sheet forward — nothing is written to the
-     * hardware yet. The badge needs a worker name, a zone and the factory Wi-Fi
-     * in the same single BLE write, and none of that has been typed at this
-     * point, so the provisioning happens in [save].
+     * hardware yet. The badge needs a worker name and a zone in the same single
+     * BLE write as the factory Wi-Fi, and neither has been typed at this point,
+     * so the provisioning happens in [save].
      */
     fun select(device: NearbyDevice) = form.update {
         it.copy(pairedDevice = device, step = AddMemberStep.Setup, error = null)
@@ -136,9 +143,14 @@ class AddMemberViewModel(
 
     fun onZoneChange(zone: String) = form.update { it.copy(zone = zone) }
 
-    fun onSsidChange(ssid: String) = form.update { it.copy(wifiSsid = ssid) }
-
-    fun onPasswordChange(password: String) = form.update { it.copy(wifiPassword = password) }
+    /**
+     * Sets the factory Wi-Fi from inside the flow. Onboarding opens pairing on
+     * first launch, before anyone has been to Settings, so the network has to be
+     * settable from here too. It is the same setting, not a per-member value.
+     */
+    fun saveFactoryWifi(wifi: FactoryWifi) = viewModelScope.launch {
+        factoryWifiRepository.saveFactoryWifi(wifi)
+    }
 
     fun dismissError() = form.update { it.copy(error = null) }
 
@@ -165,7 +177,8 @@ class AddMemberViewModel(
      * roster.
      */
     fun save() = viewModelScope.launch {
-        val state = form.value
+        val wifi = factoryWifiRepository.observeFactoryWifi().first()
+        val state = form.value.copy(factoryWifi = wifi)
         val device = state.pairedDevice
         if (!state.canSave || device == null) return@launch
 
@@ -179,8 +192,8 @@ class AddMemberViewModel(
                 deviceId = deviceId,
                 workerName = state.name.trim(),
                 factoryZone = zone,
-                wifiSsid = state.wifiSsid.trim(),
-                wifiPassword = state.wifiPassword
+                wifiSsid = wifi.ssid.trim(),
+                wifiPassword = wifi.password
             )
         )
 
@@ -220,8 +233,8 @@ class AddMemberViewModel(
                 selectedChannelId = "",
                 isProvisioning = false,
                 addedCount = it.addedCount + 1
-                // zone, ssid and password deliberately survive: a supervisor
-                // onboarding a line types the same three into every badge.
+                // zone deliberately survives: a supervisor onboarding a line
+                // usually pairs everyone standing in the same place.
             )
         }
     }
@@ -264,7 +277,6 @@ class AddMemberViewModel(
 private const val KEY_STEP = "add_member_step"
 private const val KEY_NAME = "add_member_name"
 private const val KEY_ZONE = "add_member_zone"
-private const val KEY_SSID = "add_member_ssid"
 private const val KEY_CHANNEL_ID = "add_member_channel_id"
 private const val KEY_ADDED_COUNT = "add_member_added_count"
 private const val KEY_PAIRED_DEVICE = "add_member_paired_device"
@@ -273,13 +285,11 @@ private fun SavedStateHandle.persistForm(state: AddMemberUiState) {
     this[KEY_STEP] = state.step.name
     this[KEY_NAME] = state.name
     this[KEY_ZONE] = state.zone
-    this[KEY_SSID] = state.wifiSsid
     this[KEY_CHANNEL_ID] = state.selectedChannelId
     this[KEY_ADDED_COUNT] = state.addedCount
     this[KEY_PAIRED_DEVICE] = state.pairedDevice?.toSavedList()
-    // The Wi-Fi password is not persisted. SavedStateHandle is written out by
-    // the system on process death, and a factory password is not something to
-    // leave sitting in a saved-state bundle to spare one retype.
+    // No Wi-Fi here: it is a factory setting with its own store, not part of
+    // the form.
 }
 
 private fun SavedStateHandle.restoreForm(): AddMemberUiState {
@@ -295,7 +305,6 @@ private fun SavedStateHandle.restoreForm(): AddMemberUiState {
         pairedDevice = pairedDevice,
         name = get<String>(KEY_NAME).orEmpty(),
         zone = get<String>(KEY_ZONE).orEmpty(),
-        wifiSsid = get<String>(KEY_SSID).orEmpty(),
         selectedChannelId = get<String>(KEY_CHANNEL_ID).orEmpty(),
         addedCount = get<Int>(KEY_ADDED_COUNT) ?: 0
     )

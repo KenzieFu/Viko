@@ -6,10 +6,11 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.viko.VikoApplication
-import com.example.viko.view.screens.channel.SelectChannelViewModel
+import com.example.viko.view.screens.channel.ManageChannelViewModel
 import com.example.viko.view.screens.directcall.DirectCallViewModel
 import com.example.viko.view.screens.home.HomeViewModel
 import com.example.viko.view.screens.notifications.NotificationsViewModel
+import com.example.viko.view.screens.settings.SettingsViewModel
 import com.example.viko.view.screens.team.AddMemberViewModel
 import com.example.viko.view.screens.team.ManageMemberViewModel
 import com.example.viko.view.screens.team.MemberDetailViewModel
@@ -43,6 +44,16 @@ object AppViewModelProvider {
         }
         initializer {
             ManageMemberViewModel(
+                savedStateHandle = createSavedStateHandle(),
+                workerRepository = container().workerRepository,
+                channelRepository = container().channelRepository
+            )
+        }
+        initializer {
+            SettingsViewModel(factoryWifiRepository = container().factoryWifiRepository)
+        }
+        initializer {
+            ManageChannelViewModel(
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository
             )
@@ -51,8 +62,7 @@ object AppViewModelProvider {
             MemberDetailViewModel(
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
-                channelRepository = container().channelRepository,
-                messageRepository = container().messageRepository
+                channelRepository = container().channelRepository
             )
         }
         initializer {
@@ -60,14 +70,8 @@ object AppViewModelProvider {
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,
+                factoryWifiRepository = container().factoryWifiRepository,
                 deviceScanner = container().deviceScanner
-            )
-        }
-        initializer {
-            SelectChannelViewModel(
-                savedStateHandle = createSavedStateHandle(),
-                workerRepository = container().workerRepository,
-                channelRepository = container().channelRepository
             )
         }
     }

@@ -1,7 +1,7 @@
 package com.example.viko.view.screens.home.components
 
+import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VSurfaceVariant
-import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.components.AnnouncementWaveBackground
 import com.example.viko.components.AnnouncementWaveHeight
 import com.example.viko.view.theme.VikoTheme
@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -188,15 +189,16 @@ fun SosSheetContent(onClose: () -> Unit) {
             ) {
                 // No halo slot to reserve any more — the wave behind the sheet does
                 // the work, so the button is just the button and cannot move.
+                // Dark until pressed: a red circle at rest would read as a broadcast
+                // already going out. It turns red only while the floor is held.
                 Box(
                     modifier = Modifier
                         .size(ANNOUNCE_BUTTON)
                         .clip(CircleShape)
-                        .background(VAccentRed)
+                        .background(if (isBroadcasting) VAccentRed else VSurfaceVariant)
                         .clickable { isBroadcasting = !isBroadcasting },
                     contentAlignment = Alignment.Center
                 ) {
-
                     Icon(
                         Icons.Default.Campaign,
                         contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
@@ -231,9 +233,13 @@ private fun EmergencyTypeCard(
             .alpha(if (dimmed) 0.4f else 1f)
             .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
-            // The card itself keeps its own surface in both states — the sheet is
-            // VSurface, so VSurfaceVariant is what separates a card from it.
-            .background(VSurfaceVariant)
+            // Selected, the card itself drops back to the sheet colour behind a
+            // hairline, so the tinted panel inside it is the only thing lit.
+            .background(if (isSelected) VBackground else VSurface)
+            .then(
+                if (isSelected) Modifier.border(1.dp, VBorder, RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .clickable(enabled = !dimmed, onClick = onClick)
             .padding(EMERGENCY_PANEL_INSET),
         contentAlignment = Alignment.Center
@@ -249,12 +255,18 @@ private fun EmergencyTypeCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
         ) {
-            // Unselected: hollow, hairline ring, neutral glyph — an emergency type
-            // reads as armed only once it has been chosen, so four red icons cannot
-            // sit there looking like four live alarms.
+            // Unselected: hollow, hairline ring, white glyph — an emergency type
+            // reads as armed only once it has been chosen, so three red icons
+            // cannot sit there looking like three live alarms. All Clear keeps
+            // its blue glyph: blue is safe, and it is the one that stands down.
             Box(
                 modifier = Modifier
                     .size(56.dp)
+                    .then(
+                        if (isSelected) Modifier.drawBehind {
+                            drawCircle(type.accent.copy(alpha = 0.25f), radius = size.minDimension * 0.68f)
+                        } else Modifier
+                    )
                     .clip(CircleShape)
                     .background(if (isSelected) type.accent else Color.Transparent)
                     .then(
@@ -266,7 +278,11 @@ private fun EmergencyTypeCard(
                 Icon(
                     type.icon,
                     contentDescription = type.label,
-                    tint = if (isSelected) Color.White else VOnSurfaceSecondary,
+                    tint = when {
+                        isSelected -> Color.White
+                        type.accent == VAccentBlue -> VAccentBlue
+                        else -> VOnSurface
+                    },
                     modifier = Modifier.size(26.dp)
                 )
             }
@@ -279,7 +295,7 @@ private fun EmergencyTypeCard(
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun SosSheetContentPreview() {
     VikoTheme { SosSheetContent(onClose = {}) }

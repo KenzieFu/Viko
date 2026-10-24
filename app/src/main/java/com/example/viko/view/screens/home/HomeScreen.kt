@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +57,7 @@ import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.view.screens.previewChannel
 import com.example.viko.view.screens.previewChannelSummary
 import com.example.viko.view.screens.previewWorker
@@ -67,6 +67,7 @@ import com.example.viko.view.screens.home.components.ChannelAudioMode
 import com.example.viko.view.screens.home.components.ChannelCard
 import com.example.viko.view.screens.home.components.SosSheetContent
 import com.example.viko.view.screens.home.components.TeamSheetContent
+import com.example.viko.view.screens.notifications.components.AlertCard
 import com.example.viko.view.theme.VAccentBlue
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VBackground
@@ -88,7 +89,7 @@ import com.example.viko.view.theme.VikoTheme
 @Composable
 fun HomeScreen(
     onOpenNotifications: () -> Unit,
-    onOpenManageMembers: () -> Unit,
+    onOpenSettings: () -> Unit,
     onDirectCall: (String) -> Unit,
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -96,11 +97,12 @@ fun HomeScreen(
     HomeScreen(
         uiState = uiState,
         onOpenNotifications = onOpenNotifications,
-        onOpenManageMembers = onOpenManageMembers,
+        onOpenSettings = onOpenSettings,
         onDirectCall = onDirectCall,
         onRenameWorker = viewModel::renameWorker,
         onRemoveWorker = viewModel::removeWorker,
-        onAssignWorkerToChannel = viewModel::assignWorkerToChannel
+        onAssignWorkerToChannel = viewModel::assignWorkerToChannel,
+        onResolveAlert = viewModel::resolveAlert
     )
 }
 
@@ -109,11 +111,12 @@ fun HomeScreen(
 fun HomeScreen(
     uiState: HomeUiState,
     onOpenNotifications: () -> Unit,
-    onOpenManageMembers: () -> Unit,
+    onOpenSettings: () -> Unit,
     onDirectCall: (String) -> Unit,
     onRenameWorker: (String, String) -> Unit,
     onRemoveWorker: (String) -> Unit,
-    onAssignWorkerToChannel: (String, String) -> Unit
+    onAssignWorkerToChannel: (String, String) -> Unit,
+    onResolveAlert: (String) -> Unit
 ) {
     // Which sheet is open is view state, but it still has to survive an Activity
     // recreation — a rotation should not close the roster the supervisor opened.
@@ -133,6 +136,9 @@ fun HomeScreen(
     // doing.
     var showAddMember by rememberSaveable { mutableStateOf(false) }
     var onboardingOffered by rememberSaveable { mutableStateOf(false) }
+    // Set when pairing was started from a team sheet's Add Member: the new
+    // earpiece joins that channel rather than asking which one.
+    var addMemberChannelId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(uiState.needsOnboarding) {
         if (uiState.needsOnboarding && !onboardingOffered) {
             onboardingOffered = true
@@ -140,7 +146,13 @@ fun HomeScreen(
         }
     }
     if (showAddMember) {
-        AddMemberFlow(onDismiss = { showAddMember = false })
+        AddMemberFlow(
+            onDismiss = {
+                showAddMember = false
+                addMemberChannelId = null
+            },
+            presetChannelId = addMemberChannelId
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize().background(VBackground)) {
@@ -151,8 +163,19 @@ fun HomeScreen(
                 activeAlertCount = uiState.activeAlertCount,
                 onSosTap = { showSosSheet = true },
                 onNotificationsTap = onOpenNotifications,
-                onSettingsTap = onOpenManageMembers
+                onSettingsTap = onOpenSettings
             )
+
+            // Home — Notified: a member's SOS sits above the grid until someone
+            // calls them or resolves it, so it cannot scroll out of sight.
+            uiState.activeAlert?.let { alert ->
+                AlertCard(
+                    alert = alert,
+                    onDirectCall = { onDirectCall(alert.workerId) },
+                    onResolve = { onResolveAlert(alert.id) },
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp)
+                )
+            }
 
             if (uiState.hasNoChannels) {
                 // Nothing paired yet. No phantom channels — the grid stays empty
@@ -199,7 +222,7 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showSosSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = VSurface,
+            containerColor = VBackground,
             dragHandle = { VikoDragHandle() }
         ) {
             SosSheetContent(onClose = { showSosSheet = false })
@@ -226,13 +249,12 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { openTeamSheetChannelId = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = VSurface,
+            containerColor = VBackground,
             dragHandle = { VikoDragHandle() }
         ) {
             TeamSheetContent(
                 summary = teamSummary,
                 assignableWorkers = uiState.unassignedToChannel[teamSummary.channel.id].orEmpty(),
-                onClose = { openTeamSheetChannelId = null },
                 onDirectCall = { workerId ->
                     openTeamSheetChannelId = null
                     onDirectCall(workerId)
@@ -241,6 +263,11 @@ fun HomeScreen(
                 onRemoveWorker = onRemoveWorker,
                 onAssignWorker = { workerId ->
                     onAssignWorkerToChannel(workerId, teamSummary.channel.id)
+                },
+                onPairNewMember = {
+                    addMemberChannelId = teamSummary.channel.id
+                    openTeamSheetChannelId = null
+                    showAddMember = true
                 }
             )
         }
@@ -344,7 +371,7 @@ private fun HomeTopBar(
         }
 
         IconButton(onClick = onSettingsTap) {
-            Icon(Icons.Outlined.Settings, contentDescription = "Manage members", tint = VOnSurface)
+            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = VOnSurface)
         }
     }
 }
@@ -386,7 +413,7 @@ private fun MakeAnnouncementButton(onClick: () -> Unit) {
 }
 
 /** The populated dashboard: two channels, one of them with a member talking. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun HomeScreenPreview() {
     VikoTheme {
@@ -404,28 +431,61 @@ private fun HomeScreenPreview() {
                 isLoaded = true
             ),
             onOpenNotifications = {},
-            onOpenManageMembers = {},
+            onOpenSettings = {},
             onDirectCall = {},
             onRenameWorker = { _, _ -> },
             onRemoveWorker = {},
-            onAssignWorkerToChannel = { _, _ -> }
+            onAssignWorkerToChannel = { _, _ -> },
+            onResolveAlert = {}
+        )
+    }
+}
+
+/** Home — Notified: a member's SOS pinned above the grid. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
+@Composable
+private fun HomeScreenNotifiedPreview() {
+    VikoTheme {
+        HomeScreen(
+            uiState = HomeUiState(
+                channels = listOf(previewChannelSummary("c1", "Operations")),
+                activeAlertCount = 1,
+                activeAlert = EmergencyAlert(
+                    id = "a1",
+                    workerId = "01",
+                    workerName = "Minh Luat Nguyen",
+                    zone = "Zone 3",
+                    team = "Operations Team",
+                    timeAgo = "1m ago"
+                ),
+                hasMembers = true,
+                isLoaded = true
+            ),
+            onOpenNotifications = {},
+            onOpenSettings = {},
+            onDirectCall = {},
+            onRenameWorker = { _, _ -> },
+            onRemoveWorker = {},
+            onAssignWorkerToChannel = { _, _ -> },
+            onResolveAlert = {}
         )
     }
 }
 
 /** Loaded, but nothing paired yet — the empty state, hard to reach in a running app. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun HomeScreenEmptyPreview() {
     VikoTheme {
         HomeScreen(
             uiState = HomeUiState(hasMembers = true, isLoaded = true),
             onOpenNotifications = {},
-            onOpenManageMembers = {},
+            onOpenSettings = {},
             onDirectCall = {},
             onRenameWorker = { _, _ -> },
             onRemoveWorker = {},
-            onAssignWorkerToChannel = { _, _ -> }
+            onAssignWorkerToChannel = { _, _ -> },
+            onResolveAlert = {}
         )
     }
 }

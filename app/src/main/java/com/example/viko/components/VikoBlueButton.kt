@@ -13,13 +13,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.viko.view.theme.VActivePanel
-import com.example.viko.view.theme.VMicBlue
+import com.example.viko.view.theme.VButtonBlue
+import com.example.viko.view.theme.VButtonBlueDisabled
 import com.example.viko.view.theme.VikoTheme
 
 /**
- * Figma's blue action button (Save / Continue). Disabled is the same blue gone
- * dim rather than grey, which is how the design shows "not filled in yet".
+ * Figma's blue action button (Save / Save Changes / Continue). Disabled is the
+ * same blue gone dim rather than grey, which is how the design shows "not filled
+ * in yet".
  */
 @Composable
 fun VikoBlueButton(
@@ -32,13 +33,13 @@ fun VikoBlueButton(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp),
+            .height(56.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = VMicBlue,
+            containerColor = VButtonBlue,
             contentColor = Color.White,
-            disabledContainerColor = VActivePanel,
+            disabledContainerColor = VButtonBlueDisabled,
             disabledContentColor = Color.White.copy(alpha = 0.5f)
         )
     ) {
@@ -46,7 +47,7 @@ fun VikoBlueButton(
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun VikoBlueButtonPreview() {
     VikoTheme {

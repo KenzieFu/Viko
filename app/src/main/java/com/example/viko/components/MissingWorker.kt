@@ -51,7 +51,7 @@ fun MissingWorker(onBack: () -> Unit) {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun MissingWorkerPreview() {
     VikoTheme {

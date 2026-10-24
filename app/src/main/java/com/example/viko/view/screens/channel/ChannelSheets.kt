@@ -1,35 +1,48 @@
 package com.example.viko.view.screens.channel
 
-import com.example.viko.view.theme.VikoTheme
-import com.example.viko.view.screens.previewChannel
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.viko.components.ScreenHeader
+import com.example.viko.components.SearchField
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoTextField
 import com.example.viko.domain.channel.model.Channel
-import com.example.viko.view.theme.*
+import com.example.viko.view.screens.channel.components.ChannelRow
+import com.example.viko.view.screens.channel.components.CreateChannelRow
+import com.example.viko.view.screens.channel.components.NoChannelYet
+import com.example.viko.view.screens.channel.components.SelectedCheck
+import com.example.viko.view.screens.previewChannel
+import com.example.viko.view.theme.VBorder
+import com.example.viko.view.theme.VOnSurface
+import com.example.viko.view.theme.VikoTheme
 
 // The two channel-picking sheets from Figma ("Select Channel" and "Add New
 // Channel"). They are CONTENT only — no ModalBottomSheet wrapper — so the same
@@ -43,190 +56,52 @@ fun SelectChannelSheetContent(
     selectedChannelId: String,
     onSelect: (String) -> Unit,
     onRequestAddChannel: (prefill: String) -> Unit,
-    onBack: () -> Unit,
-    memberCounts: Map<String, Int> = emptyMap()
+    onBack: () -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-
-    val filtered = channels.filter {
-        searchQuery.isBlank() || it.name.contains(searchQuery.trim(), ignoreCase = true)
-    }
-    // Figma: typing a name that does not exist yet offers to create it inline
-    // ("Store   Add New +") instead of dead-ending on an empty list.
-    val exactMatch = channels.any { it.name.equals(searchQuery.trim(), ignoreCase = true) }
-    val offerCreate = searchQuery.isNotBlank() && !exactMatch
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val result = searchChannels(channels, searchQuery)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 440.dp)
+            .fillMaxHeight()
             .navigationBarsPadding()
     ) {
-        // Header: back chevron, title, blue add button
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VOnSurface)
-            }
-            Text(
-                text = "Select Channel",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(VMicBlue)
-                    .clickable { onRequestAddChannel("") },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    "Add Channel",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
+        ScreenHeader(
+            title = "Select Channel",
+            onBack = onBack,
+            onAdd = { onRequestAddChannel("") },
+            addContentDescription = "Add Channel"
+        )
 
-        // Search
-        Row(
+        SearchField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = "Search Channel",
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
-                .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Search, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            VikoTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = "Search Channel",
-                modifier = Modifier.weight(1f)
-            )
-        }
+        )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        if (filtered.isEmpty() && !offerCreate) {
-            // "No channel yet" — reachable once every channel has been deleted
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    "No channel yet",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VOnSurfaceSecondary
-                )
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { onRequestAddChannel(searchQuery.trim()) }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(Icons.Default.Add, null, tint = VMicBlue, modifier = Modifier.size(16.dp))
-                    Text("Add Channel", color = VMicBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
-            }
+        if (result.matches.isEmpty() && result.nameToCreate == null) {
+            // Reachable on a fresh install, before anyone has made a channel.
+            NoChannelYet(onAddChannel = { onRequestAddChannel("") })
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filtered, key = { it.id }) { channel ->
-                    ChannelRow(
-                        name = channel.name,
-                        memberCount = memberCounts[channel.id] ?: 0,
-                        isSelected = channel.id == selectedChannelId,
-                        onClick = { onSelect(channel.id) }
-                    )
-                }
-
-                if (offerCreate) {
-                    item {
-                        // "Store   Add New +"
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(VSurfaceVariant)
-                                .clickable { onRequestAddChannel(searchQuery.trim()) }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = searchQuery.trim(),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = VOnSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text("Add New", color = VOnSurfaceSecondary, fontSize = 12.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                Icons.Default.Add,
-                                null,
-                                tint = VOnSurfaceSecondary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+                items(result.matches, key = { it.id }) { channel ->
+                    ChannelRow(name = channel.name, onClick = { onSelect(channel.id) }) {
+                        if (channel.id == selectedChannelId) SelectedCheck()
                     }
                 }
+                result.nameToCreate?.let { name ->
+                    item { CreateChannelRow(name = name, onClick = { onRequestAddChannel(name) }) }
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun ChannelRow(
-    name: String,
-    memberCount: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(VSurfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = VOnSurface
-            )
-            if (memberCount > 0) {
-                Text(
-                    text = "$memberCount member${if (memberCount == 1) "" else "s"}",
-                    fontSize = 11.sp,
-                    color = VOnSurfaceSecondary
-                )
-            }
-        }
-        if (isSelected) {
-            Icon(Icons.Default.Check, "Selected", tint = VMicBlue, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -237,19 +112,19 @@ fun AddNewChannelSheetContent(
     onCreate: (String) -> Unit,
     onClose: () -> Unit
 ) {
-    var name by remember { mutableStateOf(prefill) }
+    var name by rememberSaveable { mutableStateOf(prefill) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(bottom = 24.dp)
+            .padding(top = 20.dp, bottom = 24.dp)
             .navigationBarsPadding()
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Add New Channel",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface,
                 modifier = Modifier.weight(1f)
@@ -261,23 +136,16 @@ fun AddNewChannelSheetContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Box(
+        VikoTextField(
+            value = name,
+            onValueChange = { name = it },
+            placeholder = "Enter Channel Name",
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(VSurfaceVariant)
                 .border(1.dp, VBorder, RoundedCornerShape(12.dp))
-                .padding(horizontal = 14.dp)
-        ) {
-            VikoTextField(
-                value = name,
-                onValueChange = { name = it },
-                placeholder = "Enter Channel Name",
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+        )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         VikoBlueButton(
             text = "Continue",
@@ -287,23 +155,36 @@ fun AddNewChannelSheetContent(
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20, heightDp = 720)
 @Composable
 private fun SelectChannelSheetContentPreview() {
     VikoTheme {
         SelectChannelSheetContent(
-            channels = listOf(previewChannel("c1", "Warehouse"), previewChannel("c2", "Assembly")),
+            channels = listOf(previewChannel("c1", "Operations"), previewChannel("c2", "Maintenance")),
             selectedChannelId = "c1",
             onSelect = {},
             onRequestAddChannel = {},
-            onBack = {},
-            memberCounts = mapOf("c1" to 3, "c2" to 1)
+            onBack = {}
         )
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20, heightDp = 720)
+@Composable
+private fun SelectChannelSheetContentEmptyPreview() {
+    VikoTheme {
+        SelectChannelSheetContent(
+            channels = emptyList(),
+            selectedChannelId = "",
+            onSelect = {},
+            onRequestAddChannel = {},
+            onBack = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun AddNewChannelSheetContentPreview() {
-    VikoTheme { AddNewChannelSheetContent(prefill = "Loading Bay", onCreate = {}, onClose = {}) }
+    VikoTheme { AddNewChannelSheetContent(prefill = "", onCreate = {}, onClose = {}) }
 }

@@ -9,11 +9,13 @@ import com.example.viko.data.message.repository.MessageRepositoryImpl
 import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.BadgeControlServer
 import com.example.viko.data.network.BadgeRegistry
+import com.example.viko.data.settings.FactoryWifiRepositoryImpl
 import com.example.viko.data.team.repository.WorkerRepositoryImpl
 import com.example.viko.data.team.scanner.BleDeviceScanner
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.repository.MessageRepository
+import com.example.viko.domain.settings.repository.FactoryWifiRepository
 import com.example.viko.domain.team.repository.WorkerRepository
 
 /**
@@ -30,6 +32,9 @@ class AppContainer(context: Context) {
     val channelRepository: ChannelRepository = ChannelRepositoryImpl(database.channelDao())
     val alertRepository: AlertRepository = AlertRepositoryImpl(database.alertDao())
     val messageRepository: MessageRepository = MessageRepositoryImpl(database.messageDao())
+
+    /** The one Wi-Fi network every earpiece is provisioned onto. */
+    val factoryWifiRepository: FactoryWifiRepository = FactoryWifiRepositoryImpl(context)
 
     /**
      * Badge discovery and BLE provisioning. Held as [BleDeviceScanner] rather
