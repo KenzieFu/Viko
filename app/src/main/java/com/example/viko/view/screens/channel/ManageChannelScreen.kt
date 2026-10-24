@@ -38,6 +38,7 @@ import com.example.viko.components.ScreenHeader
 import com.example.viko.components.SearchField
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
+import com.example.viko.view.screens.onboarding.TeamReadyOverlay
 import com.example.viko.view.screens.channel.components.ChannelRow
 import com.example.viko.view.screens.channel.components.CreateChannelRow
 import com.example.viko.view.screens.channel.components.NoChannelYet
@@ -55,6 +56,8 @@ import com.example.viko.view.theme.VikoTheme
 fun ManageChannelScreen(
     onBack: () -> Unit,
     onChannelClick: (String) -> Unit,
+    showTeamReady: Boolean = false,
+    onGoToHomepage: () -> Unit = {},
     viewModel: ManageChannelViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -64,6 +67,12 @@ fun ManageChannelScreen(
         onChannelClick = onChannelClick,
         onCreateChannel = viewModel::createChannel
     )
+
+    // Last beat of onboarding: the channel the supervisor just filled is behind
+    // the card, which is the whole point of showing it here and not on Home.
+    if (showTeamReady) {
+        TeamReadyOverlay(onGoToHomepage = onGoToHomepage)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

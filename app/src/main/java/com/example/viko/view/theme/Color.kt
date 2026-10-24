@@ -76,3 +76,15 @@ val VDeviceGrillDot = Color(0xFF7C7C7E)
 val VDeviceLed = Color(0xFFFFFFFF)
 val VDeviceButton = Color(0xFFF2876D)
 val VDeviceNub = Color(0xFFC8B89A)
+
+/**
+ * The brand blue. Full strength for the focused outline of the channel-name
+ * field and the tour's pointer; [VBrandOnDark] is the same hue dropped back far
+ * enough to carry a 56dp button without glowing off a dark page.
+ */
+val VBrand = Color(0xFF0062FF)
+val VBrandOnDark = Color(0xFF003D9E)
+
+/** The outline of a text field at rest, and what the supervisor has typed into it. */
+val VFieldBorder = Color(0xFF383838)
+val VFieldText = Color(0xFFF5F5F5)
