@@ -447,12 +447,15 @@ Keep consistent — the code mixes these today.
   icon and text), the green, and the chip-on-card `VSurfaceVariant`.
 - The 3D device render is not exported yet. `components/DeviceIllustration.kt`
   draws it in code to match the frame. Needs the real asset in `res/drawable`.
-- **Setup Member has three fields the frame does not:** Location, Factory Wi-Fi and
-  Wi-Fi Password. The earpiece has no screen or keyboard, so pairing is the only
-  moment it can be given the factory network; without them provisioning writes a
-  badge that never comes back. They use the frame's field style and scroll above
-  a pinned Save. Design should decide where they really live (e.g. a one-time
-  Wi-Fi setting) — then they leave this form.
+- **Setup Member has a Location field the frame does not.** It is written onto
+  the earpiece and is what an SOS reports as the member's location. Design should
+  say whether it stays here or moves (e.g. to the channel).
+- **Factory Wi-Fi is a setting, not a form field.** Every access point shares one
+  SSID and password, so it is set once under **Settings → Factory Wi-Fi** (a
+  third row the frame does not have) and written into every earpiece at pairing.
+  Until it is set, Setup Member shows one *Set up factory Wi-Fi* row — first-run
+  onboarding opens pairing before anyone has been to Settings. Earpieces keep
+  the network they were paired with, so changing it means re-pairing them.
 - Whether **SOS → Announce** broadcasts to the whole factory or only to the
   supervisor's channels.
 - Whether a danger preset fires immediately on tap or needs a confirm.

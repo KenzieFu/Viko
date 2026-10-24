@@ -58,6 +58,7 @@ import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.view.screens.channel.AddNewChannelSheetContent
 import com.example.viko.view.screens.channel.SelectChannelSheetContent
+import com.example.viko.view.screens.settings.components.FactoryWifiSheetContent
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
@@ -103,6 +104,7 @@ fun AddMemberFlow(
     // would otherwise drop the supervisor back to the sheet underneath.
     var showChannelPicker by rememberSaveable { mutableStateOf(false) }
     var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
+    var showWifiSetup by rememberSaveable { mutableStateOf(false) }
 
     // BLE scanning is a runtime permission, and denying it is silent: the scan
     // starts fine and simply never reports a device. So the grant is tracked
@@ -157,10 +159,8 @@ fun AddMemberFlow(
                 onNameChange = viewModel::onNameChange,
                 zone = uiState.zone,
                 onZoneChange = viewModel::onZoneChange,
-                wifiSsid = uiState.wifiSsid,
-                onSsidChange = viewModel::onSsidChange,
-                wifiPassword = uiState.wifiPassword,
-                onPasswordChange = viewModel::onPasswordChange,
+                isWifiConfigured = uiState.factoryWifi.isConfigured,
+                onSetUpWifi = { showWifiSetup = true },
                 channelName = uiState.selectedChannelName,
                 isChannelLocked = presetChannelId != null,
                 canSave = uiState.canSave,
@@ -214,6 +214,25 @@ fun AddMemberFlow(
                     showChannelPicker = false
                 },
                 onClose = { addChannelPrefill = null }
+            )
+        }
+    }
+
+    if (showWifiSetup) {
+        ModalBottomSheet(
+            onDismissRequest = { showWifiSetup = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = VBackground,
+            contentColor = VOnSurface,
+            dragHandle = { VikoDragHandle() }
+        ) {
+            FactoryWifiSheetContent(
+                current = uiState.factoryWifi,
+                onSave = { wifi ->
+                    viewModel.saveFactoryWifi(wifi)
+                    showWifiSetup = false
+                },
+                onClose = { showWifiSetup = false }
             )
         }
     }
@@ -385,10 +404,8 @@ private fun SetupMemberSheetContent(
     onNameChange: (String) -> Unit,
     zone: String,
     onZoneChange: (String) -> Unit,
-    wifiSsid: String,
-    onSsidChange: (String) -> Unit,
-    wifiPassword: String,
-    onPasswordChange: (String) -> Unit,
+    isWifiConfigured: Boolean,
+    onSetUpWifi: () -> Unit,
     channelName: String?,
     isChannelLocked: Boolean,
     canSave: Boolean,
@@ -459,27 +476,21 @@ private fun SetupMemberSheetContent(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // The badge has no keyboard and no screen: this is the only moment the
-            // factory Wi-Fi can reach it. It is sent over BLE, saved to the badge's
-            // flash, and used for every connection it ever makes.
-            LabeledTextField(
-                label = "Factory Wi-Fi",
-                value = wifiSsid,
-                onValueChange = onSsidChange,
-                placeholder = "Network name"
-            )
+            // The badge has no keyboard and no screen, so pairing is the only
+            // moment it can be given the factory network — one network for the
+            // whole site, kept in Settings. Normally already set, and then this
+            // row is not shown at all; on a fresh install it is the one thing
+            // standing between Save and a working badge.
+            if (!isWifiConfigured) {
+                LabeledSelectField(
+                    label = "Factory Wi-Fi",
+                    value = null,
+                    placeholder = "Set up factory Wi-Fi",
+                    onClick = onSetUpWifi
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LabeledTextField(
-                label = "Wi-Fi Password",
-                value = wifiPassword,
-                onValueChange = onPasswordChange,
-                placeholder = "Password",
-                isPassword = true
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             DeviceInfoCard(
                 address = device?.address ?: "Unknown",
@@ -592,10 +603,8 @@ private fun SetupMemberSheetContentPreview() {
             onNameChange = {},
             zone = "Production Line 2",
             onZoneChange = {},
-            wifiSsid = "FactoryTranslate_AP",
-            onSsidChange = {},
-            wifiPassword = "hunter2hunter2",
-            onPasswordChange = {},
+            isWifiConfigured = true,
+            onSetUpWifi = {},
             channelName = "Warehouse",
             isChannelLocked = false,
             canSave = true,
@@ -617,10 +626,8 @@ private fun SetupMemberSheetContentEmptyPreview() {
             onNameChange = {},
             zone = "",
             onZoneChange = {},
-            wifiSsid = "",
-            onSsidChange = {},
-            wifiPassword = "",
-            onPasswordChange = {},
+            isWifiConfigured = false,
+            onSetUpWifi = {},
             channelName = null,
             isChannelLocked = false,
             canSave = false,

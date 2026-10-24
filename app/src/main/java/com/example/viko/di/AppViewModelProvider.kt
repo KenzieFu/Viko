@@ -10,6 +10,7 @@ import com.example.viko.view.screens.channel.ManageChannelViewModel
 import com.example.viko.view.screens.directcall.DirectCallViewModel
 import com.example.viko.view.screens.home.HomeViewModel
 import com.example.viko.view.screens.notifications.NotificationsViewModel
+import com.example.viko.view.screens.settings.SettingsViewModel
 import com.example.viko.view.screens.team.AddMemberViewModel
 import com.example.viko.view.screens.team.ManageMemberViewModel
 import com.example.viko.view.screens.team.MemberDetailViewModel
@@ -49,6 +50,9 @@ object AppViewModelProvider {
             )
         }
         initializer {
+            SettingsViewModel(factoryWifiRepository = container().factoryWifiRepository)
+        }
+        initializer {
             ManageChannelViewModel(
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository
@@ -66,6 +70,7 @@ object AppViewModelProvider {
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,
+                factoryWifiRepository = container().factoryWifiRepository,
                 deviceScanner = container().deviceScanner
             )
         }
