@@ -61,7 +61,8 @@ circle**, and the circle carries the colour.
 | **Danger** — supervisor broadcasting an emergency | **red** | SOS presets Fire, Gas Leak, Evacuate; SOS Announce; Delete; Remove Member; the `SOS` pill |
 | **Normal action** — safe, routine, in progress | **blue** | All Clear, Talk, Speaker, Save, Continue, `+` buttons, selected check, transcript status |
 | **Alert** — a member needs attention | **yellow** | Emergency banner on Home, active notification cards |
-| **Success / available** | **green** | `Available` on Direct Call, online status dot, healthy battery |
+| **Member talking** — the earpiece holds the channel | **teal** | `Speaking` in the team sheet, Direct Call — Listen |
+| **Success / available** | **green** | `Available` on Direct Call, healthy battery, resolved alert check |
 
 Three attention colours, three different jobs — keep them apart:
 
@@ -69,8 +70,11 @@ Three attention colours, three different jobs — keep them apart:
 - **Yellow** is a member pulling attention *in* to the supervisor.
 - **Green** is success, or someone reachable.
 
+Blue is the supervisor talking; teal is a member talking. Two colours so it is
+always clear whose turn it is.
+
 Tokens: `VAlertYellow` / `VAlertYellowSurface` / `VAlertYellowBorder` for yellow,
-`VOnline` for green. (These were named `VAlertCream` / `VAlertAmber` — leftovers
+`VMemberSpeaking` / `VMemberSpeakingSurface` for teal, `VOnline` for green. (These were named `VAlertCream` / `VAlertAmber` — leftovers
 from the light theme — and are renamed.)
 
 Two announce buttons, two colours, on purpose:
@@ -136,6 +140,10 @@ width, dim until a name is typed.
 
 Pair another member, or finish → Home.
 
+**Locked-channel variant** (*Setup Member* frame with a drag handle): opened from
+a team sheet's *Add Member → +*, the Channel row is a filled, borderless field
+with no `›`. The member joins the channel whose sheet it came from.
+
 ## B. Home
 
 Channel cards, two per row. Top bar: `SOS` pill left (dark card, **solid red siren
@@ -160,6 +168,7 @@ Interactions:
 - **Tap the member chip** (`3/5 ›`) → Team sheet.
 - **Make Announcement** → whole factory.
 - **SOS** → emergency sheet.
+- **Gear** → Settings.
 
 ## C. Team sheet
 
@@ -170,8 +179,15 @@ Drag handle. **Operations (3/5)** bold + pencil edit icon.
 - **Talk to Team** at the bottom — dark card, mic + label.
 - **Speak state:** button turns **bright blue** reading *🎤 Speaking...*, with navy
   glow rings behind it.
-- **Edit mode:** blue **Save** pill replaces the pencil. Rows collapse to
-  name-only fields, each with a **red trash icon**. A `+ Add New` pill sits below.
+- **Member Talk:** the speaking member's card turns **teal** with a teal outline, a
+  waveform glyph beside the name, and a teal bold **Speaking** leading the
+  subtitle. **Talk to Team** dims and stops responding while they hold the channel.
+- **Edit mode:** title drops the count; blue **Save** pill replaces the pencil.
+  Rows collapse to name-only fields (sorted by name), each with a **red trash
+  icon**. A `+ Add Member` pill sits below. Renames only apply on **Save**.
+- **Add Member** sheet (from that pill): `‹` + **Add Member** + blue `+`, *Search
+  Member*, then every member not already on this channel as a card. Tap one to
+  move them here; `+` pairs a new earpiece straight into this channel.
 - **Delete member?** sheet — `X`, body *Your paired devices data will be deleted and
   has to setup a new one later.*, **Cancel** (dark) and **Delete** (solid red).
 
@@ -186,7 +202,7 @@ assignment — the copy says the paired device data goes with it.
 |---|---|---|---|
 | **Default** | `Central Building • Available` (green) | **white** circle, blue mic | — |
 | **Speak** | `Central Building • Listening...` (blue) | **blue** circle, white mic | navy glow below |
-| **Listen** | `Central Building • Listening...` (blue) | mic **dimmed / disabled** | radial navy glow behind name + **transcript bubble** |
+| **Listen** | `Central Building • Speaking...` (**teal**) + waveform | small grey circle, mic **dimmed / disabled** | teal glow behind name + **transcript card** |
 
 The transcript bubble is the translated speech, e.g. *"Yes boss, I think we've got
 them handled already now. So it's fine now."* This is feature 3's text translation.
@@ -217,19 +233,19 @@ Drag handle, **SOS** centred bold, `X` right.
 
 Sheet over Home. **Announce** bold centred + `X`.
 
-- **Default:** *From Lee Suyeon (수연이)* grey, large dark circle with a solid white
+- **Default:** *From Lee Suyeon (수연이)* grey, large **white** circle with a blue
   megaphone.
 - **Speak:** *Speaking...* grey, circle turns **bright blue**, navy wave glow fills
   the lower sheet.
 
 ## G. Notifications
 
-**Notifications** bold, `Resolve All` grey, `X`.
+**Notifications** bold, `Resolve All` as a dark pill, `X`.
 
 - **Active card:** yellow fill + yellow border, yellow `ⓘ`, title bold (wraps to
   two lines), time top-right, `Zone 3 • Operations Team`, actions **Direct Call**
   and **Resolve**.
-- **Resolved card:** plain dark surface, **blue check-circle**, grey *Resolved*, no
+- **Resolved card:** plain dark surface, **green check-circle**, grey *Resolved*, no
   action buttons.
 
 ## H. Manage Member
@@ -247,6 +263,25 @@ Back `‹` + **Manage Member** bold + **blue filled circle `+`** top-right.
 `X` top-right. Device render. `Name` field and `Channel` row (same pattern as
 Setup Member). Device Address / Device Status card. **Save Changes** bright blue
 full width, then **Remove Member** as red text beneath it.
+
+Name and Channel are drafts until **Save Changes**; `X` discards them. **Remove
+Member** opens the same *Delete member?* sheet as the team sheet.
+
+## I. Settings
+
+Back `‹` + **Settings**. Two card rows, each with `›`: **Manage Members** and
+**Manage Channels**.
+
+## J. Manage Channel
+
+Back `‹` + **Manage Channel** + **blue filled circle `+`**.
+
+- `Search Channel` field.
+- Channel rows as cards: name bold, member count grey and `›` on the right. Tap →
+  Manage Member filtered to that channel.
+- **Empty:** grey *No channel yet* + the dark `+ Add Channel` pill.
+- **Search miss:** `Store` · `Add New +`, same as Select Channel.
+- `+`, the pill and the miss row all open **Add New Channel**.
 
 ---
 
@@ -267,30 +302,38 @@ by reading code alone. Reading code alone produced three false gaps — see
 
 ## Broken
 
-1. **Home has no emergency banner.** The whole *Homepage — Notified* frame is
-   missing — `HomeScreen.kt` only draws the bell count badge and never reads
-   `appState.activeAlert`. The yellow banner with *Direct Call* / *Resolve* exists
-   only inside `NotificationsScreen`.
-2. **Team sheet rows do not match.** Design: card rows, no avatar, battery inline in
-   the subtitle, phone icon right. Actual: flat rows with letter avatars and the
-   battery stacked above the phone icon.
-3. **`Talk to Team` is bare text.** Design has it on a dark card, and a bright blue
-   `Speaking...` state with glow.
-4. **Manage Member rows do not match.** Design: uppercase channel chip
-   (`OPERATIONS`), `Central Building • 🔋 70%`, `›`, and **no per-row delete**.
-   Actual: letter avatar, status dot, `Operations • Zone 1`, and a trash icon on
-   every row.
-5. **Setup Member groups Name + Channel into one card.** Design has two separate
-   bordered fields with labels outside them.
-6. **Nothing is actually voice.** `AndroidManifest.xml` declares **zero**
+1. **Nothing is actually voice.** `AndroidManifest.xml` declares **zero**
    permissions — no `RECORD_AUDIO`, no `INTERNET`, no Bluetooth. No audio capture,
    ASR, translation, TTS, BLE, or WiFi transport exists. Every "talk" control is a
    visual state change.
-7. **Nothing outlives the phone.** Every screen now reads the Room repositories
+2. **Nothing outlives the phone.** Every screen now reads the Room repositories
    through a ViewModel, so state survives rotation and process death — but the
    database is the only source of truth there is. No badge has ever written to it.
 
 ## Fixed already
+
+**Every frame in the October design export is built** (`OneVoice - Solution
+design`, 38 frames). Checked by rendering each screen at 360×800 next to its
+frame — not on an emulator, so re-check on one.
+
+- **Palette sampled from the export.** Page and every sheet `#1C1D20`, cards
+  `#2E3033`, hairlines `#383838`, blue `#0062FF`, full-width buttons `#003D9E`
+  (dim `#0E2D5F`), teal `#11A0B6` on `#193F45`. The old values were read off
+  screenshots and were a step too dark throughout.
+- **Home emergency banner.** The newest active alert sits above the grid as the
+  yellow card with *Direct Call* / *Resolve* — the same `AlertCard` the
+  Notifications list uses.
+- **Team sheet** rows are cards (no avatar, battery inline, phone right),
+  unavailable members dim, a talking member goes teal, and **Talk to Team** is a
+  dark card that turns bright blue *Speaking...*. Edit mode, the Add Member
+  sheet and the *Delete member?* sheet (was an AlertDialog) match the frames.
+- **Manage Member** rows have the uppercase channel chip, `Location • 🔋 %` and
+  `›`, and no trash. Channel filter chips became the funnel menu.
+- **Setup Member / Member Details** use separate labelled, bordered fields, the
+  read-only device card, and Save pinned at the bottom. Member Details is now a
+  form with **Save Changes**; the full-screen channel picker route is gone in
+  favour of the same sheet the add flow uses.
+- **New:** Settings and Manage Channel.
 
 **All state survived nothing.** This was the real bug behind several confusing
 symptoms — the pairing flow "bouncing" back to the device list, a typed member
@@ -399,19 +442,20 @@ Keep consistent — the code mixes these today.
 
 # Still to confirm
 
-- Exact hex values. Confirmed from Figma so far: the yellow alert card, fill
-  `#3D320D` and stroke `#65501C`. Everything else in `view/theme/Color.kt` is still
-  read off a screenshot — including the yellow **accent** (icon and text,
-  `VAlertYellow`), which has not been sampled. Send values as you go and I'll set
-  them.
-- The 3D device render is not exported yet. `AddMemberFlow.kt` draws a placeholder
-  (`DeviceIllustration`). Needs the real asset in `res/drawable`.
+- Exact hex values. Surfaces, blues, teal and the yellow card are sampled from the
+  export (see *Fixed already*). Still guessed: the yellow **accent** (`VAlertYellow`,
+  icon and text), the green, and the chip-on-card `VSurfaceVariant`.
+- The 3D device render is not exported yet. `components/DeviceIllustration.kt`
+  draws it in code to match the frame. Needs the real asset in `res/drawable`.
+- **Setup Member has three fields the frame does not:** Location, Factory Wi-Fi and
+  Wi-Fi Password. The earpiece has no screen or keyboard, so pairing is the only
+  moment it can be given the factory network; without them provisioning writes a
+  badge that never comes back. They use the frame's field style and scroll above
+  a pinned Save. Design should decide where they really live (e.g. a one-time
+  Wi-Fi setting) — then they leave this form.
 - Whether **SOS → Announce** broadcasts to the whole factory or only to the
   supervisor's channels.
 - Whether a danger preset fires immediately on tap or needs a confirm.
-- **Direct Call says `Listening...` in both the Speak and the Listen frame.** Two
-  different states with identical copy reads like an oversight. If Listen is meant
-  to say `Speaking...` (the member is talking), say so and it changes in one line.
 - **The transcript bubble shows one paragraph, but the PRD says the supervisor sees
   the original *and* the translation.** The code currently renders the translation
   only, per the design. If both should show, the original Vietnamese is already

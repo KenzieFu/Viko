@@ -6,7 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.viko.VikoApplication
-import com.example.viko.view.screens.channel.SelectChannelViewModel
+import com.example.viko.view.screens.channel.ManageChannelViewModel
 import com.example.viko.view.screens.directcall.DirectCallViewModel
 import com.example.viko.view.screens.home.HomeViewModel
 import com.example.viko.view.screens.notifications.NotificationsViewModel
@@ -43,6 +43,13 @@ object AppViewModelProvider {
         }
         initializer {
             ManageMemberViewModel(
+                savedStateHandle = createSavedStateHandle(),
+                workerRepository = container().workerRepository,
+                channelRepository = container().channelRepository
+            )
+        }
+        initializer {
+            ManageChannelViewModel(
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository
             )
@@ -51,8 +58,7 @@ object AppViewModelProvider {
             MemberDetailViewModel(
                 savedStateHandle = createSavedStateHandle(),
                 workerRepository = container().workerRepository,
-                channelRepository = container().channelRepository,
-                messageRepository = container().messageRepository
+                channelRepository = container().channelRepository
             )
         }
         initializer {
@@ -61,13 +67,6 @@ object AppViewModelProvider {
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,
                 deviceScanner = container().deviceScanner
-            )
-        }
-        initializer {
-            SelectChannelViewModel(
-                savedStateHandle = createSavedStateHandle(),
-                workerRepository = container().workerRepository,
-                channelRepository = container().channelRepository
             )
         }
     }

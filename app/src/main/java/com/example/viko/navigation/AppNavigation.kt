@@ -6,10 +6,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.viko.view.screens.channel.SelectChannelScreen
+import com.example.viko.view.screens.channel.ManageChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
 import com.example.viko.view.screens.notifications.NotificationsScreen
+import com.example.viko.view.screens.settings.SettingsScreen
 import com.example.viko.view.screens.team.ManageMemberScreen
 import com.example.viko.view.screens.team.MemberDetailScreen
 
@@ -18,8 +19,9 @@ import com.example.viko.view.screens.team.MemberDetailScreen
  * they never hold the NavController, and they get their data from a ViewModel
  * scoped to their own back stack entry.
  *
- * Adding a member is deliberately NOT a destination: it is a stack of bottom
- * sheets over ManageMemberScreen. See AddMemberFlow.
+ * Adding a member and picking a channel are deliberately NOT destinations: they
+ * are stacks of bottom sheets over the screen that needs them, so the picker can
+ * write straight back into the half-filled form. See AddMemberFlow.
  */
 @Composable
 fun AppNavigation() {
@@ -30,7 +32,7 @@ fun AppNavigation() {
         composable(Screen.Home.route) {
             HomeScreen(
                 onOpenNotifications = { navController.navigate(Screen.Notifications.route) },
-                onOpenManageMembers = { navController.navigate(Screen.ManageMembers.route) },
+                onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onDirectCall = { workerId ->
                     navController.navigate(Screen.DirectCall.createRoute(workerId))
                 }
@@ -46,6 +48,14 @@ fun AppNavigation() {
             )
         }
 
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenManageMembers = { navController.navigate(Screen.ManageMembers.createRoute()) },
+                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.route) }
+            )
+        }
+
         composable(
             route = Screen.DirectCall.route,
             arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
@@ -53,7 +63,16 @@ fun AppNavigation() {
             DirectCallScreen(onBack = { navController.popBackStack() })
         }
 
-        composable(Screen.ManageMembers.route) {
+        composable(
+            route = Screen.ManageMembers.route,
+            arguments = listOf(
+                navArgument(NavArgs.CHANNEL_ID) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) {
             ManageMemberScreen(
                 onBack = { navController.popBackStack() },
                 onMemberClick = { workerId ->
@@ -62,29 +81,20 @@ fun AppNavigation() {
             )
         }
 
-        composable(
-            route = Screen.MemberDetail.route,
-            arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
-        ) {
-            MemberDetailScreen(
+        composable(Screen.ManageChannels.route) {
+            ManageChannelScreen(
                 onBack = { navController.popBackStack() },
-                onDirectCall = { workerId ->
-                    navController.navigate(Screen.DirectCall.createRoute(workerId))
-                },
-                onSelectChannel = { workerId ->
-                    navController.navigate(Screen.SelectChannel.createRoute(workerId))
+                onChannelClick = { channelId ->
+                    navController.navigate(Screen.ManageMembers.createRoute(channelId))
                 }
             )
         }
 
         composable(
-            route = Screen.SelectChannel.route,
+            route = Screen.MemberDetail.route,
             arguments = listOf(navArgument(NavArgs.WORKER_ID) { type = NavType.StringType })
         ) {
-            SelectChannelScreen(
-                onBack = { navController.popBackStack() },
-                onChannelSelected = { navController.popBackStack() }
-            )
+            MemberDetailScreen(onBack = { navController.popBackStack() })
         }
     }
 }

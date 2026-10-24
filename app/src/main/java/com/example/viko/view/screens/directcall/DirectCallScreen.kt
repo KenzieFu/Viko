@@ -4,15 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
-import com.example.viko.type.WorkerStatus
-import com.example.viko.view.theme.VikoTheme
-import com.example.viko.view.screens.previewWorker
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -32,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,38 +31,55 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.MissingWorker
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.CallState
+import com.example.viko.type.WorkerStatus
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.theme.VAccentBlue
+import com.example.viko.view.theme.VActivePanel
 import com.example.viko.view.theme.VBackground
+import com.example.viko.view.theme.VMemberSpeaking
+import com.example.viko.view.theme.VMemberSpeakingSurface
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VOnline
-import com.example.viko.view.theme.VSurfaceVariant
+import com.example.viko.view.theme.VSurface
+import com.example.viko.view.theme.VWarning
+import com.example.viko.view.theme.VikoTheme
 
 /**
  * Supervisor ↔ one member, with the translated speech shown as text.
  *
- * Layout note — the glow used to be a free-floating layer pinned to the bottom of
- * the screen at a fixed offset, which meant it drew straight over the transcript
- * card whenever both were visible. Now each glow lives *inside* the slot it
- * belongs to (behind the name, or behind the mic), so layout reserves space for it
- * and nothing can overlap anything else. The two glows also never coexist: the
- * name glows while the member talks, the mic glows while the supervisor talks.
+ * Layout note — each glow is drawn by the thing it belongs to (behind the name,
+ * or around the mic), never as a free-floating layer: the old version pinned one
+ * to the bottom of the screen and it drew straight over the transcript card. The
+ * two never coexist either — the name glows teal while the member talks, the mic
+ * rings blue while the supervisor talks, and the transcript card only exists in
+ * the first case.
  */
 @Composable
 fun DirectCallScreen(
@@ -129,17 +138,19 @@ fun DirectCallScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(VBackground)
+            .navigationBarsPadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text(
                 text = "DIRECT CALL",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = 1.5.sp,
                 color = VOnSurfaceSecondary,
@@ -153,168 +164,220 @@ fun DirectCallScreen(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.weight(0.7f))
 
-        CallerIdentity(worker = worker, isMemberTalking = isMemberTalking)
+        CallerIdentity(worker = worker, isMemberTalking = isMemberTalking, isSupervisorTalking = isSupervisorTalking)
 
-        // The transcript card has nothing to show until ASR/NMT lands — speech
-        // is carried as live audio, not text. Until then the slot is used for
-        // the one thing worth saying: why a press to talk did nothing.
-        when {
-            uiState.translation != null && isMemberTalking ->
-                TranslationCard(text = uiState.translation.orEmpty())
-
-            uiState.talkError != null -> TranslationCard(text = uiState.talkError)
+        if (isMemberTalking) {
+            // The member has the channel: their words, translated, take the
+            // middle of the screen and the mic shrinks out of the way.
+            Spacer(modifier = Modifier.height(40.dp))
+            TranscriptCard(text = uiState.translation)
+            Spacer(modifier = Modifier.weight(0.4f))
+            MicButton(state = MicState.Disabled, onClick = onToggleTalking)
+            Spacer(modifier = Modifier.height(48.dp))
+        } else {
+            Spacer(modifier = Modifier.height(48.dp))
+            MicButton(
+                state = if (isSupervisorTalking) MicState.Talking else MicState.Idle,
+                onClick = onToggleTalking
+            )
+            // Speech is carried live, so there is no transcript of the
+            // supervisor's side — this slot only ever explains why a press to
+            // talk did nothing.
+            uiState.talkError?.let { error ->
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VWarning,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+            }
+            Spacer(modifier = Modifier.weight(1.3f))
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        PushToTalkSlot(
-            isSupervisorTalking = isSupervisorTalking,
-            isMemberTalking = isMemberTalking,
-            onToggle = onToggleTalking
-        )
-
-        Spacer(modifier = Modifier.navigationBarsPadding())
     }
 }
 
-/** Name and status. The glow sits behind them while the member holds the channel. */
+/**
+ * Name and status line. While the member talks, a teal glow sits behind them and
+ * a waveform appears under the status — drawn behind the text, so it takes no
+ * layout space and nothing moves when it appears.
+ */
 @Composable
-private fun CallerIdentity(worker: Worker, isMemberTalking: Boolean) {
+private fun CallerIdentity(worker: Worker, isMemberTalking: Boolean, isSupervisorTalking: Boolean) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isMemberTalking) Modifier.drawBehind { drawMemberGlow() } else Modifier)
+            .padding(horizontal = 32.dp)
+    ) {
+        Text(
+            text = worker.name,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            color = VOnSurface,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row {
+            Text(
+                text = "${worker.zone} • ",
+                style = MaterialTheme.typography.bodyLarge,
+                color = VOnSurfaceSecondary
+            )
+            Text(
+                // Three states, three colours: green = reachable, blue = the
+                // supervisor is talking, teal = the member is. Never red here.
+                text = when {
+                    isMemberTalking -> "Speaking..."
+                    isSupervisorTalking -> "Listening..."
+                    else -> "Available"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = when {
+                    isMemberTalking -> VMemberSpeaking
+                    isSupervisorTalking -> VAccentBlue
+                    else -> VOnline
+                }
+            )
+        }
+        // Always laid out, only shown while the member talks, so the name does
+        // not jump when they start.
+        Spacer(modifier = Modifier.height(12.dp))
+        Icon(
+            Icons.Default.GraphicEq,
+            contentDescription = null,
+            tint = VOnSurfaceSecondary,
+            modifier = Modifier
+                .size(28.dp)
+                .alpha(if (isMemberTalking) 1f else 0f)
+        )
+    }
+}
+
+/** Two soft teal discs centred on the name — the member's voice, not ours. */
+private fun DrawScope.drawMemberGlow() {
+    val center = Offset(size.width / 2f, size.height / 2f)
+    drawCircle(color = VMemberSpeakingSurface.copy(alpha = 0.35f), radius = 170.dp.toPx(), center = center)
+    drawCircle(color = VMemberSpeakingSurface.copy(alpha = 0.55f), radius = 150.dp.toPx(), center = center)
+}
+
+/**
+ * The translated speech. The slot is kept while the member talks even before
+ * any text arrives, so the mic does not slide up and back as lines come in.
+ */
+@Composable
+private fun TranscriptCard(text: String?) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp),
+            .padding(horizontal = 20.dp)
+            .height(220.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(VSurface)
+            .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (isMemberTalking) {
-            RadialGlow(size = 280.dp)
-        }
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        ) {
+        if (text != null) {
             Text(
-                text = worker.name,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
+                text = text,
+                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
                 color = VOnSurface,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row {
-                Text(
-                    text = "${worker.zone} • ",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VOnSurfaceSecondary
-                )
-                Text(
-                    text = if (isMemberTalking) "Listening..." else "Available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    // Green = available, blue = a normal action in progress.
-                    // Never red here: red is emergency only.
-                    color = if (isMemberTalking) VMicBlue else VOnline
-                )
-            }
         }
     }
 }
 
+private enum class MicState { Idle, Talking, Disabled }
+
+/**
+ * Push-to-talk. White with a blue mic when idle, blue with a white mic and
+ * rings while the supervisor talks, small and greyed while the member holds
+ * the channel — half duplex, no talking over them.
+ *
+ * The rings are drawn behind the circle and outside its bounds, so they cost no
+ * layout space; zIndex puts them under the name rather than over it.
+ */
 @Composable
-private fun TranslationCard(text: String) {
+private fun MicButton(state: MicState, onClick: () -> Unit) {
+    val diameter = if (state == MicState.Disabled) SMALL_MIC else LARGE_MIC
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(VSurfaceVariant)
-            .padding(horizontal = 18.dp, vertical = 16.dp)
+            .zIndex(-1f)
+            .size(diameter)
+            .then(if (state == MicState.Talking) Modifier.drawBehind { drawTalkRings() } else Modifier)
+            .clip(CircleShape)
+            .background(
+                when (state) {
+                    MicState.Idle -> Color.White
+                    MicState.Talking -> VMicBlue
+                    MicState.Disabled -> VSurface
+                }
+            )
+            .clickable(enabled = state != MicState.Disabled, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = VOnSurface,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+        Icon(
+            imageVector = Icons.Default.Mic,
+            contentDescription = when (state) {
+                MicState.Talking -> "Stop talking"
+                MicState.Idle -> "Push to talk"
+                MicState.Disabled -> "Member is speaking"
+            },
+            tint = when (state) {
+                MicState.Idle -> VMicBlue
+                MicState.Talking -> Color.White
+                MicState.Disabled -> VMicBlue.copy(alpha = 0.25f)
+            },
+            modifier = Modifier.size(if (state == MicState.Disabled) 28.dp else 44.dp)
         )
     }
 }
 
-/** Push-to-talk. The glow lives inside this slot, so it cannot reach the card. */
-@Composable
-private fun PushToTalkSlot(
-    isSupervisorTalking: Boolean,
-    isMemberTalking: Boolean,
-    onToggle: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(220.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (isSupervisorTalking) {
-            RadialGlow(size = 220.dp)
-        }
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(
-                    when {
-                        isSupervisorTalking -> VMicBlue    // talking: blue fill
-                        isMemberTalking -> VSurfaceVariant // their turn: dimmed
-                        else -> Color.White                // idle: white fill
-                    }
-                )
-                // The member holds the channel while talking — no talking over them.
-                .clickable(enabled = !isMemberTalking, onClick = onToggle),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Mic,
-                contentDescription = "Push to talk",
-                tint = when {
-                    isSupervisorTalking -> Color.White
-                    isMemberTalking -> VOnSurfaceSecondary
-                    else -> VMicBlue
-                },
-                modifier = Modifier.size(36.dp)
-            )
-        }
-    }
+/** Three navy rings around the talking mic, darkest outermost. */
+private fun DrawScope.drawTalkRings() {
+    val center = Offset(size.width / 2f, size.height / 2f)
+    val base = size.minDimension / 2f
+    drawCircle(color = VActivePanel.copy(alpha = 0.35f), radius = base * 2.5f, center = center)
+    drawCircle(color = VActivePanel.copy(alpha = 0.6f), radius = base * 1.9f, center = center)
+    drawCircle(color = VActivePanel, radius = base * 1.45f, center = center)
 }
 
-/** Soft navy bloom used behind the name or the mic. */
-@Composable
-private fun RadialGlow(size: Dp) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        VMicBlue.copy(alpha = 0.28f),
-                        VMicBlue.copy(alpha = 0.10f),
-                        Color.Transparent
-                    )
-                )
-            )
-    )
-}
+private val LARGE_MIC = 168.dp
+private val SMALL_MIC = 88.dp
 
 /** Member holding the channel, with a translation coming through. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun DirectCallScreenListeningPreview() {
     VikoTheme {
         DirectCallScreen(
             uiState = DirectCallUiState(
-                worker = previewWorker(name = "Budi", status = WorkerStatus.SPEAKING),
+                worker = previewWorker(name = "Nguyen Minh Tam", zone = "Central Building", status = WorkerStatus.SPEAKING),
                 callState = CallState.LISTENING,
-                translation = "Mesin nomor tiga berhenti, saya perlu bantuan."
+                translation = "Yes boss, I think we've got them handled already now. So it's fine now."
+            ),
+            onBack = {}, onToggleTalking = {}
+        )
+    }
+}
+
+/** Supervisor holding the mic. */
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
+@Composable
+private fun DirectCallScreenTalkingPreview() {
+    VikoTheme {
+        DirectCallScreen(
+            uiState = DirectCallUiState(
+                worker = previewWorker(name = "Nguyen Minh Tam", zone = "Central Building"),
+                callState = CallState.SPEAKING
             ),
             onBack = {}, onToggleTalking = {}
         )
@@ -322,19 +385,19 @@ private fun DirectCallScreenListeningPreview() {
 }
 
 /** Idle — nobody talking. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun DirectCallScreenIdlePreview() {
     VikoTheme {
         DirectCallScreen(
-            uiState = DirectCallUiState(worker = previewWorker(name = "Sari")),
+            uiState = DirectCallUiState(worker = previewWorker(name = "Nguyen Minh Tam", zone = "Central Building")),
             onBack = {}, onToggleTalking = {}
         )
     }
 }
 
 /** Worker not resolved — the escape hatch, easy to break and hard to reach by hand. */
-@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(device = "id:pixel_7", showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun DirectCallScreenMissingWorkerPreview() {
     VikoTheme {

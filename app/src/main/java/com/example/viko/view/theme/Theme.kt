@@ -28,11 +28,11 @@ private val VikoDarkColorScheme = darkColorScheme(
     onSurface = VOnSurface,
     surfaceVariant = VSurfaceVariant,
     onSurfaceVariant = VOnSurfaceSecondary,
-    surfaceContainer = VSurface,       // ModalBottomSheet body
-    surfaceContainerHigh = VSurfaceVariant,
+    surfaceContainer = VBackground,    // ModalBottomSheet body — same as the page
+    surfaceContainerHigh = VSurface,
     outline = VBorder,
     outlineVariant = VBorder,
-    scrim = Color(0xCC000000),
+    scrim = Color(0x99000000),      // Figma dims the page to ~45%
 )
 
 @Composable

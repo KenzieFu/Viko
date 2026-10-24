@@ -1,173 +1,132 @@
 package com.example.viko.view.screens.team.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.viko.components.BatteryBadge
-import com.example.viko.components.MemberAvatar
-import com.example.viko.components.StatusDot
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.WorkerStatus
-import com.example.viko.view.theme.VAccentBlue
-import com.example.viko.view.theme.VMicBlue
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.theme.VBorder
+import com.example.viko.view.theme.VMemberSpeaking
+import com.example.viko.view.theme.VMemberSpeakingSurface
 import com.example.viko.view.theme.VOnSurface
-import com.example.viko.view.theme.VOnSurfaceSecondary
+import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VikoTheme
 
 /**
- * One worker in a list: avatar, name, live status, battery. Shared by the home
- * team sheet and anywhere else a roster is shown.
+ * One member in the team sheet: a card with the name, `Zone • 🔋 %`, and a phone
+ * to call them on the right. No avatar — the design has none.
+ *
+ * - Not available → the whole card dims and the phone stops responding.
+ * - Speaking → teal card and outline, a waveform beside the name.
  */
 @Composable
 fun MemberListItem(
     worker: Worker,
-    onDirectCall: (() -> Unit)? = null,
-    trailingContent: (@Composable () -> Unit)? = null
+    onDirectCall: () -> Unit
 ) {
+    val isSpeaking = worker.isOnline && worker.status == WorkerStatus.SPEAKING
+    val shape = RoundedCornerShape(12.dp)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onDirectCall?.invoke() }
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .clip(shape)
+            .background(if (isSpeaking) VMemberSpeakingSurface else VSurface)
+            .border(1.dp, if (isSpeaking) VMemberSpeaking else VBorder, shape)
+            .alpha(if (worker.isOnline) 1f else UNAVAILABLE_ALPHA)
+            .padding(start = 16.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        MemberAvatar(name = worker.name)
-
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = worker.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = VOnSurface
-            )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                WorkerStatusIndicator(worker = worker)
                 Text(
-                    text = worker.statusLabel(),
-                    style = MaterialTheme.typography.bodySmall,
-                    // Blue, not red: red is reserved for emergencies, and a member
-                    // simply holding the channel is not one.
-                    color = if (worker.status == WorkerStatus.SPEAKING) VMicBlue else VOnSurfaceSecondary
+                    text = worker.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = VOnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-            }
-        }
-
-        if (trailingContent != null) {
-            trailingContent()
-        } else {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                BatteryBadge(level = worker.batteryLevel)
-                if (onDirectCall != null && worker.isOnline) {
-                    IconButton(onClick = onDirectCall, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Default.Phone,
-                            contentDescription = "Call ${worker.name}",
-                            tint = VOnSurface,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                if (isSpeaking) {
+                    Icon(
+                        Icons.Default.GraphicEq,
+                        contentDescription = "${worker.name} is speaking",
+                        tint = VOnSurface,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            MemberStatusLine(worker = worker)
+        }
+
+        IconButton(onClick = onDirectCall, enabled = worker.isOnline) {
+            Icon(
+                Icons.Default.Phone,
+                contentDescription = "Call ${worker.name}",
+                // The dimmed card already fades this; disabled must not fade it twice.
+                tint = VOnSurface,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
 
-/**
- * A pulsing dot while the worker holds the channel, a plain dot otherwise —
- * the "someone is talking right now" cue on a noisy factory floor.
- */
-@Composable
-private fun WorkerStatusIndicator(worker: Worker) {
-    val pulseColor = when (worker.status) {
-        WorkerStatus.SPEAKING -> VMicBlue
-        WorkerStatus.LISTENING -> VAccentBlue
-        else -> null
-    }
+/** How far an unreachable member's card fades back — same as an empty channel on Home. */
+private const val UNAVAILABLE_ALPHA = 0.35f
 
-    if (pulseColor == null || !worker.isOnline) {
-        StatusDot(isOnline = worker.isOnline)
-        return
-    }
-
-    val progress by rememberInfiniteTransition(label = "workerStatus").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "workerStatusProgress"
-    )
-
-    Canvas(modifier = Modifier.size(14.dp)) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(
-            color = pulseColor.copy(alpha = 0.22f * (1f - progress)),
-            radius = size.minDimension * (0.25f + progress * 0.25f),
-            center = center
-        )
-        drawCircle(
-            color = pulseColor,
-            radius = size.minDimension * 0.24f,
-            center = center
-        )
-    }
-}
-
-private fun Worker.statusLabel(): String = when (status) {
-    WorkerStatus.SPEAKING -> "Speaking..."
-    WorkerStatus.LISTENING -> "Listening"
-    WorkerStatus.OFFLINE -> "Offline"
-    WorkerStatus.AVAILABLE -> "$zone • Available"
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0D0D0F)
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun MemberListItemPreview() {
     VikoTheme {
+        MemberListItem(worker = previewWorker(name = "Le Khanh Linh", zone = "Zone 4", batteryLevel = 70), onDirectCall = {})
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
+@Composable
+private fun MemberListItemSpeakingPreview() {
+    VikoTheme {
         MemberListItem(
-            worker = Worker(
-                id = "w1",
-                name = "Budi",
-                channelId = "c1",
-                zone = "Warehouse A",
-                deviceAddress = "VK-001",
-                macAddress = "AA:BB:CC:DD:EE:01",
-                batteryLevel = 82,
-                isOnline = true,
-                status = WorkerStatus.SPEAKING
-            ),
+            worker = previewWorker(name = "Le Khanh Linh", zone = "Zone 4", status = WorkerStatus.SPEAKING),
             onDirectCall = {}
         )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
+@Composable
+private fun MemberListItemUnavailablePreview() {
+    VikoTheme {
+        MemberListItem(worker = previewWorker(name = "Pham Bao Anh", isOnline = false), onDirectCall = {})
     }
 }

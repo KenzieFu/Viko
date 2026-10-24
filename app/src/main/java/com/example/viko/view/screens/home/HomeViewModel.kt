@@ -2,6 +2,7 @@ package com.example.viko.view.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.channel.repository.ChannelRepository
@@ -31,6 +32,8 @@ data class HomeUiState(
     val channels: List<ChannelSummary> = emptyList(),
     val unassignedToChannel: Map<String, List<Worker>> = emptyMap(),
     val activeAlertCount: Int = 0,
+    /** The newest unresolved SOS — Home shows it as a yellow banner above the grid. */
+    val activeAlert: EmergencyAlert? = null,
     val hasMembers: Boolean = false,
     /**
      * False until the database has answered. Everything that reacts to "there is
@@ -49,7 +52,7 @@ data class HomeUiState(
 class HomeViewModel(
     private val workerRepository: WorkerRepository,
     channelRepository: ChannelRepository,
-    alertRepository: AlertRepository
+    private val alertRepository: AlertRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<HomeUiState> = combine(
@@ -64,6 +67,9 @@ class HomeViewModel(
                 channel.id to workers.filter { it.channelId != channel.id }
             },
             activeAlertCount = alerts.count { it.status == AlertStatus.ACTIVE },
+            // The alerts table has no timestamp to sort on; rows come back in
+            // insertion order, so the last active one is the one just raised.
+            activeAlert = alerts.lastOrNull { it.status == AlertStatus.ACTIVE },
             hasMembers = workers.isNotEmpty(),
             isLoaded = true
         )
@@ -83,5 +89,9 @@ class HomeViewModel(
 
     fun removeWorker(workerId: String) = viewModelScope.launch {
         workerRepository.removeWorker(workerId)
+    }
+
+    fun resolveAlert(alertId: String) = viewModelScope.launch {
+        alertRepository.resolveAlert(alertId)
     }
 }

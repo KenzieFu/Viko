@@ -38,7 +38,6 @@ data class AddMemberUiState(
     val wifiPassword: String = "",
     val selectedChannelId: String = "",
     val channels: List<Channel> = emptyList(),
-    val memberCounts: Map<String, Int> = emptyMap(),
     /** BLE addresses of badges already on the roster — they cannot be set up twice. */
     val enrolledAddresses: Set<String> = emptySet(),
     /** True while the badge is being written over BLE — Save shows a spinner. */
@@ -91,7 +90,6 @@ class AddMemberViewModel(
     ) { state, channels, workers ->
         state.copy(
             channels = channels,
-            memberCounts = workers.groupingBy { it.channelId }.eachCount(),
             // deviceAddress, not macAddress: deviceAddress is the BLE address the
             // scan reports, while macAddress is the Wi-Fi one the badge sends
             // later over the control channel. They differ on an ESP32.
