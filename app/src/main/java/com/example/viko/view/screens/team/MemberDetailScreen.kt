@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -109,17 +111,18 @@ fun MemberDetailScreen(
             .fillMaxSize()
             .background(VBackground)
             .navigationBarsPadding()
+            .imePadding()
     ) {
         Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(start = 20.dp, end = 8.dp, top = 24.dp),
             horizontalArrangement = Arrangement.End
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
+                Icon(Icons.Default.Close, "Close", tint = VOnSurface, modifier = Modifier.size(24.dp))
             }
         }
 
@@ -129,9 +132,7 @@ fun MemberDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
-            DeviceIllustration(modifier = Modifier.align(Alignment.CenterHorizontally))
-
-            Spacer(modifier = Modifier.height(20.dp))
+            DeviceIllustration(modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 24.dp))
 
             LabeledTextField(
                 label = "Name",
@@ -161,7 +162,7 @@ fun MemberDetailScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp)) {
             VikoBlueButton(
                 text = "Save Changes",
                 enabled = uiState.canSave,
