@@ -276,9 +276,8 @@ fun HomeScreen(
         ModalBottomSheet(
             onDismissRequest = { showAnnouncementSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            // The sheet recolours itself while speaking, so it owns its background.
-            containerColor = Color.Transparent,
-            dragHandle = null
+            containerColor = VBackground,
+            dragHandle = { VikoDragHandle() }
         ) {
             AnnouncementSheetContent(onClose = { showAnnouncementSheet = false })
         }
