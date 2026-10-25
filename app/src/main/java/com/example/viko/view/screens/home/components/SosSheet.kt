@@ -1,110 +1,57 @@
 package com.example.viko.view.screens.home.components
 
-import com.example.viko.view.theme.VBackground
-import com.example.viko.view.theme.VSurfaceVariant
-import com.example.viko.components.AnnouncementWaveBackground
-import com.example.viko.components.AnnouncementWaveHeight
-import com.example.viko.view.theme.VikoTheme
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.viko.view.theme.VAccentBlue
-import com.example.viko.view.theme.VAccentRed
-import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VOnSurface
-import com.example.viko.view.theme.VShadow
-import com.example.viko.view.theme.VSurface
+import androidx.compose.ui.unit.sp
+import com.example.viko.R
+import com.example.viko.components.AnnouncementWaveBackground
+import com.example.viko.components.AnnouncementWaveHeight
+import com.example.viko.view.theme.*
 import kotlinx.coroutines.delay
 
-private data class EmergencyType(
-    val id: String,
-    val label: String,
-    val icon: ImageVector,
-    val accent: Color
-)
+private data class EmergencyType(val id: String, val label: String, val icon: ImageVector, val accent: Color)
 
 private val EMERGENCY_TYPES = listOf(
     EmergencyType("fire", "Fire", Icons.Default.LocalFireDepartment, VAccentRed),
     EmergencyType("gas", "Gas Leak", Icons.Default.PropaneTank, VAccentRed),
     EmergencyType("evacuate", "Evacuate", Icons.AutoMirrored.Filled.ExitToApp, VAccentRed),
-    EmergencyType("clear", "All Clear", Icons.Default.VerifiedUser, VAccentBlue),
+    EmergencyType("clear", "All Clear", Icons.Default.VerifiedUser, VMicBlue),
 )
 
-/** How long a site-wide emergency broadcast runs before it auto-stops. */
 private const val BROADCAST_DURATION_MS = 3_500L
 
-/**
- * The emergency grid drives how tall the sheet is, so [EMERGENCY_CARD_HEIGHT] is
- * the one knob for giving the sheet more room.
- *
- * [EMERGENCY_GRID_HEIGHT] is derived rather than typed out: LazyVerticalGrid does
- * not size itself to its rows, so a hardcoded height that no longer matched the
- * cards would silently clip them instead of failing.
- *
- * The row/column counts come first because top-level properties initialise in file
- * order — a height computed from values declared below it would read them as zero.
- */
-private const val EMERGENCY_GRID_COLUMNS = 2
-private const val EMERGENCY_GRID_ROWS = 2
-
-private val EMERGENCY_CARD_HEIGHT = 200.dp
-
-/** How far the selected panel stops short of the card's edge — same idea as a
- *  channel tile on Home, where the card's own surface stays visible around it. */
-private val EMERGENCY_PANEL_INSET = 12.dp
-private val EMERGENCY_GRID_SPACING = 16.dp
-private val EMERGENCY_GRID_HEIGHT =
-    EMERGENCY_CARD_HEIGHT * EMERGENCY_GRID_ROWS + EMERGENCY_GRID_SPACING * (EMERGENCY_GRID_ROWS - 1)
-
-private val ANNOUNCE_BUTTON = 88.dp
-
-/**
- * Site-wide emergency broadcast: pick a type, hold the floor for a few seconds.
- * Nothing is sent yet — this is the UI ahead of the emergency packet transport.
- */
+/** Content-sized SOS sheet. This is the existing local UI preview; no emergency transport is sent. */
 @Composable
 fun SosSheetContent(onClose: () -> Unit) {
     var selectedType by remember { mutableStateOf<String?>(null) }
@@ -117,103 +64,63 @@ fun SosSheetContent(onClose: () -> Unit) {
         }
     }
 
-    // The sheet surface never changes — only the wave reacts, same as the
-    // announcement sheet.
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // Same wave the announcement sheet uses, in red — arcs sweeping up from
-        // the bottom of the sheet rather than a halo around the button, so the
-        // whole surface reads as live. Drawn behind the content, and it takes no
-        // layout space, so nothing moves when a broadcast starts.
+    // Leave Home visible above the sheet. Small screens / enlarged text can scroll
+    // instead of expanding the modal to full-screen or clipping the Announce control.
+    Box(
+        Modifier.fillMaxWidth()
+            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .78f)
+            .clip(RoundedCornerShape(0.dp))
+            .testTag("sos-content")
+    ) {
         if (isBroadcasting) {
             AnnouncementWaveBackground(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(AnnouncementWaveHeight),
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .height(AnnouncementWaveHeight).testTag("sos-speaking-wave"),
                 color = VAccentRed
             )
         }
-
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-
-                .navigationBarsPadding()
-                .padding(bottom = 20.dp)
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp).padding(bottom = 24.dp)
         ) {
-            Box(modifier = Modifier.fillMaxWidth()
-                .padding(top =24.dp)) {
-                Text(
-                    text = "SOS",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = VOnSurface,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-
+            Box(Modifier.fillMaxWidth().height(48.dp)) {
+                Text("SOS", fontSize = 20.sp, lineHeight = 24.sp,
+                    fontWeight = FontWeight.Bold, color = VOnSurface,
+                    modifier = Modifier.align(Alignment.Center))
                 IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterEnd)) {
-                    Icon(Icons.Default.Close, "Close", tint = VOnSurface)
+                    Icon(Icons.Default.Close, "Close SOS", tint = VOnSurface, modifier = Modifier.size(24.dp))
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(EMERGENCY_GRID_COLUMNS),
-                horizontalArrangement = Arrangement.spacedBy(EMERGENCY_GRID_SPACING),
-                verticalArrangement = Arrangement.spacedBy(EMERGENCY_GRID_SPACING),
-                modifier = Modifier.height(EMERGENCY_GRID_HEIGHT),
-                userScrollEnabled = false
-            ) {
-                items(EMERGENCY_TYPES) { type ->
-                    EmergencyTypeCard(
-                        type = type,
-                        isSelected = selectedType == type.id,
-                        dimmed = isBroadcasting,
-                        onClick = {
-                            selectedType = if (selectedType == type.id) null else type.id
+            Spacer(Modifier.height(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                EMERGENCY_TYPES.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        row.forEach { type ->
+                            EmergencyTypeCard(type, selectedType == type.id, isBroadcasting,
+                                modifier = Modifier.weight(1f), onClick = {
+                                    selectedType = if (selectedType == type.id) null else type.id
+                                })
                         }
-                    )
+                    }
                 }
             }
-
-
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-
-
-
-            ) {
-                // No halo slot to reserve any more — the wave behind the sheet does
-                // the work, so the button is just the button and cannot move.
-                // Dark until pressed: a red circle at rest would read as a broadcast
-                // already going out. It turns red only while the floor is held.
+            Spacer(Modifier.height(32.dp))
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
-                    modifier = Modifier
-                        .size(ANNOUNCE_BUTTON)
-                        .clip(CircleShape)
-                        .background(if (isBroadcasting) VAccentRed else VSurfaceVariant)
-                        .clickable { isBroadcasting = !isBroadcasting },
+                    Modifier.size(104.dp).clip(CircleShape)
+                        .background(if (isBroadcasting) VAccentRed else VSurface)
+                        .clickable(role = Role.Button) { isBroadcasting = !isBroadcasting },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Campaign,
+                    Icon(painterResource(R.drawable.ic_announces),
                         contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
+                        tint = Color.White, modifier = Modifier.size(38.dp))
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = if (isBroadcasting) "Speaking..." else "Announce",
-                    style = MaterialTheme.typography.titleMedium,
+                Spacer(Modifier.height(12.dp))
+                Text(if (isBroadcasting) "Speaking..." else "Announce",
+                    fontSize = 18.sp, lineHeight = 22.sp,
                     fontWeight = if (isBroadcasting) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isBroadcasting) VAccentRed else VOnSurface
-                )
-
+                    color = if (isBroadcasting) VAccentRed else VOnSurface)
             }
         }
     }
@@ -224,73 +131,42 @@ private fun EmergencyTypeCard(
     type: EmergencyType,
     isSelected: Boolean,
     dimmed: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp)
-            .alpha(if (dimmed) 0.4f else 1f)
-            .shadow(1.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
+        modifier.height(160.dp).alpha(if (dimmed) .4f else 1f)
             .clip(RoundedCornerShape(16.dp))
-            // Selected, the card itself drops back to the sheet colour behind a
-            // hairline, so the tinted panel inside it is the only thing lit.
             .background(if (isSelected) VBackground else VSurface)
-            .then(
-                if (isSelected) Modifier.border(1.dp, VBorder, RoundedCornerShape(16.dp))
-                else Modifier
-            )
-            .clickable(enabled = !dimmed, onClick = onClick)
-            .padding(EMERGENCY_PANEL_INSET),
+            .border(1.dp, VBorder, RoundedCornerShape(16.dp))
+            .semantics { selected = isSelected }
+            .clickable(enabled = !dimmed, role = Role.Button, onClick = onClick)
+            .padding(8.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp))
-                // No outline in either state. Selected is an inset tinted panel the
-                // way a channel you are talking on is on Home: the fill carries the
-                // accent, stopping short of the card's edge.
-                .background(if (isSelected) type.accent.copy(alpha = 0.15f) else Color.Transparent),
+            Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                .background(if (isSelected) {
+                    if (type.id == "clear") VActivePanel else type.accent.copy(alpha = .15f)
+                } else Color.Transparent),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
         ) {
-            // Unselected: hollow, hairline ring, white glyph — an emergency type
-            // reads as armed only once it has been chosen, so three red icons
-            // cannot sit there looking like three live alarms. All Clear keeps
-            // its blue glyph: blue is safe, and it is the one that stands down.
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .then(
-                        if (isSelected) Modifier.drawBehind {
-                            drawCircle(type.accent.copy(alpha = 0.25f), radius = size.minDimension * 0.68f)
-                        } else Modifier
-                    )
-                    .clip(CircleShape)
-                    .background(if (isSelected) type.accent else Color.Transparent)
-                    .then(
-                        if (isSelected) Modifier
-                        else Modifier.border(1.dp, VBorder, CircleShape)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    type.icon,
-                    contentDescription = type.label,
-                    tint = when {
-                        isSelected -> Color.White
-                        type.accent == VAccentBlue -> VAccentBlue
-                        else -> VOnSurface
-                    },
-                    modifier = Modifier.size(26.dp)
-                )
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                if (isSelected && !dimmed) {
+                    ChannelSpeakingPulse(type.accent, Modifier.requiredSize(66.dp))
+                }
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape)
+                        .background(if (isSelected) type.accent else Color.Transparent)
+                        .then(if (isSelected) Modifier else Modifier.border(1.dp, VOnSurface.copy(alpha = .3f), CircleShape)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(type.icon, null, tint = VOnSurface, modifier = Modifier.size(24.dp))
+                }
             }
-            Text(
-                text = type.label,
-                style = MaterialTheme.typography.titleLarge,
-                color = if (isSelected) type.accent else VOnSurface
-            )
+            Text(type.label, fontSize = 16.sp, lineHeight = 20.sp,
+                color = if (isSelected) type.accent else VOnSurface)
         }
     }
 }
