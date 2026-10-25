@@ -494,7 +494,7 @@ private fun MakeAnnouncementButton(onClick: () -> Unit, modifier: Modifier = Mod
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.ic_announce),
+                painter = painterResource(id = R.drawable.ic_announces),
                 contentDescription = null,
                 tint = VOnSurface,
                 modifier = Modifier.size(24.dp)

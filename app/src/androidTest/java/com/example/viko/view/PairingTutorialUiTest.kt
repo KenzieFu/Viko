@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import android.content.ComponentName
 import android.content.pm.ActivityInfo
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import com.example.viko.type.WorkerStatus
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -86,6 +88,34 @@ class PairingTutorialUiTest {
         compose.runOnIdle { assertTrue(notifications); assertTrue(settings) }
         compose.onAllNodesWithText("1/1")[0].performTouchInput { click() }
         compose.onNodeWithText("Member 0").assertIsDisplayed()
+    }
+
+    @Test fun speakingMemberNameFollowsLiveChannelState() {
+        val currentSpeaker = mutableStateOf(0)
+        compose.setContent {
+            TestTheme {
+                val members = listOf("Le Khanh Linh", "Nguyen Minh Tam").mapIndexed { index, name ->
+                    previewWorker("worker-$index", name, "team",
+                        status = if (currentSpeaker.value == index) WorkerStatus.SPEAKING else WorkerStatus.AVAILABLE)
+                }
+                HomeScreen(
+                    uiState = HomeUiState(channels = listOf(ChannelSummary(Channel("team", "Operations"), members)),
+                        hasMembers = true, isLoaded = true),
+                    onOpenNotifications = {}, onOpenSettings = {}, onDirectCall = {},
+                    onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
+                    onResolveAlert = {}, startTutorial = false
+                )
+            }
+        }
+        compose.onNodeWithText("Le Khanh Linh").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Listening to Operations").assertIsDisplayed()
+        capture("home-layout-listening.png")
+        compose.runOnIdle { currentSpeaker.value = 1 }
+        compose.onNodeWithText("Nguyen Minh Tam").assertIsDisplayed()
+        compose.onNodeWithText("Le Khanh Linh").assertDoesNotExist()
+        compose.runOnIdle { currentSpeaker.value = -1 }
+        compose.onNodeWithText("Nguyen Minh Tam").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Talk to Operations").assertIsDisplayed()
     }
 
     @Test fun largeTextIntroCanScrollToSkipWithoutStartingTutorial() {
