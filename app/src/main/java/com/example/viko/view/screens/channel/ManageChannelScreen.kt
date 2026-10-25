@@ -127,7 +127,7 @@ fun ManageChannelScreen(
                             fontSize = 12.sp,
                             color = VOnSurfaceSecondary
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Icon(
                             Icons.Default.ChevronRight,
                             contentDescription = null,

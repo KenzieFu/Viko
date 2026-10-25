@@ -1,5 +1,27 @@
 package com.example.viko.view.screens.team
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.painterResource
+import com.example.viko.R
+import com.example.viko.components.VikoListRow
+import com.example.viko.view.theme.VOnboardingBlue
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -46,7 +68,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.viko.components.AddPillButton
 import com.example.viko.components.DeviceIllustration
 import com.example.viko.components.DeviceInfoCard
 import com.example.viko.components.LabeledSelectField
@@ -68,8 +89,8 @@ import com.example.viko.view.theme.VWarning
 import com.example.viko.view.theme.VikoTheme
 
 // The whole "add a member" journey from Figma: pair a device, name the person,
-// pick their channel, save. It is ONE composable over ONE ViewModel, and each
-// Figma frame is a bottom sheet over the screen behind it.
+// pick their channel, save. One ViewModel retains the form across the discovery
+// sheet, full-screen setup and nested channel/Wi-Fi pickers.
 //
 // Why not separate nav screens (how this used to work): the channel picker was
 // a different route, so it could not write back into the half-filled setup
@@ -86,6 +107,7 @@ fun AddMemberFlow(
      * paired in this run joins that channel, and the Channel row is locked.
      */
     presetChannelId: String? = null,
+    closeAfterSave: Boolean = false,
     viewModel: AddMemberViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -106,20 +128,65 @@ fun AddMemberFlow(
     var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
     var showWifiSetup by rememberSaveable { mutableStateOf(false) }
 
-    // BLE scanning is a runtime permission, and denying it is silent: the scan
-    // starts fine and simply never reports a device. So the grant is tracked
-    // explicitly and the sheet says what is missing instead of showing an empty
-    // list forever.
     var hasBlePermission by remember { mutableStateOf(BlePermissions.allGranted(context)) }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        hasBlePermission = grants.values.all { it }
-        if (hasBlePermission) viewModel.rescan()
+    var bluetoothEnabled by remember { mutableStateOf(BlePermissions.isEnabled(context)) }
+    var locationReady by remember { mutableStateOf(BlePermissions.isLocationReady(context)) }
+    val bluetoothSupported = remember { BlePermissions.isSupported(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun refreshPrerequisites(): Boolean {
+        hasBlePermission = BlePermissions.allGranted(context)
+        bluetoothEnabled = BlePermissions.isEnabled(context)
+        locationReady = BlePermissions.isLocationReady(context)
+        val ready = bluetoothSupported && hasBlePermission && bluetoothEnabled && locationReady
+        if (!ready) viewModel.stopScan()
+        return ready
     }
 
+    val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (refreshPrerequisites()) viewModel.rescan()
+    }
+    val enableBluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (refreshPrerequisites()) viewModel.rescan()
+    }
+    fun enableOrScan() {
+        refreshPrerequisites()
+        when {
+            !bluetoothSupported || !hasBlePermission -> Unit
+            !bluetoothEnabled -> {
+                // Permission and radio power are different Android operations.
+                // Prefer the OS enable prompt; provide settings if unavailable.
+                runCatching { enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+                    .onFailure { settingsLauncher.launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            }
+            !locationReady -> settingsLauncher.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            else -> viewModel.rescan()
+        }
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (BlePermissions.allGranted(context)) enableOrScan() else refreshPrerequisites()
+    }
+
+    // Returning from Settings or changing the radio in Quick Settings must not
+    // leave the sheet showing an old permission/radio state.
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshPrerequisites()
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { refreshPrerequisites() }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_EXPORTED)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            context.unregisterReceiver(receiver)
+            viewModel.stopScan()
+        }
+    }
     LaunchedEffect(Unit) {
-        if (hasBlePermission) viewModel.rescan() else permissionLauncher.launch(BlePermissions.required)
+        if (refreshPrerequisites() && uiState.step == AddMemberStep.Pairing) viewModel.rescan()
     }
 
     // The form itself lives in the ViewModel, which survives recreation; clearing
@@ -129,31 +196,37 @@ fun AddMemberFlow(
         onDismiss()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = dismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = VBackground,
-        contentColor = VOnSurface,
-        dragHandle = { VikoDragHandle() }
-    ) {
+    LaunchedEffect(uiState.addedCount, closeAfterSave) {
+        if (closeAfterSave && uiState.addedCount > 0) dismiss()
+    }
+
+    val content: @Composable () -> Unit = {
         when (uiState.step) {
             AddMemberStep.Pairing -> NearbyDeviceSheetContent(
                 devices = uiState.devices,
                 isScanning = uiState.isScanning,
                 hasPermission = hasBlePermission,
-                isBluetoothEnabled = uiState.isBluetoothEnabled,
+                isBluetoothEnabled = bluetoothEnabled,
+                isBluetoothSupported = bluetoothSupported,
+                isLocationReady = locationReady,
+                scanError = uiState.error,
+                onBluetoothSettings = { settingsLauncher.launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
+                onPermissionSettings = {
+                    settingsLauncher.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${context.packageName}")))
+                },
                 isEnrolled = uiState::isEnrolled,
                 addedCount = uiState.addedCount,
                 onSelect = viewModel::select,
                 onRescan = {
-                    if (hasBlePermission) viewModel.rescan()
+                    if (BlePermissions.allGranted(context)) enableOrScan()
                     else permissionLauncher.launch(BlePermissions.required)
                 },
                 onDone = dismiss,
                 onClose = dismiss
             )
 
-            AddMemberStep.Setup -> SetupMemberSheetContent(
+            AddMemberStep.Setup -> SetupMemberScreenContent(
                 device = uiState.pairedDevice,
                 name = uiState.name,
                 onNameChange = viewModel::onNameChange,
@@ -172,6 +245,19 @@ fun AddMemberFlow(
                 onSave = viewModel::save,
                 onClose = dismiss
             )
+        }
+    }
+
+    if (uiState.step == AddMemberStep.Pairing) {
+        ModalBottomSheet(onDismissRequest = dismiss,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = VBackground, contentColor = VOnSurface,
+            scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = .5f),
+            dragHandle = { VikoDragHandle() }) { content() }
+    } else {
+        Dialog(onDismissRequest = dismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            Column(Modifier.fillMaxSize().background(VBackground).statusBarsPadding().imePadding()) { content() }
         }
     }
 
@@ -239,7 +325,7 @@ fun AddMemberFlow(
 }
 
 @Composable
-private fun NearbyDeviceSheetContent(
+internal fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
     hasPermission: Boolean,
@@ -249,22 +335,29 @@ private fun NearbyDeviceSheetContent(
     onSelect: (NearbyDevice) -> Unit,
     onRescan: () -> Unit,
     onDone: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    isBluetoothSupported: Boolean = true,
+    isLocationReady: Boolean = true,
+    scanError: String? = null,
+    onBluetoothSettings: () -> Unit = {},
+    onPermissionSettings: () -> Unit = {},
+    replay: Boolean = false
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 20.dp)
             .navigationBarsPadding()
+            .padding(bottom = 24.dp)
     ) {
         Row(
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+            modifier = Modifier.padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Nearby Device",
-                style = MaterialTheme.typography.headlineMedium,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface
             )
@@ -282,68 +375,82 @@ private fun NearbyDeviceSheetContent(
             }
         }
 
+        Spacer(Modifier.height(16.dp))
         Text(
-            text = "Pair your device to add a new member.",
-            style = MaterialTheme.typography.bodyLarge,
+            text = if (replay) "Replay mode: try adding a demo member. Your saved data stays unchanged." else "Pair your device to add a new member.",
+            fontSize = 16.sp,
             color = VOnSurfaceSecondary,
-            modifier = Modifier.padding(start = 4.dp)
+            modifier = Modifier
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        if (devices.isEmpty()) {
-            Text(
-                // Each of these is a different fix, and an undifferentiated
-                // "No devices found" sends the supervisor hunting the wrong one.
-                text = when {
-                    !hasPermission -> "Bluetooth permission is needed to find devices."
-                    !isBluetoothEnabled -> "Turn Bluetooth on to find devices."
-                    else -> "No devices found"
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = VOnSurfaceSecondary.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = 4.dp)
-            )
-            // A badge only advertises while it is unprovisioned, and one with bad
-            // Wi-Fi credentials only falls back to that ~20s after power-on — so
-            // the empty list is usually "not yet", and this says how to fix it.
-            if (hasPermission && isBluetoothEnabled && !isScanning) {
-                Spacer(modifier = Modifier.height(6.dp))
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            if (devices.isEmpty() || !hasPermission || !isBluetoothEnabled || !isLocationReady || !isBluetoothSupported) {
                 Text(
-                    text = "Hold the earpiece button for 5 seconds to put it in pairing mode.",
-                    style = MaterialTheme.typography.bodySmall,
+                    // Each of these is a different fix, and an undifferentiated
+                    // "No devices found" sends the supervisor hunting the wrong one.
+                    text = when {
+                        replay -> "No demo devices shown yet. Tap Find nearby devices."
+                        !isBluetoothSupported -> "This phone does not support Bluetooth LE."
+                        !hasPermission -> "Allow nearby-device access to find your wearable."
+                        !isBluetoothEnabled -> "Turn Bluetooth on to find devices."
+                        !isLocationReady -> "Turn on Location services for Bluetooth scanning on this Android version."
+                        isScanning -> "Searching for nearby ViKo devices…"
+                        else -> "No devices found. Put the wearable in pairing mode and try again."
+                    },
+                    fontSize = 16.sp,
                     color = VOnSurfaceSecondary.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 4.dp)
+                    modifier = Modifier
                 )
-            }
-        } else {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                devices.forEach { device ->
-                    NearbyDeviceRow(
-                        device = device,
-                        isEnrolled = isEnrolled(device),
-                        onSelect = { onSelect(device) }
+                // Match the firmware's startup gesture; a normal long PTT is speech.
+                if (!replay && hasPermission && isBluetoothEnabled && !isScanning) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Hold PTT while resetting the wearable, and keep holding for 5 seconds. New wearables enter pairing automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VOnSurfaceSecondary.copy(alpha = 0.7f),
+                        modifier = Modifier
                     )
                 }
-            }
-        }
-
-        // The scan window closes on its own to spare the radio, so getting
-        // another one has to be reachable — this is the button a supervisor
-        // presses after holding the badge button.
-        if (!isScanning) {
-            Spacer(modifier = Modifier.height(16.dp))
-            if (hasPermission) {
-                AddPillButton(text = "Scan again", onClick = onRescan)
             } else {
-                VikoBlueButton(text = "Allow Bluetooth", onClick = onRescan)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    devices.forEach { device ->
+                        NearbyDeviceRow(
+                            device = device,
+                            isEnrolled = isEnrolled(device),
+                            onSelect = { onSelect(device) }
+                        )
+                    }
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
+        }
+        scanError?.let {
+            Text(it, color = VWarning, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 8.dp))
+        }
+        // Keep the action outside the scrolling results, including during scans.
+        VikoBlueButton(
+            text = when {
+                !isBluetoothSupported -> "Bluetooth LE unavailable"
+                !hasPermission -> "Allow nearby devices"
+                !isBluetoothEnabled -> "Turn on Bluetooth"
+                !isLocationReady -> "Turn on Location"
+                isScanning -> "Searching nearby devices…"
+                else -> "Find nearby devices"
+            },
+            enabled = isBluetoothSupported && !isScanning,
+            onClick = onRescan
+        )
+        if (!hasPermission) {
+            TextButton(onClick = onPermissionSettings) { Text("Open app permissions") }
+        } else if (isBluetoothSupported && !replay) {
+            TextButton(onClick = onBluetoothSettings) { Text("Bluetooth settings") }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Onboarding pairs a whole shift in one sitting, so the flow stays open
         // after each save. Done is how the supervisor says they are finished.
@@ -352,7 +459,7 @@ private fun NearbyDeviceSheetContent(
                 text = "$addedCount member${if (addedCount == 1) "" else "s"} added",
                 style = MaterialTheme.typography.bodySmall,
                 color = VOnSurfaceSecondary,
-                modifier = Modifier.padding(start = 4.dp)
+                modifier = Modifier
             )
             Spacer(modifier = Modifier.height(8.dp))
             VikoBlueButton(text = "Done", onClick = onDone)
@@ -367,185 +474,15 @@ private fun NearbyDeviceRow(
     isEnrolled: Boolean,
     onSelect: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(VSurface)
-            // A badge already on the roster cannot be set up again: the flow
-            // stays open after each save, so the one just enrolled is still
-            // sitting in this list, and a second pass would create a duplicate
-            // member on the same hardware.
-            .clickable(enabled = !isEnrolled, onClick = onSelect)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = device.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = if (isEnrolled) VOnSurfaceSecondary else VOnSurface,
-            modifier = Modifier.weight(1f)
-        )
-        if (isEnrolled) {
-            Text("Paired", color = VOnSurfaceSecondary, fontSize = 12.sp)
-        } else {
-            Text("Pair Device", color = VOnSurface, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(Icons.Default.Link, null, tint = VMicBlue, modifier = Modifier.size(18.dp))
+    VikoListRow(title = device.name, onClick = onSelect, enabled = !isEnrolled) {
+        Text(if (isEnrolled) "Paired" else "Pair Device", color = VOnSurfaceSecondary, fontSize = 12.sp)
+        if (!isEnrolled) {
+            Spacer(Modifier.width(12.dp))
+            Icon(painterResource(R.drawable.ic_link), null, tint = VOnboardingBlue, modifier = Modifier.size(20.dp))
         }
     }
 }
 
-@Composable
-private fun SetupMemberSheetContent(
-    device: NearbyDevice?,
-    name: String,
-    onNameChange: (String) -> Unit,
-    zone: String,
-    onZoneChange: (String) -> Unit,
-    isWifiConfigured: Boolean,
-    onSetUpWifi: () -> Unit,
-    channelName: String?,
-    isChannelLocked: Boolean,
-    canSave: Boolean,
-    isProvisioning: Boolean,
-    error: String?,
-    onPickChannel: () -> Unit,
-    onSave: () -> Unit,
-    onClose: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-            .navigationBarsPadding()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.End
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
-            }
-        }
-
-        // The form scrolls; Save stays pinned at the bottom where Figma has it,
-        // however many fields the badge needs above it.
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-        ) {
-            DeviceIllustration(modifier = Modifier.align(Alignment.CenterHorizontally))
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            LabeledTextField(
-                label = "Name",
-                value = name,
-                onValueChange = onNameChange,
-                placeholder = "Enter Member Name"
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LabeledSelectField(
-                label = "Channel",
-                value = channelName,
-                placeholder = "Select Channel",
-                // Opened from a channel's own team sheet: the channel is already
-                // decided, so the row is shown locked rather than as a picker.
-                onClick = if (isChannelLocked) null else onPickChannel
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // The zone goes onto the badge, not just the roster: it is what an
-            // emergency_alert reports, and it is how a supervisor knows where to
-            // run before anything has been translated.
-            LabeledTextField(
-                label = "Location",
-                value = zone,
-                onValueChange = onZoneChange,
-                placeholder = "e.g. Central Building"
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // The badge has no keyboard and no screen, so pairing is the only
-            // moment it can be given the factory network — one network for the
-            // whole site, kept in Settings. Normally already set, and then this
-            // row is not shown at all; on a fresh install it is the one thing
-            // standing between Save and a working badge.
-            if (!isWifiConfigured) {
-                LabeledSelectField(
-                    label = "Factory Wi-Fi",
-                    value = null,
-                    placeholder = "Set up factory Wi-Fi",
-                    onClick = onSetUpWifi
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            DeviceInfoCard(
-                address = device?.address ?: "Unknown",
-                status = {
-                    Text(
-                        // Battery and location only arrive once the badge is on Wi-Fi
-                        // and registers; before that, signal is all BLE can tell us.
-                        text = device?.let { "Pairing • ${it.signalStrength} dBm" } ?: "Unknown",
-                        fontSize = 12.sp,
-                        color = VOnSurfaceSecondary
-                    )
-                }
-            )
-
-            if (error != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VWarning
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp)) {
-            // Figma dims Save until the form is complete — see AddMemberViewModel.save
-            // for why that matters. Saving here also writes the badge over BLE,
-            // which takes a few seconds and can fail.
-            VikoBlueButton(
-                text = if (isProvisioning) "Saving…" else "Save",
-                enabled = canSave,
-                onClick = onSave
-            )
-
-            if (isProvisioning) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = VMicBlue
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Keep the earpiece nearby — it restarts onto Wi-Fi when this finishes.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VOnSurfaceSecondary
-                    )
-                }
-            }
-        }
-    }
-}
 
 private fun previewDevice(id: String, name: String, rssi: Int = -45) =
     NearbyDevice(id = id, name = name, address = "AA:BB:CC:11:22:$id", signalStrength = rssi)
@@ -595,9 +532,9 @@ private fun NearbyDeviceSheetContentScanningPreview() {
 /** Setup filled in and ready to save. */
 @Preview(showBackground = true, backgroundColor = 0xFF1C1D20, heightDp = 760)
 @Composable
-private fun SetupMemberSheetContentPreview() {
+private fun SetupMemberScreenContentPreview() {
     VikoTheme {
-        SetupMemberSheetContent(
+        SetupMemberScreenContent(
             device = previewDevice("33", "ViKo-A1B2"),
             name = "Budi",
             onNameChange = {},
@@ -618,9 +555,9 @@ private fun SetupMemberSheetContentPreview() {
 /** Setup still empty — Save dim, which is the state that is easy to get wrong. */
 @Preview(showBackground = true, backgroundColor = 0xFF1C1D20, heightDp = 760)
 @Composable
-private fun SetupMemberSheetContentEmptyPreview() {
+private fun SetupMemberScreenContentEmptyPreview() {
     VikoTheme {
-        SetupMemberSheetContent(
+        SetupMemberScreenContent(
             device = previewDevice("33", "ViKo-A1B2"),
             name = "",
             onNameChange = {},

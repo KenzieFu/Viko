@@ -88,3 +88,6 @@ val VBrandOnDark = Color(0xFF003D9E)
 /** The outline of a text field at rest, and what the supervisor has typed into it. */
 val VFieldBorder = Color(0xFF383838)
 val VFieldText = Color(0xFFF5F5F5)
+
+/** Blue glow and onboarding action glyphs, specified by the onboarding design. */
+val VOnboardingBlue = Color(0xFF1692FF)

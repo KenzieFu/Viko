@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.view.theme.VButtonBlue
 import com.example.viko.view.theme.VButtonBlueDisabled
 import com.example.viko.view.theme.VikoTheme
@@ -43,7 +44,7 @@ fun VikoBlueButton(
             disabledContentColor = Color.White.copy(alpha = 0.5f)
         )
     ) {
-        Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(text = text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

@@ -1,5 +1,13 @@
 package com.example.viko.view.screens.onboarding
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.res.painterResource
+import com.example.viko.R
+import com.example.viko.components.VikoBlueButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -66,35 +74,28 @@ fun TeamReadyOverlay(
     onGoToHomepage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    IntroContainer(modifier = modifier) {
-        Text(
-            text = "Your team ready!",
-            modifier = Modifier.fillMaxWidth(),
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = buildAnnotatedString {
+    Box(modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .5f)))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
+            Color.Transparent, Color.Black.copy(alpha = .8f), Color(0xFF063A63)
+        ))))
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 24.dp).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text("Your team ready!", fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(16.dp))
+            Text(buildAnnotatedString {
                 append("You have setup your first team. You can always manage channel and member in ")
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
-                    append("Settings")
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            color = Color.White.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        IntroPrimaryButton(
-            text = "Go to Homepage",
-            onClick = onGoToHomepage,
-            modifier = Modifier.fillMaxWidth(fraction = 0.62f)
-        )
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("Settings") }
+            }, fontSize = 16.sp, lineHeight = 22.sp, color = Color.White.copy(alpha = .75f),
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(24.dp))
+            Image(painterResource(R.drawable.onboarding_setting), "Settings on the homepage",
+                modifier = Modifier.fillMaxWidth().aspectRatio(320f / 150f))
+            Spacer(Modifier.height(32.dp))
+            VikoBlueButton("Go to Homepage", onGoToHomepage, Modifier.fillMaxWidth(.75f))
+        }
     }
 }
 

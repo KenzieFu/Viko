@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
@@ -73,7 +74,10 @@ class BleProvisioner(context: Context) {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    val isBluetoothEnabled: Boolean get() = adapter?.isEnabled == true
+    val isBluetoothEnabled: Boolean get() = BlePermissions.isEnabled(appContext)
+
+    private val _scanError = MutableStateFlow<String?>(null)
+    val scanError: StateFlow<String?> = _scanError.asStateFlow()
 
     // ---------------------------------------------------------------- scanning
 
@@ -89,13 +93,15 @@ class BleProvisioner(context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun startScan() {
+        stopScan()
+        _devices.value = emptyList()
+        _scanError.value = null
         val scanner = adapter?.bluetoothLeScanner
         if (scanner == null) {
             Log.w(TAG, "no BLE scanner — bluetooth off?")
+            _scanError.value = "Bluetooth is off or unavailable. Turn it on and try again."
             return
         }
-        stopScan()
-        _devices.value = emptyList()
 
         val filter = ScanFilter.Builder()
             .setServiceUuid(ParcelUuid(SERVICE_UUID))
@@ -106,6 +112,7 @@ class BleProvisioner(context: Context) {
 
         val cb = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
+                if (scanCallback !== this) return
                 val device = result.device ?: return
                 val address = device.address ?: return
                 // scanRecord name is used in preference to device.name: the latter
@@ -125,8 +132,10 @@ class BleProvisioner(context: Context) {
             }
 
             override fun onScanFailed(errorCode: Int) {
+                if (scanCallback !== this) return
                 Log.e(TAG, "scan failed: $errorCode")
                 _isScanning.value = false
+                _scanError.value = "Bluetooth scan failed ($errorCode). Wait a moment, then try again."
             }
         }
         scanCallback = cb
@@ -296,7 +305,7 @@ class BleProvisioner(context: Context) {
                             configChar,
                             payload,
                             BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                        ) == BluetoothGatt.GATT_SUCCESS
+                        ) == BluetoothStatusCodes.SUCCESS
                     } else {
                         @Suppress("DEPRECATION")
                         configChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT

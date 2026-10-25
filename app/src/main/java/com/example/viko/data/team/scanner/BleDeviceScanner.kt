@@ -7,9 +7,9 @@ import com.example.viko.data.team.ble.VikoBle
 import com.example.viko.domain.team.model.BadgeSetup
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.domain.team.repository.DeviceScanner
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -39,10 +39,13 @@ class BleDeviceScanner(context: Context) : DeviceScanner {
             send(emptyList())
             return@channelFlow
         }
-        ble.startScan()
         try {
+            ble.startScan()
             withTimeoutOrNull(SCAN_WINDOW_MS) {
-                ble.devices.collect { send(it) }
+                combine(ble.devices, ble.scanError) { devices, error ->
+                    if (error != null) throw IllegalStateException(error)
+                    devices
+                }.collect { send(it) }
             }
         } finally {
             // Scanning is expensive on the radio, so the window closes on its
@@ -78,11 +81,7 @@ class BleDeviceScanner(context: Context) : DeviceScanner {
     }
 
     private companion object {
-        /**
-         * A badge whose stored credentials failed only starts advertising ~20s
-         * after power-on (see the firmware README), so a short window would miss
-         * exactly the badge a supervisor is trying to recover.
-         */
+        /** Bounded scan; the visible Find nearby devices button starts another. */
         const val SCAN_WINDOW_MS = 30_000L
     }
 }

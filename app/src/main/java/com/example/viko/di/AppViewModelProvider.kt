@@ -28,6 +28,11 @@ object AppViewModelProvider {
 
     val Factory = viewModelFactory {
         initializer {
+            com.example.viko.view.screens.onboarding.OnboardingViewModel(
+                createSavedStateHandle(), container().channelRepository, container().workerRepository
+            )
+        }
+        initializer {
             HomeViewModel(
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,

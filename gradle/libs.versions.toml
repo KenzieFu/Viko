@@ -2,8 +2,9 @@
 agp = "9.2.1"
 coreKtx = "1.10.1"
 junit = "4.13.2"
-junitVersion = "1.1.5"
-espressoCore = "3.5.1"
+junitVersion = "1.3.0"
+# Modern Android removed the hidden InputManager API used by older Espresso.
+espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.8.7"
 activityCompose = "1.9.3"
 navigationCompose = "2.8.4"

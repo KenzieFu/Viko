@@ -7,43 +7,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.example.viko.view.theme.*
+import kotlin.math.exp
 
-/**
- * The blue bloom behind the splash and onboarding screens.
- *
- * In Figma this is a solid #1692FF circle under a 200px Gaussian blur, with two
- * multiply-blended ellipses darkening its edges. A blurred solid circle is a
- * radial falloff, so it is drawn as one here rather than shipped as a ~1165px
- * PNG per density — a vector drawable cannot carry the blur, and the multiply
- * pass only matters against the page colour, which is already [glowColor]'s
- * backdrop.
- */
+/** Figma's two off-screen discs with soft outer shadows over the #1692FF bloom. */
 @Composable
-fun VikoBrandGlow(
-    modifier: Modifier = Modifier,
-    glowColor: Color = Color(0xFF1692FF)
-) {
-    Canvas(modifier = modifier.fillMaxSize()) {
-        // Sits above the top edge, so only its lower half washes into the page.
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(glowColor.copy(alpha = 0.22f), Color.Transparent),
-                center = Offset(size.width * 0.54f, size.height * -0.02f),
-                radius = size.width * 0.95f
-            ),
-            radius = size.width * 0.95f,
-            center = Offset(size.width * 0.54f, size.height * -0.02f)
-        )
-        // And its mirror below the bottom edge, which is what keeps the middle
-        // of the screen the darkest part of it.
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(glowColor.copy(alpha = 0.10f), Color.Transparent),
-                center = Offset(size.width * 0.5f, size.height * 1.05f),
-                radius = size.width * 0.85f
-            ),
-            radius = size.width * 0.85f,
-            center = Offset(size.width * 0.5f, size.height * 1.05f)
-        )
+fun VikoBrandGlow(modifier: Modifier = Modifier, glowColor: Color = VOnboardingBlue) {
+    Canvas(modifier.fillMaxSize()) {
+        val scale = size.width / 360f
+        for ((center, alpha) in listOf(
+            Offset(size.width * .54f, -65f * scale) to .20f,
+            Offset(size.width * .5f, size.height + 90f * scale) to .08f
+        )) {
+            val radius = 440f * scale
+            drawCircle(Brush.radialGradient(listOf(glowColor.copy(alpha = alpha), Color.Transparent),
+                center = center, radius = radius), radius, center)
+        }
+        // Draw only the outer Gaussian shadow: a white disc in multiply mode
+        // leaves the underlying blue unchanged. Concentric strokes work on API 24.
+        for (cy in listOf(-7f * scale, size.height + 92f * scale)) {
+            for (radius in listOf(209f * scale, 296f * scale)) {
+                val center = Offset(size.width / 2, cy)
+                val blur = 15f * scale
+                for (i in 1..30) {
+                    val distance = i * scale
+                    val opacity = .10f * exp(-(distance * distance) / (2 * blur * blur))
+                    drawCircle(Color.Black.copy(alpha = opacity), radius + distance,
+                        center, style = Stroke(scale + .5f))
+                }
+            }
+        }
     }
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFF1C1D20, widthDp = 360, heightDp = 800)
+@Composable
+private fun VikoBrandGlowPreview() { VikoTheme { VikoBrandGlow() } }

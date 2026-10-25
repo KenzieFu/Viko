@@ -6,10 +6,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.viko.view.screens.onboarding.OnboardingFlow
 import com.example.viko.view.screens.channel.ManageChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
-import com.example.viko.view.screens.onboarding.FirstChannelScreen
 import com.example.viko.view.screens.splash.SplashDestination
 import com.example.viko.view.screens.splash.SplashScreen
 import com.example.viko.view.screens.notifications.NotificationsScreen
@@ -22,8 +22,8 @@ import com.example.viko.view.screens.team.MemberDetailScreen
  * they never hold the NavController, and they get their data from a ViewModel
  * scoped to their own back stack entry.
  *
- * Adding a member and picking a channel are deliberately NOT destinations: they
- * are stacks of bottom sheets over the screen that needs them, so the picker can
+ * Adding a member keeps a shared ViewModel across its discovery sheet and full-screen
+ * setup form, so the channel picker can
  * write straight back into the half-filled form. See AddMemberFlow.
  */
 @Composable
@@ -47,18 +47,19 @@ fun AppNavigation() {
         }
 
         composable(Screen.FirstChannel.route) {
-            FirstChannelScreen(
-                onChannelCreated = {
-                    // Land on Home and push Manage Channel on top of it, so the
-                    // supervisor can carry on adding members and Back still has
-                    // somewhere sensible to go. Manage Channel carries the
-                    // "your team ready" card, which only makes sense there.
-                    navController.navigate(Screen.Home.createRoute()) {
-                        popUpTo(Screen.FirstChannel.route) { inclusive = true }
-                    }
-                    navController.navigate(Screen.ManageChannels.createRoute(showTeamReady = true))
+            OnboardingFlow(onFinished = {
+                navController.navigate(Screen.Home.createRoute(startTutorial = true)) {
+                    popUpTo(Screen.FirstChannel.route) { inclusive = true }
                 }
-            )
+            })
+        }
+
+        composable(Screen.OnboardingReplay.route) {
+            OnboardingFlow(replay = true, onFinished = {
+                navController.navigate(Screen.Home.createRoute(startTutorial = true)) {
+                    popUpTo(Screen.Home.route) { inclusive = true }
+                }
+            })
         }
 
         composable(
@@ -93,7 +94,8 @@ fun AppNavigation() {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenManageMembers = { navController.navigate(Screen.ManageMembers.createRoute()) },
-                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.createRoute()) }
+                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.createRoute()) },
+                onReplayOnboarding = { navController.navigate(Screen.OnboardingReplay.route) }
             )
         }
 
