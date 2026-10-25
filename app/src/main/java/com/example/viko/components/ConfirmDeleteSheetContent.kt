@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.view.theme.VAccentRed
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
@@ -47,23 +49,23 @@ fun ConfirmDeleteSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(top = 20.dp, bottom = 20.dp)
+            .padding(vertical = 24.dp)
             .navigationBarsPadding()
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface)
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = VOnSurface, modifier = Modifier.size(24.dp))
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = message, style = MaterialTheme.typography.bodyMedium, color = VOnSurfaceSecondary)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(text = message, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp), color = VOnSurfaceSecondary)
         Spacer(modifier = Modifier.height(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SheetButton(text = "Cancel", containerColor = VSurface, onClick = onDismiss, modifier = Modifier.weight(1f))
@@ -85,7 +87,7 @@ private fun SheetButton(
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = Color.White)
     ) {
-        Text(text = text, style = MaterialTheme.typography.titleMedium)
+        Text(text = text, fontSize = 16.sp)
     }
 }
 

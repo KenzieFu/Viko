@@ -13,7 +13,7 @@ import com.example.viko.components.BatteryBadge
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.WorkerStatus
 import com.example.viko.view.screens.previewWorker
-import com.example.viko.view.theme.VMemberSpeaking
+import com.example.viko.view.theme.VMemberSpeakingText
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VikoTheme
 
@@ -31,7 +31,7 @@ fun MemberStatusLine(worker: Worker, modifier: Modifier = Modifier) {
     }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         if (worker.status == WorkerStatus.SPEAKING) {
-            Text(text = "Speaking", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VMemberSpeaking)
+            Text(text = "Speaking", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VMemberSpeakingText)
             Text(text = SEPARATOR, fontSize = 12.sp, color = VOnSurfaceSecondary)
         }
         Text(
