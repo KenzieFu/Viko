@@ -24,6 +24,7 @@ fun VikoListRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    supportingContent: (@Composable () -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit = {}
 ) {
     val shape = RoundedCornerShape(12.dp)
@@ -34,9 +35,15 @@ fun VikoListRow(
             .padding(horizontal = 16.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-            color = if (enabled) VOnSurface else VOnSurfaceSecondary,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                color = if (enabled) VOnSurface else VOnSurfaceSecondary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (supportingContent != null) {
+                Spacer(Modifier.height(6.dp))
+                supportingContent()
+            }
+        }
         trailing()
     }
 }

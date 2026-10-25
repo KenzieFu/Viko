@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.viko.view.theme.VOnSurface
@@ -30,7 +31,8 @@ fun ScreenHeader(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onAdd: (() -> Unit)? = null,
-    addContentDescription: String = "Add"
+    addContentDescription: String = "Add",
+    titleStyle: TextStyle = MaterialTheme.typography.headlineMedium
 ) {
     Row(
         modifier = modifier
@@ -43,7 +45,7 @@ fun ScreenHeader(
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
+            style = titleStyle,
             fontWeight = FontWeight.Bold,
             color = VOnSurface,
             modifier = Modifier.weight(1f)
