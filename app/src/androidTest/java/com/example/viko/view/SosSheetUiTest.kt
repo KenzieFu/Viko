@@ -14,6 +14,7 @@ import com.example.viko.view.screens.previewWorker
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VikoTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -63,6 +64,11 @@ class SosSheetUiTest {
         compose.onNodeWithText("Fire").assertIsNotEnabled()
         assertEquals(gridBounds, compose.onNodeWithText("Fire").fetchSemanticsNode().boundsInRoot)
         capture("sos-speaking.png")
+        val waveBounds = compose.onNodeWithTag("sos-speaking-wave").fetchSemanticsNode().boundsInRoot
+        val announceBounds = compose.onNodeWithContentDescription("Stop broadcasting").fetchSemanticsNode().boundsInRoot
+        assertTrue(waveBounds.top >= announceBounds.top)
+        compose.mainClock.advanceTimeBy(2_200)
+        capture("sos-speaking-late.png")
         compose.onNodeWithContentDescription("Stop broadcasting").performClick()
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("sos-speaking-wave").assertDoesNotExist()
