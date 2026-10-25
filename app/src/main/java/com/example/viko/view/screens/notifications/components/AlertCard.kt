@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,17 +16,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import com.example.viko.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -32,12 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.type.AlertStatus
-import com.example.viko.view.theme.VAlertYellow
 import com.example.viko.view.theme.VAlertYellowBorder
 import com.example.viko.view.theme.VAlertYellowSurface
 import com.example.viko.view.theme.VOnSurface
-import com.example.viko.view.theme.VOnSurfaceSecondary
-import com.example.viko.view.theme.VOnline
 import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VikoTheme
 
@@ -48,6 +46,7 @@ import com.example.viko.view.theme.VikoTheme
  * - Active → yellow card, yellow `ⓘ`, **Direct Call** and **Resolve**.
  * - Resolved → plain card, green check, *Resolved*, no actions.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlertCard(
     alert: EmergencyAlert,
@@ -64,53 +63,62 @@ fun AlertCard(
             .clip(shape)
             .background(if (isResolved) VSurface else VAlertYellowSurface)
             .then(if (isResolved) Modifier else Modifier.border(1.dp, VAlertYellowBorder, shape))
-            .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 16.dp),
+            .padding(horizontal = 12.dp, vertical = 16.dp),
         verticalAlignment = Alignment.Top
     ) {
         Icon(
-            imageVector = if (isResolved) Icons.Filled.CheckCircle else Icons.Filled.Error,
+            painter = painterResource(if (isResolved) R.drawable.ic_notif_done else R.drawable.ic_notif_info),
             contentDescription = if (isResolved) "Resolved" else "Active emergency",
-            tint = if (isResolved) VOnline else VAlertYellow,
+            tint = Color.Unspecified,
             modifier = Modifier
-                .padding(top = 3.dp)
-                .size(18.dp)
+                .padding(top = 2.dp)
+                .size(16.dp)
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.Top) {
                 Text(
                     text = "Emergency by ${alert.workerName}",
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    lineHeight = 22.sp,
+                    lineHeight = 20.sp,
                     color = VOnSurface,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = alert.timeAgo,
-                    fontSize = 11.sp,
-                    color = VOnSurfaceSecondary,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    color = VOnSurface.copy(alpha = .7f),
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "${alert.zone} • ${alert.team}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VOnSurfaceSecondary
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = VOnSurface.copy(alpha = .7f)
             )
 
             if (isResolved) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(text = "Resolved", style = MaterialTheme.typography.bodyMedium, color = VOnSurfaceSecondary)
+                Text(text = "Resolved", fontSize = 12.sp,
+                    lineHeight = 16.sp, color = VOnSurface.copy(alpha = .7f))
             } else {
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AlertActionButton(text = "Direct Call", icon = Icons.Default.Phone, onClick = onDirectCall)
-                    AlertActionButton(text = "Resolve", icon = Icons.Filled.CheckCircle, onClick = onResolve)
+                // Keep the actions side by side; wrap rather than clip on narrow screens or large fonts.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AlertActionButton(text = "Direct Call", onClick = onDirectCall) {
+                        Icon(Icons.Outlined.Phone, null, tint = VOnSurface, modifier = Modifier.size(16.dp))
+                    }
+                    AlertActionButton(text = "Resolve", onClick = onResolve) {
+                        Icon(painterResource(R.drawable.ic_notif_done), null, tint = VOnSurface, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }
@@ -121,23 +129,22 @@ fun AlertCard(
 @Composable
 private fun AlertActionButton(
     text: String,
-    icon: ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
-            .height(40.dp)
             .clip(shape)
-            .border(1.dp, VOnSurface.copy(alpha = 0.35f), shape)
+            .border(1.dp, VOnSurface.copy(alpha = 0.5f), shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = VOnSurface, modifier = Modifier.size(18.dp))
+        icon()
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text = text, style = MaterialTheme.typography.titleMedium, color = VOnSurface)
+        Text(text = text, fontSize = 14.sp, lineHeight = 18.sp, color = VOnSurface)
     }
 }
 

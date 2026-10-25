@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
@@ -187,22 +188,6 @@ fun HomeScreen(
                 onSosBounds = { targets = targets.copy(sos = it) }
             )
 
-            // Home — Notified: a member's SOS sits above the grid until someone
-            // calls them or resolves it, so it cannot scroll out of sight.
-            bannerAlert?.let { alert ->
-                AlertCard(
-                    alert = alert,
-                    onDirectCall = { onDirectCall(alert.workerId) },
-                    onResolve = {
-                        dismissedAlertId = alert.id
-                        onResolveAlert(alert.id)
-                    },
-                    modifier = Modifier
-                        .padding(start = 20.dp, end = 20.dp, top = 24.dp)
-                        .clickable(onClick = onOpenNotifications)
-                )
-            }
-
             if (uiState.hasNoChannels) {
                 // Nothing paired yet. No phantom channels — the grid stays empty
                 // until onboarding creates real ones.
@@ -255,6 +240,22 @@ fun HomeScreen(
                 modifier = Modifier.onGloballyPositioned {
                     targets = targets.copy(announcement = it.boundsInRoot())
                 }
+            )
+        }
+        // Float over the navbar and cards: incoming alerts must not move the channel grid.
+        bannerAlert?.let { alert ->
+            AlertCard(
+                alert = alert,
+                onDirectCall = { onDirectCall(alert.workerId) },
+                onResolve = {
+                    dismissedAlertId = alert.id
+                    onResolveAlert(alert.id)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .clickable(onClick = onOpenNotifications)
             )
         }
     }
