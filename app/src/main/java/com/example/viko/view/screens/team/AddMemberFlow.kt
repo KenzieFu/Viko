@@ -377,7 +377,7 @@ internal fun NearbyDeviceSheetContent(
 
         Spacer(Modifier.height(16.dp))
         Text(
-            text = if (replay) "Replay mode: try adding a demo member. Your saved data stays unchanged." else "Pair your device to add a new member.",
+            text = "Pair your device to add a new member.",
             fontSize = 16.sp,
             color = VOnSurfaceSecondary,
             modifier = Modifier
@@ -391,28 +391,17 @@ internal fun NearbyDeviceSheetContent(
                     // Each of these is a different fix, and an undifferentiated
                     // "No devices found" sends the supervisor hunting the wrong one.
                     text = when {
-                        replay -> "No demo devices shown yet. Tap Find nearby devices."
                         !isBluetoothSupported -> "This phone does not support Bluetooth LE."
                         !hasPermission -> "Allow nearby-device access to find your wearable."
                         !isBluetoothEnabled -> "Turn Bluetooth on to find devices."
                         !isLocationReady -> "Turn on Location services for Bluetooth scanning on this Android version."
-                        isScanning -> "Searching for nearby ViKo devices…"
-                        else -> "No devices found. Put the wearable in pairing mode and try again."
+                        else -> "No devices found"
                     },
                     fontSize = 16.sp,
                     color = VOnSurfaceSecondary.copy(alpha = 0.7f),
                     modifier = Modifier
                 )
-                // Match the firmware's startup gesture; a normal long PTT is speech.
-                if (!replay && hasPermission && isBluetoothEnabled && !isScanning) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Hold PTT while resetting the wearable, and keep holding for 5 seconds. New wearables enter pairing automatically.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VOnSurfaceSecondary.copy(alpha = 0.7f),
-                        modifier = Modifier
-                    )
-                }
+
             } else {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
