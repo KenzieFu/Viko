@@ -15,6 +15,9 @@ import com.example.viko.domain.team.repository.DeviceScanner
 import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.utils.UI_STATE_TIMEOUT_MS
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -135,8 +138,9 @@ class AddMemberViewModel(
      * BLE write as the factory Wi-Fi, and neither has been typed at this point,
      * so the provisioning happens in [save].
      */
-    fun select(device: NearbyDevice) = form.update {
-        it.copy(pairedDevice = device, step = AddMemberStep.Setup, error = null)
+    fun select(device: NearbyDevice) {
+        stopScan()
+        form.update { it.copy(pairedDevice = device, step = AddMemberStep.Setup, error = null) }
     }
 
     fun onNameChange(name: String) = form.update { it.copy(name = name) }
@@ -178,7 +182,12 @@ class AddMemberViewModel(
      */
     fun save() = viewModelScope.launch {
         val wifi = factoryWifiRepository.observeFactoryWifi().first()
-        val state = form.value.copy(factoryWifi = wifi)
+        // Repository channels are merged into uiState, not the editable form.
+        // Validating form alone silently rejected Save even when the UI enabled it.
+        val state = form.value.copy(
+            factoryWifi = wifi,
+            channels = channelRepository.observeChannels().first()
+        )
         val device = state.pairedDevice
         if (!state.canSave || device == null) return@launch
 
@@ -241,27 +250,42 @@ class AddMemberViewModel(
 
     /**
      * Starts a scan window. Called by the sheet once BLE permissions are in
-     * hand, and again from "Scan again" — a badge that fell back to
-     * provisioning mode only starts advertising ~20s after power-on, so missing
-     * it on the first pass is routine.
+     * hand, and from Find nearby devices after opening the badge's pairing window.
      */
     fun rescan() {
-        scanJob?.cancel()
+        val previous = scanJob
+        previous?.cancel()
         scanJob = viewModelScope.launch {
+            // Wait for the old scan's finally/stopScan before starting another.
+            // Otherwise the cancelled job can shut down the newly started scan.
+            previous?.join()
+            val enabled = deviceScanner.isBluetoothEnabled
             form.update {
                 it.copy(
-                    isScanning = true,
+                    isScanning = enabled,
                     devices = emptyList(),
-                    isBluetoothEnabled = deviceScanner.isBluetoothEnabled
+                    isBluetoothEnabled = enabled,
+                    error = null
                 )
             }
-            deviceScanner.scan().collect { devices ->
-                form.update { it.copy(devices = devices) }
+            if (!enabled) return@launch
+            try {
+                deviceScanner.scan().collect { devices ->
+                    form.update { it.copy(devices = devices) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                form.update { it.copy(error = failure.message ?: "Could not scan. Please try again.") }
+            } finally {
+                if (currentCoroutineContext().isActive) form.update { it.copy(isScanning = false) }
             }
-            // The window closed; an empty list now means "no badges found",
-            // not "still looking".
-            form.update { it.copy(isScanning = false) }
         }
+    }
+
+    fun stopScan() {
+        scanJob?.cancel()
+        form.update { it.copy(isScanning = false) }
     }
 
     private companion object {

@@ -4,6 +4,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.channel.repository.ChannelRepository
+import com.example.viko.domain.settings.model.FactoryWifi
+import com.example.viko.domain.settings.repository.FactoryWifiRepository
+import com.example.viko.domain.team.model.BadgeSetup
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.awaitCancellation
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.DeviceScanner
@@ -25,19 +30,19 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddMemberViewModelTest {
-    @Test fun selectedRepositoryChannelAllowsLocalWifiEnrollment() = runTest {
+    @Test fun selectedRepositoryChannelProvisionsBleAndWaitsForWifiRegistration() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val store = ViewModelStore()
         try {
             val workers = Workers()
             val channels = Channels()
             val scanner = Scanner()
-            val vm = AddMemberViewModel(SavedStateHandle(), workers, channels, scanner)
+            val vm = AddMemberViewModel(SavedStateHandle(), workers, channels, Wifi(), scanner)
             store.put("member", vm)
             backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
             runCurrent()
 
-            vm.select(NearbyDevice("WR-AABBCCDD1234", "ViKo-1234", "192.168.1.12"))
+            vm.select(NearbyDevice("WR-AABBCCDD1234", "ViKo-1234", "AA:BB:CC:DD:12:34"))
             vm.onNameChange("Linh")
             vm.selectChannel("team")
             runCurrent()
@@ -48,11 +53,12 @@ class AddMemberViewModelTest {
 
             assertNotNull(scanner.checked)
             val member = workers.rows.value.single()
-            assertEquals(scanner.checked?.id, member.id)
+            assertEquals(scanner.setup?.deviceId, member.id)
             assertEquals("team", member.channelId)
-            assertTrue(member.isOnline) // A recent Wi-Fi registration is required.
+            assertFalse(member.isOnline) // A BLE save is not a Wi-Fi registration.
             assertEquals("Linh", member.name)
-            assertEquals("WR-AABBCCDD1234", member.id)
+            assertEquals("WR-1234", member.id)
+            assertEquals("kenzie", scanner.setup?.wifiSsid)
             assertEquals(1, vm.uiState.value.addedCount)
         } finally {
             store.clear()
@@ -66,11 +72,11 @@ class AddMemberViewModelTest {
         try {
             val workers = Workers()
             val scanner = Scanner(Result.failure(IllegalStateException("Badge disconnected")))
-            val vm = AddMemberViewModel(SavedStateHandle(), workers, Channels(), scanner)
+            val vm = AddMemberViewModel(SavedStateHandle(), workers, Channels(), Wifi(), scanner)
             store.put("member", vm)
             backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
             runCurrent()
-            vm.select(NearbyDevice("WR-AABBCCDD1234", "ViKo-1234", "192.168.1.12"))
+            vm.select(NearbyDevice("WR-AABBCCDD1234", "ViKo-1234", "AA:BB:CC:DD:12:34"))
             vm.onNameChange("Linh")
             vm.selectChannel("team")
             runCurrent()
@@ -86,44 +92,88 @@ class AddMemberViewModelTest {
         }
     }
 
-    @Test fun reenrollmentAfterDhcpChangeDoesNotOverwriteMember() = runTest {
+    @Test fun scanFailureStopsSpinnerAndExposesRetryMessage() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val store = ViewModelStore()
         try {
-            val workers = Workers()
-            val existing = Worker("WR-001122334455", "Linh", channelId = "team",
-                zone = "Line 2", deviceAddress = "192.168.1.10", macAddress = "",
-                batteryLevel = 100, isOnline = true)
-            workers.addWorker(existing)
-            val scanner = Scanner()
-            val vm = AddMemberViewModel(SavedStateHandle(), workers, Channels(), scanner)
+            val scanner = Scanner().apply { scanFailure = "Bluetooth scan failed" }
+            val vm = AddMemberViewModel(SavedStateHandle(), Workers(), Channels(), Wifi(), scanner)
             store.put("member", vm)
             backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
-            val moved = NearbyDevice(existing.id, "ViKo", "192.168.1.11")
+            vm.rescan()
             runCurrent()
-            assertTrue(vm.uiState.value.isEnrolled(moved))
-            vm.select(moved)
-            vm.onNameChange("Accidental duplicate")
-            vm.selectChannel("team")
+            assertFalse(vm.uiState.value.isScanning)
+            assertEquals("Bluetooth scan failed", vm.uiState.value.error)
+            scanner.scanFailure = null
+            vm.rescan()
             runCurrent()
-            vm.save().join()
+            assertNull(vm.uiState.value.error)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun bluetoothOffDoesNotStartAThirtySecondScan() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val scanner = Scanner().apply { isBluetoothEnabled = false }
+            val vm = AddMemberViewModel(SavedStateHandle(), Workers(), Channels(), Wifi(), scanner)
+            store.put("member", vm)
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+            vm.rescan()
             runCurrent()
-            assertEquals(listOf(existing), workers.rows.value)
-            assertNull(scanner.checked)
-            assertFalse(vm.uiState.value.isProvisioning)
-            assertNotNull(vm.uiState.value.error)
-        } finally {
-            store.clear()
-            Dispatchers.resetMain()
-        }
+            assertEquals(0, scanner.scanStarts)
+            assertFalse(vm.uiState.value.isScanning)
+            assertFalse(vm.uiState.value.isBluetoothEnabled)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun restartingScanClosesOldScanBeforeNewOneAndSelectionStopsIt() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val scanner = Scanner().apply { keepScanning = true }
+            val vm = AddMemberViewModel(SavedStateHandle(), Workers(), Channels(), Wifi(), scanner)
+            store.put("member", vm)
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+            vm.rescan()
+            runCurrent()
+            vm.rescan()
+            runCurrent()
+            assertEquals(listOf("start", "stop", "start"), scanner.events)
+            assertTrue(vm.uiState.value.isScanning)
+            vm.select(NearbyDevice("badge", "ViKo", "AA:BB:CC:DD:12:34"))
+            runCurrent()
+            assertEquals(listOf("start", "stop", "start", "stop"), scanner.events)
+            assertFalse(vm.uiState.value.isScanning)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    private class Wifi : FactoryWifiRepository {
+        val wifi = MutableStateFlow(FactoryWifi("kenzie", ""))
+        override fun observeFactoryWifi() = wifi
+        override suspend fun saveFactoryWifi(wifi: FactoryWifi) { this.wifi.value = wifi }
     }
 
     private class Scanner(private val result: Result<Unit> = Result.success(Unit)) : DeviceScanner {
         var checked: NearbyDevice? = null
-        override val isNetworkAvailable = true
-        override fun scan() = flowOf(emptyList<NearbyDevice>())
-        override suspend fun confirmAvailable(device: NearbyDevice): Result<Unit> {
+        var setup: BadgeSetup? = null
+        var scanFailure: String? = null
+        var scanStarts = 0
+        var keepScanning = false
+        val events = mutableListOf<String>()
+        override var isBluetoothEnabled = true
+        override fun scan() = flow {
+            scanStarts++
+            events += "start"
+            try {
+                scanFailure?.let { throw IllegalStateException(it) }
+                emit(emptyList<NearbyDevice>())
+                if (keepScanning) awaitCancellation()
+            } finally { events += "stop" }
+        }
+        override suspend fun provision(device: NearbyDevice, setup: BadgeSetup): Result<Unit> {
             this.checked = device
+            this.setup = setup
             return result
         }
     }

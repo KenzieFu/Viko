@@ -3,8 +3,11 @@ package com.example.viko.data.team.ble
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.bluetooth.BluetoothManager
+import android.location.LocationManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 
 /**
  * Runtime permission set for BLE provisioning. The required permissions changed
@@ -16,6 +19,17 @@ import androidx.core.content.ContextCompat
  * simply never reports a result. No error, no callback, no devices.
  */
 object BlePermissions {
+    fun isSupported(context: Context): Boolean =
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)
+
+    fun isEnabled(context: Context): Boolean = allGranted(context) && runCatching {
+        context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
+    }.getOrDefault(false)
+
+    fun isLocationReady(context: Context): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ||
+        context.getSystemService(LocationManager::class.java)?.let {
+            LocationManagerCompat.isLocationEnabled(it)
+        } == true
 
     val required: Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

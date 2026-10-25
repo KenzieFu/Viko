@@ -15,7 +15,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -34,8 +42,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
@@ -70,8 +76,29 @@ fun TutorialOverlay(
     onSkipAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
+    // Only the last step needs a separate window above the modal team sheet.
+    // Earlier steps stay in Home so its intro and spotlight redraw together.
+    if (step == TutorialStep.DirectCall) {
+        Dialog(
+            onDismissRequest = onSkipAll,
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            TutorialOverlayContent(step, bounds, onNext, onSkipAll, modifier)
+        }
+    } else {
+        TutorialOverlayContent(step, bounds, onNext, onSkipAll, modifier)
+    }
+}
 
+@Composable
+private fun TutorialOverlayContent(
+    step: TutorialStep,
+    bounds: Rect?,
+    onNext: () -> Unit,
+    onSkipAll: () -> Unit,
+    modifier: Modifier
+) {
+    val density = LocalDensity.current
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -115,40 +142,42 @@ fun TutorialOverlay(
             )
         }
 
-        TutorialBubble(
-            step = step,
-            topOffset = bubbleTop(bounds, density),
-            onNext = onNext,
-            onSkipAll = onSkipAll,
-            modifier = Modifier.align(Alignment.TopStart)
-        )
+        val insets = WindowInsets.safeDrawing
+        val safeTop = insets.getTop(density) + with(density) { 20.dp.toPx() }
+        val safeBottom = insets.getBottom(density) + with(density) { 20.dp.toPx() }
+        Layout(
+            content = { TutorialBubble(step, onNext, onSkipAll) },
+            modifier = Modifier.fillMaxSize()
+        ) { measurables, constraints ->
+            val margin = 20.dp.roundToPx()
+            val width = minOf(BUBBLE_WIDTH.roundToPx(), (constraints.maxWidth - margin * 2).coerceAtLeast(0))
+            val height = (constraints.maxHeight - safeTop - safeBottom).toInt().coerceAtLeast(0)
+            val bubble = measurables.single().measure(Constraints(maxWidth = width, maxHeight = height))
+            val top = tutorialBubbleTop(bounds?.top, bounds?.bottom, bubble.height.toFloat(),
+                constraints.maxHeight.toFloat(), safeTop, safeBottom, BUBBLE_GAP.toPx())
+            layout(constraints.maxWidth, constraints.maxHeight) {
+                bubble.placeRelative(margin, top.roundToInt())
+            }
+        }
     }
-}
-
-/**
- * The copy sits below the spotlight so the hand never covers it, and falls back
- * to the design's own 366dp when a step has nothing to point at.
- */
-private fun bubbleTop(bounds: Rect?, density: Density): Dp {
-    if (bounds == null) return 366.dp
-    return with(density) { bounds.bottom.toDp() } + BUBBLE_GAP
 }
 
 @Composable
 private fun TutorialBubble(
     step: TutorialStep,
-    topOffset: Dp,
     onNext: () -> Unit,
     onSkipAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier
-            .offset(x = 20.dp, y = topOffset)
-            .width(BUBBLE_WIDTH),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Only the copy scrolls on small screens/large fonts; actions stay visible.
+        Column(
+            modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             Text(
                 text = "${step.stepNumber} / ${TutorialStep.total}",
                 fontSize = 12.sp,
@@ -176,14 +205,14 @@ private fun TutorialBubble(
         ) {
             Text(
                 text = "Skip All",
-                modifier = Modifier.clickable(onClick = onSkipAll),
+                modifier = Modifier.clickable(onClick = onSkipAll).padding(vertical = 12.dp),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
             Box(
                 modifier = Modifier
-                    .height(32.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(VSurface)
                     .border(1.dp, VBorder, RoundedCornerShape(8.dp))

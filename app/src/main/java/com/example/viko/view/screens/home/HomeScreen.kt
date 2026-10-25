@@ -323,13 +323,6 @@ fun HomeScreen(
         )
 
         IntroStage.Tutorial -> {
-            // The last step is about a member row, which only exists once the
-            // channel's sheet is open — so the tour opens it.
-            LaunchedEffect(tutorialStep) {
-                if (tutorialStep == TutorialStep.DirectCall) {
-                    openTeamSheetChannelId = uiState.channels.firstOrNull()?.channel?.id
-                }
-            }
             TutorialOverlay(
                 step = tutorialStep,
                 bounds = targets.boundsFor(tutorialStep),
@@ -339,6 +332,11 @@ fun HomeScreen(
                         openTeamSheetChannelId = null
                         introStage = IntroStage.None
                     } else {
+                        // Open the underlying sheet in the same transition;
+                        // the new tutorial dialog must be above it, not hidden by it.
+                        if (next == TutorialStep.DirectCall) {
+                            openTeamSheetChannelId = uiState.channels.firstOrNull()?.channel?.id
+                        }
                         tutorialStep = next
                     }
                 },

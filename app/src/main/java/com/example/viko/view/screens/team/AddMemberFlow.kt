@@ -1,5 +1,18 @@
 package com.example.viko.view.screens.team
 
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -46,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.viko.components.AddPillButton
 import com.example.viko.components.DeviceIllustration
 import com.example.viko.components.DeviceInfoCard
 import com.example.viko.components.LabeledSelectField
@@ -106,20 +118,65 @@ fun AddMemberFlow(
     var addChannelPrefill by rememberSaveable { mutableStateOf<String?>(null) }
     var showWifiSetup by rememberSaveable { mutableStateOf(false) }
 
-    // BLE scanning is a runtime permission, and denying it is silent: the scan
-    // starts fine and simply never reports a device. So the grant is tracked
-    // explicitly and the sheet says what is missing instead of showing an empty
-    // list forever.
     var hasBlePermission by remember { mutableStateOf(BlePermissions.allGranted(context)) }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        hasBlePermission = grants.values.all { it }
-        if (hasBlePermission) viewModel.rescan()
+    var bluetoothEnabled by remember { mutableStateOf(BlePermissions.isEnabled(context)) }
+    var locationReady by remember { mutableStateOf(BlePermissions.isLocationReady(context)) }
+    val bluetoothSupported = remember { BlePermissions.isSupported(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun refreshPrerequisites(): Boolean {
+        hasBlePermission = BlePermissions.allGranted(context)
+        bluetoothEnabled = BlePermissions.isEnabled(context)
+        locationReady = BlePermissions.isLocationReady(context)
+        val ready = bluetoothSupported && hasBlePermission && bluetoothEnabled && locationReady
+        if (!ready) viewModel.stopScan()
+        return ready
     }
 
+    val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (refreshPrerequisites()) viewModel.rescan()
+    }
+    val enableBluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (refreshPrerequisites()) viewModel.rescan()
+    }
+    fun enableOrScan() {
+        refreshPrerequisites()
+        when {
+            !bluetoothSupported || !hasBlePermission -> Unit
+            !bluetoothEnabled -> {
+                // Permission and radio power are different Android operations.
+                // Prefer the OS enable prompt; provide settings if unavailable.
+                runCatching { enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+                    .onFailure { settingsLauncher.launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+            }
+            !locationReady -> settingsLauncher.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            else -> viewModel.rescan()
+        }
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (BlePermissions.allGranted(context)) enableOrScan() else refreshPrerequisites()
+    }
+
+    // Returning from Settings or changing the radio in Quick Settings must not
+    // leave the sheet showing an old permission/radio state.
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshPrerequisites()
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { refreshPrerequisites() }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_EXPORTED)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            context.unregisterReceiver(receiver)
+            viewModel.stopScan()
+        }
+    }
     LaunchedEffect(Unit) {
-        if (hasBlePermission) viewModel.rescan() else permissionLauncher.launch(BlePermissions.required)
+        if (refreshPrerequisites() && uiState.step == AddMemberStep.Pairing) viewModel.rescan()
     }
 
     // The form itself lives in the ViewModel, which survives recreation; clearing
@@ -141,12 +198,20 @@ fun AddMemberFlow(
                 devices = uiState.devices,
                 isScanning = uiState.isScanning,
                 hasPermission = hasBlePermission,
-                isBluetoothEnabled = uiState.isBluetoothEnabled,
+                isBluetoothEnabled = bluetoothEnabled,
+                isBluetoothSupported = bluetoothSupported,
+                isLocationReady = locationReady,
+                scanError = uiState.error,
+                onBluetoothSettings = { settingsLauncher.launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
+                onPermissionSettings = {
+                    settingsLauncher.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${context.packageName}")))
+                },
                 isEnrolled = uiState::isEnrolled,
                 addedCount = uiState.addedCount,
                 onSelect = viewModel::select,
                 onRescan = {
-                    if (hasBlePermission) viewModel.rescan()
+                    if (BlePermissions.allGranted(context)) enableOrScan()
                     else permissionLauncher.launch(BlePermissions.required)
                 },
                 onDone = dismiss,
@@ -239,7 +304,7 @@ fun AddMemberFlow(
 }
 
 @Composable
-private fun NearbyDeviceSheetContent(
+internal fun NearbyDeviceSheetContent(
     devices: List<NearbyDevice>,
     isScanning: Boolean,
     hasPermission: Boolean,
@@ -249,7 +314,12 @@ private fun NearbyDeviceSheetContent(
     onSelect: (NearbyDevice) -> Unit,
     onRescan: () -> Unit,
     onDone: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    isBluetoothSupported: Boolean = true,
+    isLocationReady: Boolean = true,
+    scanError: String? = null,
+    onBluetoothSettings: () -> Unit = {},
+    onPermissionSettings: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -291,59 +361,71 @@ private fun NearbyDeviceSheetContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        if (devices.isEmpty()) {
-            Text(
-                // Each of these is a different fix, and an undifferentiated
-                // "No devices found" sends the supervisor hunting the wrong one.
-                text = when {
-                    !hasPermission -> "Bluetooth permission is needed to find devices."
-                    !isBluetoothEnabled -> "Turn Bluetooth on to find devices."
-                    else -> "No devices found"
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = VOnSurfaceSecondary.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = 4.dp)
-            )
-            // A badge only advertises while it is unprovisioned, and one with bad
-            // Wi-Fi credentials only falls back to that ~20s after power-on — so
-            // the empty list is usually "not yet", and this says how to fix it.
-            if (hasPermission && isBluetoothEnabled && !isScanning) {
-                Spacer(modifier = Modifier.height(6.dp))
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            if (devices.isEmpty() || !hasPermission || !isBluetoothEnabled || !isLocationReady || !isBluetoothSupported) {
                 Text(
-                    text = "Hold the earpiece button for 5 seconds to put it in pairing mode.",
-                    style = MaterialTheme.typography.bodySmall,
+                    // Each of these is a different fix, and an undifferentiated
+                    // "No devices found" sends the supervisor hunting the wrong one.
+                    text = when {
+                        !isBluetoothSupported -> "This phone does not support Bluetooth LE."
+                        !hasPermission -> "Allow nearby-device access to find your wearable."
+                        !isBluetoothEnabled -> "Turn Bluetooth on to find devices."
+                        !isLocationReady -> "Turn on Location services for Bluetooth scanning on this Android version."
+                        isScanning -> "Searching for nearby ViKo devices…"
+                        else -> "No devices found. Put the wearable in pairing mode and try again."
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
                     color = VOnSurfaceSecondary.copy(alpha = 0.7f),
                     modifier = Modifier.padding(start = 4.dp)
                 )
-            }
-        } else {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                devices.forEach { device ->
-                    NearbyDeviceRow(
-                        device = device,
-                        isEnrolled = isEnrolled(device),
-                        onSelect = { onSelect(device) }
+                // Match the firmware's startup gesture; a normal long PTT is speech.
+                if (hasPermission && isBluetoothEnabled && !isScanning) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Hold PTT while resetting the wearable, and keep holding for 5 seconds. New wearables enter pairing automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VOnSurfaceSecondary.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
-            }
-        }
-
-        // The scan window closes on its own to spare the radio, so getting
-        // another one has to be reachable — this is the button a supervisor
-        // presses after holding the badge button.
-        if (!isScanning) {
-            Spacer(modifier = Modifier.height(16.dp))
-            if (hasPermission) {
-                AddPillButton(text = "Scan again", onClick = onRescan)
             } else {
-                VikoBlueButton(text = "Allow Bluetooth", onClick = onRescan)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    devices.forEach { device ->
+                        NearbyDeviceRow(
+                            device = device,
+                            isEnrolled = isEnrolled(device),
+                            onSelect = { onSelect(device) }
+                        )
+                    }
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
+        }
+        scanError?.let {
+            Text(it, color = VWarning, style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 8.dp))
+        }
+        // Keep the action outside the scrolling results, including during scans.
+        VikoBlueButton(
+            text = when {
+                !isBluetoothSupported -> "Bluetooth LE unavailable"
+                !hasPermission -> "Allow nearby devices"
+                !isBluetoothEnabled -> "Turn on Bluetooth"
+                !isLocationReady -> "Turn on Location"
+                isScanning -> "Searching nearby devices…"
+                else -> "Find nearby devices"
+            },
+            enabled = isBluetoothSupported && !isScanning,
+            onClick = onRescan
+        )
+        if (!hasPermission) {
+            TextButton(onClick = onPermissionSettings) { Text("Open app permissions") }
+        } else if (isBluetoothSupported) {
+            TextButton(onClick = onBluetoothSettings) { Text("Bluetooth settings") }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Onboarding pairs a whole shift in one sitting, so the flow stays open
         // after each save. Done is how the supervisor says they are finished.
@@ -537,7 +619,7 @@ private fun SetupMemberSheetContent(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Keep the earpiece nearby — it restarts onto Wi-Fi when this finishes.",
+                        text = "Keep the wearable nearby — it switches to Wi-Fi when setup finishes.",
                         style = MaterialTheme.typography.bodySmall,
                         color = VOnSurfaceSecondary
                     )
