@@ -43,6 +43,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.example.viko.view.screens.home.tutorial.TutorialOverlay
+import com.example.viko.view.screens.home.tutorial.TutorialStep
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -84,8 +90,13 @@ fun TeamSheetContent(
     onRenameWorker: (workerId: String, name: String) -> Unit,
     onRemoveWorker: (String) -> Unit,
     onAssignWorker: (String) -> Unit,
-    onPairNewMember: () -> Unit
+    onPairNewMember: () -> Unit,
+    showDirectCallTutorial: Boolean = false,
+    onFinishTutorial: () -> Unit = {}
 ) {
+    var sheetOrigin by remember { mutableStateOf(Offset.Zero) }
+    var firstMemberBounds by remember { mutableStateOf<Rect?>(null) }
+    val visibleMembers = summary.members.sortedByDescending { it.isOnline }
     var isEditMode by rememberSaveable { mutableStateOf(false) }
     var isPickingMember by rememberSaveable { mutableStateOf(false) }
     var deleteTargetId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -102,6 +113,7 @@ fun TeamSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight()
+            .onGloballyPositioned { sheetOrigin = it.boundsInWindow().topLeft }
     ) {
         if (isTeamTalking) {
             AnnouncementWaveBackground(
@@ -167,8 +179,14 @@ fun TeamSheetContent(
                 ) {
                     // Reachable members first: the top of the list is who you can
                     // actually talk to right now.
-                    items(summary.members.sortedByDescending { it.isOnline }, key = { it.id }) { worker ->
-                        MemberListItem(worker = worker, onDirectCall = { onDirectCall(worker.id) })
+                    items(visibleMembers, key = { it.id }) { worker ->
+                        Box(Modifier.onGloballyPositioned {
+                            if (worker.id == visibleMembers.firstOrNull()?.id) {
+                                firstMemberBounds = it.boundsInWindow()
+                            }
+                        }) {
+                            MemberListItem(worker = worker, onDirectCall = { onDirectCall(worker.id) })
+                        }
                     }
                 }
 
@@ -180,6 +198,16 @@ fun TeamSheetContent(
                     onToggle = { isTalking = !isTeamTalking }
                 )
             }
+        }
+        // Keep the spotlight and its controls in the sheet's own window.
+        // Window coordinates are translated to this Box, below the drag handle.
+        if (showDirectCallTutorial) {
+            TutorialOverlay(
+                step = TutorialStep.DirectCall,
+                bounds = firstMemberBounds?.takeIf { visibleMembers.isNotEmpty() }?.translate(-sheetOrigin),
+                onNext = onFinishTutorial,
+                onSkipAll = onFinishTutorial
+            )
         }
     }
 

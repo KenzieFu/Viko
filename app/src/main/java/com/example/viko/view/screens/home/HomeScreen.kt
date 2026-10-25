@@ -25,7 +25,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -198,7 +198,7 @@ fun HomeScreen(
                         onResolveAlert(alert.id)
                     },
                     modifier = Modifier
-                        .padding(start = 24.dp, end = 24.dp, top = 20.dp)
+                        .padding(start = 20.dp, end = 20.dp, top = 24.dp)
                         .clickable(onClick = onOpenNotifications)
                 )
             }
@@ -213,9 +213,9 @@ fun HomeScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 100.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     itemsIndexed(uiState.channels, key = { _, it -> it.channel.id }) { index, summary ->
@@ -241,6 +241,9 @@ fun HomeScreen(
                             },
                             onChipBounds = { bounds ->
                                 if (isTourTarget) targets = targets.copy(channelChip = bounds)
+                            },
+                            onCardBounds = { bounds ->
+                                if (isTourTarget) targets = targets.copy(channelCard = bounds)
                             }
                         )
                     }
@@ -285,7 +288,12 @@ fun HomeScreen(
     }
     if (teamSummary != null) {
         ModalBottomSheet(
-            onDismissRequest = { openTeamSheetChannelId = null },
+            onDismissRequest = {
+                openTeamSheetChannelId = null
+                if (introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall) {
+                    introStage = IntroStage.None
+                }
+            },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = VBackground,
             dragHandle = { VikoDragHandle() }
@@ -306,6 +314,11 @@ fun HomeScreen(
                     addMemberChannelId = teamSummary.channel.id
                     openTeamSheetChannelId = null
                     showAddMember = true
+                },
+                showDirectCallTutorial = introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall,
+                onFinishTutorial = {
+                    openTeamSheetChannelId = null
+                    introStage = IntroStage.None
                 }
             )
         }
@@ -322,18 +335,18 @@ fun HomeScreen(
             onSkip = { introStage = IntroStage.None }
         )
 
-        IntroStage.Tutorial -> {
+        IntroStage.Tutorial -> if (tutorialStep != TutorialStep.DirectCall || teamSummary == null) {
             TutorialOverlay(
                 step = tutorialStep,
                 bounds = targets.boundsFor(tutorialStep),
+                cursorBounds = if (tutorialStep == TutorialStep.PressAndHold) targets.channelMic else targets.boundsFor(tutorialStep),
                 onNext = {
                     val next = tutorialStep.next()
                     if (next == null) {
                         openTeamSheetChannelId = null
                         introStage = IntroStage.None
                     } else {
-                        // Open the underlying sheet in the same transition;
-                        // the new tutorial dialog must be above it, not hidden by it.
+                        // The final spotlight is rendered inside the team sheet.
                         if (next == TutorialStep.DirectCall) {
                             openTeamSheetChannelId = uiState.channels.firstOrNull()?.channel?.id
                         }
@@ -392,9 +405,8 @@ private fun HomeTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(top = 44.dp)
-            .height(48.dp),
+            .padding(horizontal = 20.dp)
+            .padding(top = 24.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
@@ -406,13 +418,13 @@ private fun HomeTopBar(
                 .clickable(onClick = onSosTap)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_sos),
                 contentDescription = "SOS Emergency Button",
                 tint = VAccentRed,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(20.dp)
             )
             Text(
                 text = "SOS",
@@ -425,20 +437,20 @@ private fun HomeTopBar(
         Spacer(modifier = Modifier.weight(1f))
 
         Box {
-            IconButton(onClick = onNotificationsTap) {
+            IconButton(onClick = onNotificationsTap, modifier = Modifier.size(20.dp)) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_bell),
                     contentDescription = "Notification Button",
                     tint = VOnSurface,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
             if (activeAlertCount > 0) {
                 Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .align(Alignment.TopEnd)
-                        .offset(x = (-8).dp, y = 22.dp)
+                        .size(12.dp)
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 3.dp, y = 3.dp)
                         .clip(CircleShape)
                         .background(VAccentBlue),
                     contentAlignment = Alignment.Center
@@ -453,8 +465,10 @@ private fun HomeTopBar(
             }
         }
 
-        IconButton(onClick = onSettingsTap) {
-            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = VOnSurface)
+        Spacer(Modifier.width(16.dp))
+        IconButton(onClick = onSettingsTap, modifier = Modifier.size(20.dp)) {
+            Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = VOnSurface,
+                modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -465,7 +479,7 @@ private fun MakeAnnouncementButton(onClick: () -> Unit, modifier: Modifier = Mod
         modifier = modifier
             .fillMaxWidth()
             .background(VBackground)
-            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
             .navigationBarsPadding()
     ) {
         Row(

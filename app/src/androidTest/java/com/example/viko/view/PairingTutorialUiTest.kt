@@ -12,6 +12,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.viko.domain.channel.model.Channel
 import com.example.viko.domain.team.model.NearbyDevice
+import com.example.viko.view.screens.previewWorker
+import com.example.viko.view.screens.onboarding.ReadyToGoOverlay
 import com.example.viko.view.screens.home.ChannelSummary
 import com.example.viko.view.screens.home.HomeScreen
 import com.example.viko.view.screens.home.HomeUiState
@@ -30,7 +32,13 @@ class PairingTutorialUiTest {
         compose.setContent {
             TestTheme {
                 HomeScreen(
-                    uiState = HomeUiState(channels = listOf(ChannelSummary(Channel("team", "Team"), emptyList())),
+                    uiState = HomeUiState(channels = listOf(ChannelSummary(Channel("team", "Operations"), listOf(
+                        previewWorker("1", "Le Khanh Linh", "team", batteryLevel = 70, zone = "Zone 4"),
+                        previewWorker("2", "Nguyen Minh Tam", "team", batteryLevel = 50, zone = "Central Building"),
+                        previewWorker("3", "Tran Quoc Nam", "team", batteryLevel = 10, zone = "Central Building"),
+                        previewWorker("4", "Pham Bao Anh", "team", isOnline = false),
+                        previewWorker("5", "Hoang Mai Phuong", "team", isOnline = false)
+                    ))),
                         hasMembers = true, isLoaded = true),
                     onOpenNotifications = {}, onOpenSettings = {}, onDirectCall = {},
                     onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
@@ -38,13 +46,59 @@ class PairingTutorialUiTest {
                 )
             }
         }
+        capture("home-tutorial-00-intro.png")
         compose.onNodeWithText("Start Tutorial").performTouchInput { click() }
+        capture("home-tutorial-01-talk.png")
+        val screenshots = listOf("02-announcement", "03-sos", "04-channel", "05-direct-call")
         repeat(4) { step ->
             compose.onNodeWithText("Next").assertIsDisplayed().performTouchInput { click() }
-            if (step == 0) capture("tutorial-announcement.png")
+            capture("home-tutorial-${screenshots[step]}.png")
         }
         compose.onNodeWithText("Done").assertIsDisplayed().performTouchInput { click() }
         compose.onNodeWithText("Skip All").assertDoesNotExist()
+    }
+
+    @Test fun homeGridKeepsNavigationAndChannelActionsWorking() {
+        var notifications = false
+        var settings = false
+        compose.setContent {
+            TestTheme {
+                HomeScreen(
+                    uiState = HomeUiState(channels = listOf("Operations", "Facilities", "Assembly", "Security").mapIndexed { index, name ->
+                        val id = "channel-$index"
+                        ChannelSummary(Channel(id, name), listOf(previewWorker("worker-$index", "Member $index", id)))
+                    }, activeAlertCount = 1, hasMembers = true, isLoaded = true),
+                    onOpenNotifications = { notifications = true }, onOpenSettings = { settings = true }, onDirectCall = {},
+                    onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
+                    onResolveAlert = {}, startTutorial = false
+                )
+            }
+        }
+        compose.onNodeWithText("Security").assertIsDisplayed()
+        compose.onNodeWithText("Make Announcement").assertIsDisplayed()
+        capture("home-layout-grid.png")
+        compose.onNodeWithContentDescription("Talk to Operations").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Talking to Operations").assertIsDisplayed()
+        capture("home-layout-talking.png")
+        compose.onNodeWithContentDescription("Talking to Operations").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Notification Button").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Settings").performTouchInput { click() }
+        compose.runOnIdle { assertTrue(notifications); assertTrue(settings) }
+        compose.onAllNodesWithText("1/1")[0].performTouchInput { click() }
+        compose.onNodeWithText("Member 0").assertIsDisplayed()
+    }
+
+    @Test fun largeTextIntroCanScrollToSkipWithoutStartingTutorial() {
+        var skipped = false
+        var started = false
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                TestTheme { ReadyToGoOverlay({ started = true }, { skipped = true }) }
+            }
+        }
+        compose.onNodeWithText("Skip Intro Tutorial").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(skipped); assertFalse(started) }
     }
 
     @Test fun largeTextAndBottomTargetKeepNextAndSkipVisible() {
