@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -239,7 +240,10 @@ fun AddMemberFlow(
                 canSave = uiState.canSave,
                 isProvisioning = uiState.isProvisioning,
                 error = uiState.error,
-                onPickChannel = { showChannelPicker = true },
+                onPickChannel = {
+                    if (uiState.channels.isEmpty()) addChannelPrefill = ""
+                    else showChannelPicker = true
+                },
                 // Saving returns to the device list rather than closing — see
                 // AddMemberViewModel.save.
                 onSave = viewModel::save,
@@ -346,7 +350,8 @@ internal fun NearbyDeviceSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight()
+            .fillMaxHeight(.85f)
+            .testTag("nearby-device-sheet-content")
             .padding(horizontal = 20.dp)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
