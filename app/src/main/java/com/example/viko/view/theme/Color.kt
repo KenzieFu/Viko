@@ -26,6 +26,8 @@ val VOnSurfaceSecondary = Color(0xFF8E8E93) // labels, captions, chevrons
 
 // Accents
 val VAccentRed = Color(0xFFFF383C)   // SOS / emergency only — nothing else
+val VSosDangerPanel = Color(0xFFFF0400).copy(alpha = .10f) // #FF0400 at 10% opacity
+val VSosDangerPulse = Color(0xFFDE0400)
 val VAccentBlue = Color(0xFF2076FF)  // blue glyphs and text on a dark surface
 val VMicBlue = Color(0xFF0062FF)     // Figma's blue: filled circles, + buttons, checks
 

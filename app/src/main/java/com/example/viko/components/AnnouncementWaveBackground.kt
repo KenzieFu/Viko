@@ -28,7 +28,8 @@ import com.example.viko.view.theme.VikoTheme
 @Composable
 fun AnnouncementWaveBackground(
     modifier: Modifier = Modifier,
-    color: Color = VAccentBlue
+    color: Color = VAccentBlue,
+    keepBelowTop: Boolean = false
 ) {
     val progress by rememberInfiniteTransition(label = "announcementWave").animateFloat(
         initialValue = 0f,
@@ -43,8 +44,14 @@ fun AnnouncementWaveBackground(
     Canvas(modifier = modifier) {
         // Centred below the bottom edge, so only the tops of the rings show and
         // they read as sound rising out of the button rather than as circles.
-        val center = Offset(size.width / 2f, size.height * WAVE_ORIGIN_Y)
         val maxRadius = size.width * WAVE_MAX_RADIUS
+        // SOS anchors this canvas at the Announce circle's top. Fade to zero
+        // before a ring can travel above that boundary, regardless of screen width.
+        // Move the origin down rather than shrinking the wave, preserving the
+        // broad arcs across the sheet while keeping their top below the button.
+        val originY = if (keepBelowTop) maxOf(size.height * WAVE_ORIGIN_Y, maxRadius)
+            else size.height * WAVE_ORIGIN_Y
+        val center = Offset(size.width / 2f, originY)
 
         repeat(WAVE_RING_COUNT) { index ->
             // Each ring runs the same small -> big sweep, evenly offset in time, so

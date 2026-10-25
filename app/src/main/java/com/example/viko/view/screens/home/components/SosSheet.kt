@@ -9,10 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.PropaneTank
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -36,17 +32,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.R
 import com.example.viko.components.AnnouncementWaveBackground
-import com.example.viko.components.AnnouncementWaveHeight
 import com.example.viko.view.theme.*
 import kotlinx.coroutines.delay
 
-private data class EmergencyType(val id: String, val label: String, val icon: ImageVector, val accent: Color)
+private data class EmergencyType(val id: String, val label: String, val icon: Int?, val accent: Color)
 
 private val EMERGENCY_TYPES = listOf(
-    EmergencyType("fire", "Fire", Icons.Default.LocalFireDepartment, VAccentRed),
-    EmergencyType("gas", "Gas Leak", Icons.Default.PropaneTank, VAccentRed),
-    EmergencyType("evacuate", "Evacuate", Icons.AutoMirrored.Filled.ExitToApp, VAccentRed),
-    EmergencyType("clear", "All Clear", Icons.Default.VerifiedUser, VMicBlue),
+    EmergencyType("fire", "Fire", R.drawable.ic_flame, VAccentRed),
+    EmergencyType("gas", "Gas Leak", R.drawable.ic_gas_leak, VAccentRed),
+    EmergencyType("evacuate", "Evacuate", R.drawable.ic_evacuate, VAccentRed),
+    EmergencyType("clear", "All Clear", null, VMicBlue),
 )
 
 private const val BROADCAST_DURATION_MS = 3_500L
@@ -72,13 +67,6 @@ fun SosSheetContent(onClose: () -> Unit) {
             .clip(RoundedCornerShape(0.dp))
             .testTag("sos-content")
     ) {
-        if (isBroadcasting) {
-            AnnouncementWaveBackground(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .height(AnnouncementWaveHeight).testTag("sos-speaking-wave"),
-                color = VAccentRed
-            )
-        }
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp).padding(bottom = 24.dp)
@@ -105,22 +93,31 @@ fun SosSheetContent(onClose: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(32.dp))
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier.size(104.dp).clip(CircleShape)
-                        .background(if (isBroadcasting) VAccentRed else VSurface)
-                        .clickable(role = Role.Button) { isBroadcasting = !isBroadcasting },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(painterResource(R.drawable.ic_announces),
-                        contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
-                        tint = Color.White, modifier = Modifier.size(38.dp))
+            Box(Modifier.fillMaxWidth()) {
+                if (isBroadcasting) {
+                    AnnouncementWaveBackground(
+                        modifier = Modifier.matchParentSize().testTag("sos-speaking-wave"),
+                        color = VAccentRed,
+                        keepBelowTop = true
+                    )
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(if (isBroadcasting) "Speaking..." else "Announce",
-                    fontSize = 18.sp, lineHeight = 22.sp,
-                    fontWeight = if (isBroadcasting) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isBroadcasting) VAccentRed else VOnSurface)
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier.size(104.dp).clip(CircleShape)
+                            .background(if (isBroadcasting) VAccentRed else VSurface)
+                            .clickable(role = Role.Button) { isBroadcasting = !isBroadcasting },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(painterResource(R.drawable.ic_announces),
+                            contentDescription = if (isBroadcasting) "Stop broadcasting" else "Announce",
+                            tint = Color.White, modifier = Modifier.size(38.dp))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(if (isBroadcasting) "Speaking..." else "Announce",
+                        fontSize = 18.sp, lineHeight = 22.sp,
+                        fontWeight = if (isBroadcasting) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isBroadcasting) VAccentRed else VOnSurface)
+                }
             }
         }
     }
@@ -147,14 +144,14 @@ private fun EmergencyTypeCard(
         Column(
             Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
                 .background(if (isSelected) {
-                    if (type.id == "clear") VActivePanel else type.accent.copy(alpha = .15f)
+                    if (type.id == "clear") VActivePanel else VSosDangerPanel
                 } else Color.Transparent),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
         ) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                 if (isSelected && !dimmed) {
-                    ChannelSpeakingPulse(type.accent, Modifier.requiredSize(66.dp))
+                    ChannelSpeakingPulse(if (type.id == "clear") VMicBlue else VSosDangerPulse, Modifier.requiredSize(66.dp))
                 }
                 Box(
                     Modifier.size(48.dp).clip(CircleShape)
@@ -162,7 +159,11 @@ private fun EmergencyTypeCard(
                         .then(if (isSelected) Modifier else Modifier.border(1.dp, VOnSurface.copy(alpha = .3f), CircleShape)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(type.icon, null, tint = VOnSurface, modifier = Modifier.size(24.dp))
+                    if (type.icon != null) {
+                        Icon(painterResource(type.icon), null, tint = Color.Unspecified, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Default.VerifiedUser, null, tint = VOnSurface, modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             Text(type.label, fontSize = 16.sp, lineHeight = 20.sp,
