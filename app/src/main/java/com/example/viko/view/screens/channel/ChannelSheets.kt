@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,9 +28,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.components.ScreenHeader
 import com.example.viko.components.SearchField
 import com.example.viko.components.VikoBlueButton
@@ -64,14 +67,17 @@ fun SelectChannelSheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight()
+            .fillMaxHeight(0.9f)
+            .testTag("select-channel-sheet")
             .navigationBarsPadding()
     ) {
         ScreenHeader(
             title = "Select Channel",
             onBack = onBack,
             onAdd = { onRequestAddChannel("") },
-            addContentDescription = "Add Channel"
+            addContentDescription = "Add Channel",
+            titleStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
+            modifier = Modifier.padding(bottom = 16.dp)
         )
 
         SearchField(
@@ -90,7 +96,7 @@ fun SelectChannelSheetContent(
             NoChannelYet(onAddChannel = { onRequestAddChannel("") })
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 20.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(result.matches, key = { it.id }) { channel ->
@@ -118,19 +124,20 @@ fun AddNewChannelSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(top = 20.dp, bottom = 24.dp)
+            .testTag("add-channel-sheet")
+            .padding(vertical = 24.dp)
             .navigationBarsPadding()
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Add New Channel",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp),
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, "Close", tint = VOnSurface)
+                Icon(Icons.Default.Close, "Close", tint = VOnSurface, modifier = Modifier.size(24.dp))
             }
         }
 

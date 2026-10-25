@@ -208,7 +208,7 @@ fun MemberDetailScreen(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = VBackground,
             contentColor = VOnSurface,
-            dragHandle = { VikoDragHandle() }
+            dragHandle = null
         ) {
             AddNewChannelSheetContent(
                 prefill = prefill,
