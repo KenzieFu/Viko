@@ -104,6 +104,34 @@ class NotificationBannerUiTest {
         compose.onNodeWithText("Resolve").assertIsDisplayed()
     }
 
+    @Test fun notificationPageShowsMixedStatusesAndResolveAllClearsActions() {
+        compose.setContent {
+            var alerts by remember { mutableStateOf(listOf(
+                alert,
+                alert.copy(id = "alert-2", timeAgo = "13.00"),
+                alert.copy(id = "alert-3", timeAgo = "10.00", status = AlertStatus.RESOLVED)
+            )) }
+            VikoTheme {
+                NotificationsScreen(
+                    uiState = NotificationsUiState(alerts), onBack = {}, onDirectCall = {},
+                    onResolve = { id -> alerts = alerts.map { if (it.id == id) it.copy(status = AlertStatus.RESOLVED) else it } },
+                    onResolveAll = { alerts = alerts.map { it.copy(status = AlertStatus.RESOLVED) } }
+                )
+            }
+        }
+        compose.onAllNodesWithContentDescription("Active emergency").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Resolved").assertCountEquals(1)
+        compose.onAllNodesWithText("Direct Call").assertCountEquals(2)
+        compose.onNodeWithText("Resolved").assertIsDisplayed()
+        capture("notification-page-mixed.png")
+        compose.onNodeWithText("Resolve All").performClick()
+        compose.onAllNodesWithContentDescription("Resolved").assertCountEquals(3)
+        compose.onAllNodesWithText("Resolved").assertCountEquals(3)
+        compose.onNodeWithText("Direct Call").assertDoesNotExist()
+        compose.onNodeWithText("Resolve").assertDoesNotExist()
+        capture("notification-page-resolved.png")
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()

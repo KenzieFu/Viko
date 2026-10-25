@@ -1,6 +1,7 @@
 package com.example.viko.view.screens.notifications
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
@@ -24,7 +26,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.type.AlertStatus
 import com.example.viko.view.screens.notifications.components.AlertCard
 import com.example.viko.view.theme.VBackground
+import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VSurface
@@ -87,12 +89,13 @@ fun NotificationsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 8.dp, top = 32.dp, bottom = 8.dp),
+                .padding(start = 20.dp, end = 8.dp, top = 24.dp, bottom = 24.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Notifications",
-                style = MaterialTheme.typography.headlineMedium,
+                fontSize = 20.sp,
+                lineHeight = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface,
                 modifier = Modifier.weight(1f)
@@ -102,9 +105,11 @@ fun NotificationsScreen(
                     text = "Resolve All",
                     color = VOnSurface,
                     fontSize = 14.sp,
+                    lineHeight = 18.sp,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(50))
                         .background(VSurface)
+                        .border(1.dp, VBorder, RoundedCornerShape(50))
                         .clickable { onResolveAll() }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 )
@@ -119,7 +124,8 @@ fun NotificationsScreen(
             EmptyNotifications()
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.weight(1f).navigationBarsPadding(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(uiState.alerts, key = { it.id }) { alert ->

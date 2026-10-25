@@ -246,6 +246,7 @@ fun HomeScreen(
         bannerAlert?.let { alert ->
             AlertCard(
                 alert = alert,
+                titleMaxLines = 1,
                 onDirectCall = { onDirectCall(alert.workerId) },
                 onResolve = {
                     dismissedAlertId = alert.id
