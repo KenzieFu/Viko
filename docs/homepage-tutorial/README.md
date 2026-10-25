@@ -40,7 +40,7 @@ The first spotlight covers the full channel card while its cursor points at the 
 
 - Debug app and instrumentation APK builds succeed.
 - 31 unit tests pass.
-- 8 `PairingTutorialUiTest` emulator tests pass, including progression through all five steps, announcement controls, enlarged-text Next/Skip, and enlarged-text intro Skip.
+- 9 `PairingTutorialUiTest` emulator tests pass, including progression through all five steps, announcement controls, enlarged-text Next/Skip, and enlarged-text intro Skip.
 - Android lint completes with no errors; existing warnings remain.
 - Screenshots inspected on the API 37 Medium Phone emulator.
 

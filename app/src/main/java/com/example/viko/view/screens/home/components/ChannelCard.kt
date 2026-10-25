@@ -18,13 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.R
 import com.example.viko.components.SpeakingRipple
 import com.example.viko.view.screens.home.ChannelSummary
@@ -112,12 +114,12 @@ fun ChannelCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(236.dp)
+            .height(200.dp)
             .onGloballyPositioned { onCardBounds(it.boundsInRoot()) }
             .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
             .background(VSurface)
-            .padding(14.dp)
+            .padding(8.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -132,7 +134,7 @@ fun ChannelCard(
                 onClick = onChipTap
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Column(
                 modifier = Modifier
@@ -145,10 +147,7 @@ fun ChannelCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Fixed slot, not sized to its contents: the ripple needs the full
-                // MIC_SLOT and the bare circle only MIC_CIRCLE, so sizing to fit
-                // made the block taller the moment a channel went live — which
-                // Center then paid for by sliding the label down and the mic up.
+                // Keep the complete mic control at 48 dp in every audio state.
                 Box(
                     modifier = Modifier
                         .size(MIC_SLOT)
@@ -158,7 +157,8 @@ fun ChannelCard(
                     // Every branch below draws into the same MIC_SLOT box at the
                     // same MIC_CIRCLE size, so mic and label hold their position.
                     if (isSpeaking) {
-                        SpeakingRipple(size = MIC_SLOT, color = activeCircleColor)
+                        // Draw the ripple outside the fixed circle without moving the label.
+                        SpeakingRipple(modifier = Modifier.requiredSize(72.dp), size = 72.dp, color = activeCircleColor)
                         ActiveMicCircle(
                             channelName = summary.channel.name,
                             isListening = isListening,
@@ -183,9 +183,7 @@ fun ChannelCard(
 
                 Text(
                     text = summary.channel.name,
-                    // headlineLarge (25sp) overflowed a half-width card:
-                    // "Maintenance" rendered as "Maintenan…".
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     color = if (isSpeaking) activeLabelColor else VOnSurface.copy(alpha = contentAlpha),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -212,19 +210,20 @@ private fun MemberCountChip(
             .background(VSurfaceVariant)
             .border(1.dp, VBorder, RoundedCornerShape(20.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 11.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Filled.People,
+            painter = painterResource(R.drawable.member_channel),
             contentDescription = null,
             tint = VOnSurface.copy(alpha = contentAlpha),
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(10.dp)
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = "$onlineCount/$totalCount",
-            style = MaterialTheme.typography.titleSmall,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
             fontWeight = FontWeight.Bold,
             color = VOnSurface.copy(alpha = contentAlpha)
         )
@@ -233,7 +232,7 @@ private fun MemberCountChip(
             Icons.Default.ChevronRight,
             contentDescription = null,
             tint = VOnSurfaceSecondary.copy(alpha = contentAlpha),
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(10.dp)
         )
     }
 }
@@ -291,11 +290,11 @@ private fun IdleMicCircle(contentAlpha: Float, micLabel: String) {
             .size(MIC_CIRCLE)
             .clip(CircleShape)
             .background(VSurface)
-            .border(1.dp, VBorder.copy(alpha = contentAlpha), CircleShape),
+            .border(1.dp, Color(0xFF707174).copy(alpha = contentAlpha), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(id = R.drawable.ic_mic),
+            imageVector = Icons.Filled.Mic,
             contentDescription = micLabel,
             tint = VOnSurface.copy(alpha = contentAlpha),
             modifier = Modifier.size(MIC_ICON)
@@ -306,19 +305,9 @@ private fun IdleMicCircle(contentAlpha: Float, micLabel: String) {
 /** How far an empty channel's contents fade back. */
 private const val INACTIVE_ALPHA = 0.35f
 
-/**
- * Mic geometry. Every value here is the same in all four states — only fill, ring
- * and label colour change — so the circle and the channel name never move when a
- * channel goes live.
- *
- * [MIC_SLOT] is the box the mic is centred in, sized for the ripple at its widest
- * so nothing resizes when the pulses appear. It is deliberately only ~1.5x the
- * circle: at 104.dp the slot plus label filled the panel to within 6.dp and the
- * tile read as crowded rather than centred. These proportions come off the Figma
- * grid, where the circle is roughly a third of the card's width.
- */
-private val MIC_SLOT = 84.dp
-private val MIC_CIRCLE = 56.dp
+/** All audio states use the same 48 dp circle and slot, keeping the label fixed. */
+private val MIC_SLOT = 48.dp
+private val MIC_CIRCLE = 48.dp
 private val MIC_ICON = 24.dp
 
 /** Space between the mic and the channel name. */

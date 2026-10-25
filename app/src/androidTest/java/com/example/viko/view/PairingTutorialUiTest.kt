@@ -58,6 +58,36 @@ class PairingTutorialUiTest {
         compose.onNodeWithText("Skip All").assertDoesNotExist()
     }
 
+    @Test fun homeGridKeepsNavigationAndChannelActionsWorking() {
+        var notifications = false
+        var settings = false
+        compose.setContent {
+            TestTheme {
+                HomeScreen(
+                    uiState = HomeUiState(channels = listOf("Operations", "Facilities", "Assembly", "Security").mapIndexed { index, name ->
+                        val id = "channel-$index"
+                        ChannelSummary(Channel(id, name), listOf(previewWorker("worker-$index", "Member $index", id)))
+                    }, activeAlertCount = 1, hasMembers = true, isLoaded = true),
+                    onOpenNotifications = { notifications = true }, onOpenSettings = { settings = true }, onDirectCall = {},
+                    onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
+                    onResolveAlert = {}, startTutorial = false
+                )
+            }
+        }
+        compose.onNodeWithText("Security").assertIsDisplayed()
+        compose.onNodeWithText("Make Announcement").assertIsDisplayed()
+        capture("home-layout-grid.png")
+        compose.onNodeWithContentDescription("Talk to Operations").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Talking to Operations").assertIsDisplayed()
+        capture("home-layout-talking.png")
+        compose.onNodeWithContentDescription("Talking to Operations").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Notification Button").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Settings").performTouchInput { click() }
+        compose.runOnIdle { assertTrue(notifications); assertTrue(settings) }
+        compose.onAllNodesWithText("1/1")[0].performTouchInput { click() }
+        compose.onNodeWithText("Member 0").assertIsDisplayed()
+    }
+
     @Test fun largeTextIntroCanScrollToSkipWithoutStartingTutorial() {
         var skipped = false
         var started = false
