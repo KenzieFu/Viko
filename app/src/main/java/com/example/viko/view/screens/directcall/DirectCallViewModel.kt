@@ -96,22 +96,20 @@ class DirectCallViewModel(
         initialValue = DirectCallUiState()
     )
 
-    /**
-     * Manager pushes to talk: opens the phone mic and streams it to this badge.
-     * Ignored while the worker holds the channel — half duplex, like the badge's
-     * own button.
-     */
-    fun toggleTalking() {
-        if (talking.value) {
-            // The badge id goes in so the captured turn can be translated and sent
-            // back — without it the mic is simply closed and nothing is answered.
-            audio.stopTalking(workerId)
-            return
-        }
+    /** Press starts capture; member speech still owns the half-duplex channel. */
+    fun startTalking() {
+        if (talking.value || uiState.value.callState == CallState.LISTENING) return
+        talkError.value = audio.startTalking(workerId, viewModelScope)
+    }
 
-        if (uiState.value.callState == CallState.LISTENING) return
-        val failure = audio.startTalking(workerId, viewModelScope)
-        talkError.value = failure
+    /** A deliberate release submits the captured turn once. */
+    fun stopTalking() {
+        if (talking.value) audio.stopTalking(workerId)
+    }
+
+    /** Cancellation, navigation, or backgrounding discards the partial turn. */
+    fun cancelTalking() {
+        audio.stopTalking()
     }
 
     /**

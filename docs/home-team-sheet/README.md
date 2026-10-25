@@ -12,7 +12,7 @@ Edit mode keeps draft names until Save, uses the imported trash drawable, and op
 
 Validation: assembleDebug, assembleDebugAndroidTest, lintDebug, and 16 passing instrumentation tests across TeamSheetUiTest, PairingTutorialUiTest, and ManageMemberUiTest. Screenshots were captured on the emulator at 1080 × 2400.
 
-## Overlap audit — awaiting product choice
+## Overlap audit — keep separate, share components
 
 | Existing flows | Relationship | Recommendation |
 | --- | --- | --- |
@@ -20,4 +20,4 @@ Validation: assembleDebug, assembleDebugAndroidTest, lintDebug, and 16 passing i
 | Team sheet → Edit; Member Details | Both rename/remove members. Inline team editing handles multiple names; details additionally changes channel and shows device information. They already share deletion confirmation. | Keep both entry points and share components. |
 | Onboarding/demo setup; normal channel/member setup | Similar setup content, with guided progress and isolated demo behavior on one path. Real and replay onboarding share OnboardingFlowContent; setup forms and pairing content are already shared. | Preserve onboarding/demo and normal flows; do not replace them with extra copies. |
 
-No consolidation was performed pending the user's choice. Existing unrelated OnboardingFlow edits were left untouched.
+The user confirmed keeping these flows separate and reusing shared components. Existing unrelated OnboardingFlow edits were left untouched.
