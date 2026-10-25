@@ -87,7 +87,8 @@ fun ChannelCard(
      * can cut a hole around them. Only the first card on Home bothers.
      */
     onMicBounds: (Rect) -> Unit = {},
-    onChipBounds: (Rect) -> Unit = {}
+    onChipBounds: (Rect) -> Unit = {},
+    onCardBounds: (Rect) -> Unit = {}
 ) {
     val isActive = summary.isActive && enabled
     val contentAlpha = if (isActive) 1f else INACTIVE_ALPHA
@@ -112,6 +113,7 @@ fun ChannelCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(236.dp)
+            .onGloballyPositioned { onCardBounds(it.boundsInRoot()) }
             .shadow(2.dp, RoundedCornerShape(16.dp), spotColor = VShadow)
             .clip(RoundedCornerShape(16.dp))
             .background(VSurface)

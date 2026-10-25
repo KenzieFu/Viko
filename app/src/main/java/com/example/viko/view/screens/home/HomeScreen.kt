@@ -241,6 +241,9 @@ fun HomeScreen(
                             },
                             onChipBounds = { bounds ->
                                 if (isTourTarget) targets = targets.copy(channelChip = bounds)
+                            },
+                            onCardBounds = { bounds ->
+                                if (isTourTarget) targets = targets.copy(channelCard = bounds)
                             }
                         )
                     }
@@ -285,7 +288,12 @@ fun HomeScreen(
     }
     if (teamSummary != null) {
         ModalBottomSheet(
-            onDismissRequest = { openTeamSheetChannelId = null },
+            onDismissRequest = {
+                openTeamSheetChannelId = null
+                if (introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall) {
+                    introStage = IntroStage.None
+                }
+            },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = VBackground,
             dragHandle = { VikoDragHandle() }
@@ -306,6 +314,11 @@ fun HomeScreen(
                     addMemberChannelId = teamSummary.channel.id
                     openTeamSheetChannelId = null
                     showAddMember = true
+                },
+                showDirectCallTutorial = introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall,
+                onFinishTutorial = {
+                    openTeamSheetChannelId = null
+                    introStage = IntroStage.None
                 }
             )
         }
@@ -322,18 +335,18 @@ fun HomeScreen(
             onSkip = { introStage = IntroStage.None }
         )
 
-        IntroStage.Tutorial -> {
+        IntroStage.Tutorial -> if (tutorialStep != TutorialStep.DirectCall || teamSummary == null) {
             TutorialOverlay(
                 step = tutorialStep,
                 bounds = targets.boundsFor(tutorialStep),
+                cursorBounds = if (tutorialStep == TutorialStep.PressAndHold) targets.channelMic else targets.boundsFor(tutorialStep),
                 onNext = {
                     val next = tutorialStep.next()
                     if (next == null) {
                         openTeamSheetChannelId = null
                         introStage = IntroStage.None
                     } else {
-                        // Open the underlying sheet in the same transition;
-                        // the new tutorial dialog must be above it, not hidden by it.
+                        // The final spotlight is rendered inside the team sheet.
                         if (next == TutorialStep.DirectCall) {
                             openTeamSheetChannelId = uiState.channels.firstOrNull()?.channel?.id
                         }

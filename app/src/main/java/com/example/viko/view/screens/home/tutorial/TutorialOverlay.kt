@@ -1,35 +1,20 @@
 package com.example.viko.view.screens.home.tutorial
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlin.math.roundToInt
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -38,17 +23,14 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.viko.view.theme.VOnboardingBlue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
-import androidx.compose.material3.Text
 import com.example.viko.R
-import com.example.viko.view.theme.VBorder
-import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VikoTheme
 
 /** How much of the screen behind the cut-out is taken away. */
@@ -58,7 +40,6 @@ private const val SCRIM_ALPHA = 0.78f
 private val HOLE_PADDING = 6.dp
 private val HOLE_RADIUS = 16.dp
 private val BUBBLE_GAP = 24.dp
-private val BUBBLE_WIDTH = 320.dp
 
 /**
  * One tutorial step: everything except [bounds] is dimmed, a hand points at
@@ -74,31 +55,14 @@ fun TutorialOverlay(
     bounds: Rect?,
     onNext: () -> Unit,
     onSkipAll: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Only the last step needs a separate window above the modal team sheet.
-    // Earlier steps stay in Home so its intro and spotlight redraw together.
-    if (step == TutorialStep.DirectCall) {
-        Dialog(
-            onDismissRequest = onSkipAll,
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-        ) {
-            TutorialOverlayContent(step, bounds, onNext, onSkipAll, modifier)
-        }
-    } else {
-        TutorialOverlayContent(step, bounds, onNext, onSkipAll, modifier)
-    }
-}
-
-@Composable
-private fun TutorialOverlayContent(
-    step: TutorialStep,
-    bounds: Rect?,
-    onNext: () -> Unit,
-    onSkipAll: () -> Unit,
-    modifier: Modifier
+    modifier: Modifier = Modifier,
+    cursorBounds: Rect? = bounds
 ) {
     val density = LocalDensity.current
+    val pointer = cursorBounds?.let {
+        if (step == TutorialStep.CheckChannel) Offset(it.right - with(density) { 20.dp.toPx() }, it.center.y)
+        else it.center
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -125,14 +89,30 @@ private fun TutorialOverlayContent(
                     cornerRadius = CornerRadius(radius, radius),
                     blendMode = BlendMode.Clear
                 )
+                if (pointer != null && (step == TutorialStep.PressAndHold || step == TutorialStep.CheckChannel)) {
+                    drawCircle(
+                        color = VOnboardingBlue.copy(alpha = .45f),
+                        radius = 21.dp.toPx(),
+                        center = pointer
+                    )
+                }
+                if (step == TutorialStep.DirectCall) {
+                    drawRoundRect(
+                        color = VOnboardingBlue,
+                        topLeft = Offset(bounds.left - pad, bounds.top - pad),
+                        size = Size(bounds.width + pad * 2, bounds.height + pad * 2),
+                        cornerRadius = CornerRadius(radius, radius),
+                        style = Stroke(3.dp.toPx())
+                    )
+                }
             }
         }
 
-        if (bounds != null) {
+        if (pointer != null && (step == TutorialStep.PressAndHold || step == TutorialStep.CheckChannel)) {
             // The finger tip is near the top of the asset, so the hand hangs
             // down and to the right of whatever it is pointing at.
-            val cursorX = with(density) { (bounds.center.x - 12.dp.toPx()).toDp() }
-            val cursorY = with(density) { (bounds.center.y - 10.dp.toPx()).toDp() }
+            val cursorX = with(density) { (pointer.x - 12.dp.toPx()).toDp() }
+            val cursorY = with(density) { (pointer.y - 10.dp.toPx()).toDp() }
             Image(
                 painter = painterResource(id = R.drawable.ic_tutorial_cursor),
                 contentDescription = null,
@@ -146,86 +126,17 @@ private fun TutorialOverlayContent(
         val safeTop = insets.getTop(density) + with(density) { 20.dp.toPx() }
         val safeBottom = insets.getBottom(density) + with(density) { 20.dp.toPx() }
         Layout(
-            content = { TutorialBubble(step, onNext, onSkipAll) },
+            content = { TutorialStepContent(step, onNext, onSkipAll) },
             modifier = Modifier.fillMaxSize()
         ) { measurables, constraints ->
             val margin = 20.dp.roundToPx()
-            val width = minOf(BUBBLE_WIDTH.roundToPx(), (constraints.maxWidth - margin * 2).coerceAtLeast(0))
+            val width = (constraints.maxWidth - margin * 2).coerceAtLeast(0)
             val height = (constraints.maxHeight - safeTop - safeBottom).toInt().coerceAtLeast(0)
             val bubble = measurables.single().measure(Constraints(maxWidth = width, maxHeight = height))
             val top = tutorialBubbleTop(bounds?.top, bounds?.bottom, bubble.height.toFloat(),
                 constraints.maxHeight.toFloat(), safeTop, safeBottom, BUBBLE_GAP.toPx())
             layout(constraints.maxWidth, constraints.maxHeight) {
                 bubble.placeRelative(margin, top.roundToInt())
-            }
-        }
-    }
-}
-
-@Composable
-private fun TutorialBubble(
-    step: TutorialStep,
-    onNext: () -> Unit,
-    onSkipAll: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Only the copy scrolls on small screens/large fonts; actions stay visible.
-        Column(
-            modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "${step.stepNumber} / ${TutorialStep.total}",
-                fontSize = 12.sp,
-                color = Color.White
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = step.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = step.body,
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.8f)
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Skip All",
-                modifier = Modifier.clickable(onClick = onSkipAll).padding(vertical = 12.dp),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Box(
-                modifier = Modifier
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(VSurface)
-                    .border(1.dp, VBorder, RoundedCornerShape(8.dp))
-                    .clickable(onClick = onNext)
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (step.isLast) "Done" else "Next",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
             }
         }
     }

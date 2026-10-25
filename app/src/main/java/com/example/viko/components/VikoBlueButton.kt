@@ -28,7 +28,8 @@ fun VikoBlueButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    containerColor: Color = VButtonBlue
 ) {
     Button(
         onClick = onClick,
@@ -38,7 +39,7 @@ fun VikoBlueButton(
         enabled = enabled,
         shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = VButtonBlue,
+            containerColor = containerColor,
             contentColor = Color.White,
             disabledContainerColor = VButtonBlueDisabled,
             disabledContentColor = Color.White.copy(alpha = 0.5f)

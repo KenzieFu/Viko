@@ -50,12 +50,13 @@ enum class TutorialStep(
  */
 data class TutorialTargets(
     val channelMic: Rect? = null,
+    val channelCard: Rect? = null,
     val channelChip: Rect? = null,
     val sos: Rect? = null,
     val announcement: Rect? = null
 ) {
     fun boundsFor(step: TutorialStep): Rect? = when (step) {
-        TutorialStep.PressAndHold -> channelMic
+        TutorialStep.PressAndHold -> channelCard ?: channelMic
         TutorialStep.Announcement -> announcement
         TutorialStep.Sos -> sos
         TutorialStep.CheckChannel -> channelChip
