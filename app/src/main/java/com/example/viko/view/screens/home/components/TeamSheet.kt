@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -49,9 +50,13 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.example.viko.view.screens.home.tutorial.TutorialOverlay
 import com.example.viko.view.screens.home.tutorial.TutorialStep
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.viko.R
 import com.example.viko.components.AddPillButton
 import com.example.viko.components.AnnouncementWaveBackground
 import com.example.viko.components.AnnouncementWaveHeight
@@ -107,12 +112,17 @@ fun TeamSheetContent(
     // A member holding their own button has the channel — no talking over them,
     // and a press that was live when they cut in ends there.
     val isMemberSpeaking = summary.hasSpeakingMember
-    val isTeamTalking = isTalking && !isMemberSpeaking
+    val isTeamTalking = isTalking && !isMemberSpeaking && !isEditMode
+    LaunchedEffect(isMemberSpeaking, isEditMode) {
+        // An interrupted conversation must require a new tap, never resume on its own.
+        if (isMemberSpeaking || isEditMode) isTalking = false
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight()
+            .fillMaxHeight(0.9f)
+            .testTag("team-sheet")
             .onGloballyPositioned { sheetOrigin = it.boundsInWindow().topLeft }
     ) {
         if (isTeamTalking) {
@@ -121,6 +131,8 @@ fun TeamSheetContent(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .height(AnnouncementWaveHeight)
+                    .testTag("team-speaking-pulse"),
+                color = VMicBlue
             )
         }
 
@@ -128,7 +140,7 @@ fun TeamSheetContent(
             modifier = Modifier
                 .fillMaxHeight()
                 .navigationBarsPadding()
-                .padding(bottom = 20.dp)
+                .padding(bottom = 24.dp)
         ) {
             TeamSheetHeader(
                 title = if (isEditMode) {
@@ -151,7 +163,7 @@ fun TeamSheetContent(
                 }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (isEditMode) {
                 LazyColumn(
@@ -168,7 +180,7 @@ fun TeamSheetContent(
                     }
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
-                        AddPillButton(text = "Add Member", onClick = { isPickingMember = true })
+                        AddPillButton(text = "Add New", onClick = { isPickingMember = true })
                     }
                 }
             } else {
@@ -269,7 +281,7 @@ private fun TeamSheetHeader(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
             fontWeight = FontWeight.Bold,
             color = VOnSurface,
             modifier = Modifier.weight(1f)
@@ -281,11 +293,11 @@ private fun TeamSheetHeader(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = VMicBlue, contentColor = Color.White)
             ) {
-                Text("Save", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Save", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
         } else {
             IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit team", tint = VOnSurface)
+                Icon(Icons.Default.Edit, contentDescription = "Edit team", tint = VOnSurface, modifier = Modifier.size(24.dp))
             }
         }
     }
@@ -307,12 +319,13 @@ private fun TalkToTeamButton(isTalking: Boolean, enabled: Boolean, onToggle: () 
             .clip(shape)
             .background(if (isTalking) VButtonBlue else VSurface)
             .then(if (isTalking) Modifier else Modifier.border(1.dp, VBorder, shape))
+            .testTag("talk-to-team")
             .clickable(enabled = enabled, onClick = onToggle),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Default.Mic,
+            painterResource(R.drawable.ic_mic),
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(20.dp)
@@ -320,7 +333,7 @@ private fun TalkToTeamButton(isTalking: Boolean, enabled: Boolean, onToggle: () 
         Spacer(modifier = Modifier.width(10.dp))
         Text(
             text = if (isTalking) "Speaking..." else "Talk to Team",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
             color = Color.White
         )
     }
