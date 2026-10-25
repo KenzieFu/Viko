@@ -52,7 +52,8 @@ fun AlertCard(
     alert: EmergencyAlert,
     onDirectCall: () -> Unit,
     onResolve: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    titleMaxLines: Int = 2
 ) {
     val isResolved = alert.status == AlertStatus.RESOLVED
     val shape = RoundedCornerShape(16.dp)
@@ -83,7 +84,7 @@ fun AlertCard(
                     fontWeight = FontWeight.Bold,
                     lineHeight = 20.sp,
                     color = VOnSurface,
-                    maxLines = 1,
+                    maxLines = titleMaxLines,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
