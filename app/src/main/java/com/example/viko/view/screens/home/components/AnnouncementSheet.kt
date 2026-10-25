@@ -1,134 +1,82 @@
 package com.example.viko.view.screens.home.components
 
-import com.example.viko.view.theme.VikoTheme
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.R
-import com.example.viko.components.AnnouncementWaveBackground
-import com.example.viko.components.AnnouncementWaveHeight
-import com.example.viko.components.VikoDragHandle
-import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
+import com.example.viko.view.theme.VikoTheme
 
-private val ANNOUNCE_BUTTON = 168.dp
-
-/** Space between the "From …" line and the button. */
-private val ANNOUNCE_BUTTON_GAP = 96.dp
-
-/**
- * All-channel announcement. Draws its own drag handle and corner radius because
- * the host passes a transparent container so this can own the whole surface.
- *
- * The surface itself does not change while speaking — the wave is the only thing
- * that reacts, which keeps this consistent with the SOS sheet.
- */
+/** Content-sized announcement UI preview; the modal host owns the surface and handle. */
 @Composable
 fun AnnouncementSheetContent(onClose: () -> Unit) {
     var isSpeaking by remember { mutableStateOf(false) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(470.dp)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(VBackground)
-            .navigationBarsPadding()
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .78f)
+            .clipToBounds()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (isSpeaking) {
-            AnnouncementWaveBackground(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(AnnouncementWaveHeight)
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            VikoDragHandle()
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Announce",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = VOnSurface,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-                IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterEnd)) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = VOnSurface
-                    )
-                }
+        Box(Modifier.fillMaxWidth().height(28.dp)) {
+            Text("Announce", fontSize = 24.sp, lineHeight = 28.sp,
+                fontWeight = FontWeight.Bold, color = VOnSurface,
+                modifier = Modifier.align(Alignment.Center))
+            IconButton(onClick = onClose,
+                modifier = Modifier.align(Alignment.CenterEnd).size(24.dp)) {
+                Icon(Icons.Default.Close, "Close announcement", tint = VOnSurface, modifier = Modifier.size(24.dp))
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(if (isSpeaking) "Speaking..." else "From Lee Suyeon (수연이)",
+            fontSize = 14.sp, lineHeight = 20.sp,
+            color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(32.dp))
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = if (isSpeaking) "Speaking..." else "From Lee Suyeon (수연이)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = VOnSurfaceSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(ANNOUNCE_BUTTON_GAP))
-
-            // Size and gap are the same in both states so the button cannot shift
-            // when you tap it — only the fill and glyph swap: white with a blue
-            // megaphone at rest, blue with a white one while speaking.
+        // This wrapper keeps the circle fixed while rings expand past it and fade.
+        Box(Modifier.fillMaxWidth().height(320.dp).testTag("announcement-icon-wrapper"),
+            contentAlignment = Alignment.Center) {
+            if (isSpeaking) {
+                AnnouncementSpeakingPulse(Modifier.matchParentSize().testTag("announcement-speaking-pulse"))
+            }
             Box(
-                modifier = Modifier
-                    .size(ANNOUNCE_BUTTON)
-                    .clip(CircleShape)
+                Modifier.size(168.dp).clip(CircleShape)
                     .background(if (isSpeaking) VMicBlue else Color.White)
-                    .clickable { isSpeaking = !isSpeaking },
+                    .clickable(role = Role.Button) { isSpeaking = !isSpeaking },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_announces),
+                    painterResource(if (isSpeaking) R.drawable.ic_announces else R.drawable.ic_announce_notactive),
                     contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
                     tint = if (isSpeaking) Color.White else VMicBlue,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(44.dp)
                 )
             }
         }
