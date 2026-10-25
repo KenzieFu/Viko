@@ -59,6 +59,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenManageMembers: () -> Unit,
     onOpenManageChannels: () -> Unit,
+    onReplayOnboarding: () -> Unit,
     viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -67,6 +68,7 @@ fun SettingsScreen(
         onBack = onBack,
         onOpenManageMembers = onOpenManageMembers,
         onOpenManageChannels = onOpenManageChannels,
+        onReplayOnboarding = onReplayOnboarding,
         onSaveFactoryWifi = viewModel::saveFactoryWifi
     )
 }
@@ -78,6 +80,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenManageMembers: () -> Unit,
     onOpenManageChannels: () -> Unit,
+    onReplayOnboarding: () -> Unit,
     onSaveFactoryWifi: (FactoryWifi) -> Unit
 ) {
     var showWifiSheet by rememberSaveable { mutableStateOf(false) }
@@ -100,6 +103,7 @@ fun SettingsScreen(
         ) {
             SettingsRow(title = "Manage Members", onClick = onOpenManageMembers)
             SettingsRow(title = "Manage Channels", onClick = onOpenManageChannels)
+            SettingsRow(title = "Replay onboarding", value = "Keeps your data", onClick = onReplayOnboarding)
             // One network for the whole factory — every access point shares the
             // SSID and password — so it is a setting, not a field per member.
             SettingsRow(
@@ -174,7 +178,8 @@ private fun SettingsScreenPreview() {
     VikoTheme {
         SettingsScreen(
             uiState = SettingsUiState(FactoryWifi(ssid = "FactoryTranslate_AP")),
-            onBack = {}, onOpenManageMembers = {}, onOpenManageChannels = {}, onSaveFactoryWifi = {}
+            onBack = {}, onOpenManageMembers = {}, onOpenManageChannels = {},
+            onReplayOnboarding = {}, onSaveFactoryWifi = {}
         )
     }
 }

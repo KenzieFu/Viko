@@ -23,6 +23,9 @@ sealed class Screen(val route: String) {
     /** Onboarding: name the first team channel. Nothing works without one. */
     data object FirstChannel : Screen("first_channel")
 
+    /** Replays the onboarding screens without creating another channel. */
+    data object OnboardingReplay : Screen("onboarding_replay")
+
     data object Home : Screen("home?${NavArgs.START_TUTORIAL}={${NavArgs.START_TUTORIAL}}") {
         fun createRoute(startTutorial: Boolean = false) =
             "home?${NavArgs.START_TUTORIAL}=$startTutorial"

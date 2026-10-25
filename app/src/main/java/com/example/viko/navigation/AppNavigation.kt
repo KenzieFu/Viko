@@ -1,6 +1,10 @@
 package com.example.viko.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -10,6 +14,7 @@ import com.example.viko.view.screens.channel.ManageChannelScreen
 import com.example.viko.view.screens.directcall.DirectCallScreen
 import com.example.viko.view.screens.home.HomeScreen
 import com.example.viko.view.screens.onboarding.FirstChannelScreen
+import com.example.viko.view.screens.onboarding.FirstChannelUiState
 import com.example.viko.view.screens.splash.SplashDestination
 import com.example.viko.view.screens.splash.SplashScreen
 import com.example.viko.view.screens.notifications.NotificationsScreen
@@ -61,6 +66,23 @@ fun AppNavigation() {
             )
         }
 
+        composable(Screen.OnboardingReplay.route) {
+            var channelName by rememberSaveable { mutableStateOf("") }
+            FirstChannelScreen(
+                uiState = FirstChannelUiState(name = channelName),
+                onNameChange = { channelName = it },
+                onContinue = {
+                    // This route is a visual replay. Keep the real channel and
+                    // member database untouched while walking through the flow.
+                    if (channelName.isNotBlank()) {
+                        navController.navigate(Screen.ManageChannels.createRoute(showTeamReady = true)) {
+                            popUpTo(Screen.OnboardingReplay.route) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
         composable(
             route = Screen.Home.route,
             arguments = listOf(
@@ -93,7 +115,8 @@ fun AppNavigation() {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenManageMembers = { navController.navigate(Screen.ManageMembers.createRoute()) },
-                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.createRoute()) }
+                onOpenManageChannels = { navController.navigate(Screen.ManageChannels.createRoute()) },
+                onReplayOnboarding = { navController.navigate(Screen.OnboardingReplay.route) }
             )
         }
 
