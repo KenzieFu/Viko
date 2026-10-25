@@ -42,15 +42,17 @@ val VButtonBlue = Color(0xFF003D9E)
 val VButtonBlueDisabled = Color(0xFF0E2D5F)
 
 // Panels behind an active channel. Both are dim so the bright circle on top of
-// them is what draws the eye — talk is blue-tinted, speaker is near-neutral.
+// them is what draws the eye — manager speech is blue, member speech is teal.
 val VActivePanel = Color(0xFF1C284A)    // channel you are TALKING on
-val VListeningPanel = Color(0xFF242A38) // channel you are HEARING
+val VListeningPanel = Color(0xFF193F45) // channel you are HEARING
 
 // TEAL = a member is talking to the supervisor. Their row in the team sheet and
 // the Direct Call "Speaking..." state. Kept apart from blue, which is the
 // supervisor talking, so it is always clear whose turn it is.
 val VMemberSpeaking = Color(0xFF11A0B6)
 val VMemberSpeakingSurface = Color(0xFF193F45)
+val VMemberSpeakingText = Color(0xFF2EC6DD)
+val VMemberSpeakingPulse = Color(0xFF81B1FF)
 
 // YELLOW = an alert raised by a member. The emergency banner on Home and the
 // active cards in Notifications. Yellow means "someone needs attention", which is

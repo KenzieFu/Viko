@@ -8,6 +8,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,13 +24,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,11 +46,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.R
-import com.example.viko.components.SpeakingRipple
 import com.example.viko.view.screens.home.ChannelSummary
 import com.example.viko.view.theme.VActivePanel
 import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VListeningPanel
+import com.example.viko.view.theme.VMemberSpeaking
+import com.example.viko.view.theme.VMemberSpeakingText
+import com.example.viko.view.theme.VMemberSpeakingPulse
+import com.example.viko.type.WorkerStatus
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VMicRing
 import com.example.viko.view.theme.VOnSurface
@@ -59,14 +63,14 @@ import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VSurfaceVariant
 
 /**
- * Three mic states, dimmest to loudest:
+ * Channel audio states:
  *   EMPTY → nobody on the channel: no panel, whole tile faded to INACTIVE_ALPHA
  *   READY → members present, nobody talking: no panel, grey rim, WHITE mic + label
- *   TALK  → navy panel, blue circle ringed in VMicRing, outline mic, BLUE label
+ *   TALK  → navy panel, blue circle ringed in VMicRing, filled mic, BLUE label
  *
- * EMPTY and READY are the same drawing at different opacity — only TALK gets a
+ * EMPTY and READY are the same drawing at different opacity. Active audio gets a
  * panel. SPEAKER (someone else holding the channel) reuses TALK's layout with a
- * neutral panel, white circle and blue icon.
+ * teal panel and circle, white waveform and the current speaker name.
  */
 enum class ChannelAudioMode { Idle, Talking, Listening }
 
@@ -103,9 +107,10 @@ fun ChannelCard(
     val isReady = isActive && !isSpeaking
 
     val activePanelColor = if (isListening) VListeningPanel else VActivePanel
-    val activeCircleColor = if (isListening) Color.White else VMicBlue
-    val activeIconColor = if (isListening) VMicBlue else Color.White
-    val activeLabelColor = if (isListening) Color.White else VMicRing
+    val activeCircleColor = if (isListening) VMemberSpeaking else VMicBlue
+    val activeIconColor = Color.White
+    val activeLabelColor = if (isListening) VMemberSpeakingText else VMicRing
+    val speaker = summary.members.firstOrNull { it.status == WorkerStatus.SPEAKING }
 
     // Only a live channel gets a panel. A staffed-but-quiet one is separated from
     // an empty one by opacity alone, which is what the Figma grid shows.
@@ -142,7 +147,12 @@ fun ChannelCard(
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(panelColor)
-                    .clickable(enabled = isActive, onClick = onMicTap)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null, // The custom audio pulse supplies feedback without tinting the panel.
+                        enabled = isActive,
+                        onClick = onMicTap
+                    )
                     .padding(vertical = 6.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -158,7 +168,10 @@ fun ChannelCard(
                     // same MIC_CIRCLE size, so mic and label hold their position.
                     if (isSpeaking) {
                         // Draw the ripple outside the fixed circle without moving the label.
-                        SpeakingRipple(modifier = Modifier.requiredSize(72.dp), size = 72.dp, color = activeCircleColor)
+                        ChannelSpeakingPulse(
+                            color = if (isListening) VMemberSpeakingPulse else VMicBlue,
+                            modifier = Modifier.requiredSize(66.dp)
+                        )
                         ActiveMicCircle(
                             channelName = summary.channel.name,
                             isListening = isListening,
@@ -189,6 +202,19 @@ fun ChannelCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (isListening && speaker != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = speaker.name,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        color = VMemberSpeakingText,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -249,8 +275,7 @@ private fun ActiveMicCircle(
             .size(MIC_CIRCLE)
             .clip(CircleShape)
             .background(circleColor)
-            // Ring only while talking: on the speaker state the circle is already
-            // white, and a blue ring around white reads as a stray outline.
+            // Member speech has a solid teal circle; manager speech stays blue.
             .then(
                 if (isListening) Modifier
                 else Modifier.border(2.dp, VMicRing, CircleShape)
@@ -259,16 +284,14 @@ private fun ActiveMicCircle(
     ) {
         if (isListening) {
             Icon(
-                Icons.AutoMirrored.Filled.VolumeUp,
+                painter = painterResource(R.drawable.ic_talk),
                 contentDescription = "Listening to $channelName",
                 tint = iconColor,
                 modifier = Modifier.size(MIC_ICON)
             )
         } else {
-            // ic_mic is stroke-only (fillColor #00000000), so the talking icon is
-            // an outline mic — filled would lose the shape against a solid circle.
             Icon(
-                painter = painterResource(id = R.drawable.ic_mic),
+                imageVector = Icons.Filled.Mic,
                 contentDescription = "Talking to $channelName",
                 tint = iconColor,
                 modifier = Modifier.size(MIC_ICON)
@@ -330,7 +353,7 @@ private fun ChannelCardTalkingPreview() {
     }
 }
 
-/** Speaker: neutral panel, white circle, blue icon, white label. */
+/** Member speech: teal panel, waveform, and current speaker name. */
 @Preview(showBackground = true, backgroundColor = 0xFF1C1D20)
 @Composable
 private fun ChannelCardListeningPreview() {

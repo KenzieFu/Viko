@@ -125,7 +125,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_announce),
+                    painter = painterResource(id = R.drawable.ic_announces),
                     contentDescription = if (isSpeaking) "Stop announcement" else "Start announcement",
                     tint = if (isSpeaking) Color.White else VMicBlue,
                     modifier = Modifier.size(56.dp)
