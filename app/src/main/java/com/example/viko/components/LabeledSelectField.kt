@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
@@ -48,7 +49,7 @@ fun LabeledSelectField(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 46.dp)
+                .heightIn(min = 48.dp)
                 .clip(shape)
                 .then(
                     if (onClick != null) {
@@ -59,12 +60,12 @@ fun LabeledSelectField(
                         Modifier.background(VSurface)
                     }
                 )
-                .padding(horizontal = 16.dp, vertical = 13.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = value ?: placeholder,
-                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 16.sp,
                 color = if (value != null) VOnSurface else VOnSurfaceSecondary,
                 modifier = Modifier.weight(1f)
             )

@@ -50,11 +50,11 @@ fun LabeledTextField(
 internal fun FieldLabel(text: String) {
     Text(
         text = text,
-        fontSize = 11.sp,
+        fontSize = 12.sp,
         color = VOnSurfaceSecondary,
         modifier = Modifier.padding(start = 16.dp)
     )
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(6.dp))
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFF1C1D20)

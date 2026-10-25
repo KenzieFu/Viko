@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.rememberScrollState
@@ -35,8 +36,6 @@ import com.example.viko.di.AppViewModelProvider
 import com.example.viko.view.theme.VBackground
 import com.example.viko.view.theme.VikoTheme
 
-/** Distance from the status bar down to the welcome copy, per the design. */
-private val HEADER_OFFSET = 163.dp
 
 @Composable
 fun FirstChannelScreen(
@@ -72,13 +71,13 @@ fun FirstChannelScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .imePadding()
+                .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-            Spacer(modifier = Modifier.height(HEADER_OFFSET))
 
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -100,7 +99,6 @@ fun FirstChannelScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
