@@ -18,6 +18,8 @@ import com.example.viko.domain.settings.repository.FactoryWifiRepository
 import com.example.viko.domain.team.model.*
 import com.example.viko.domain.team.repository.*
 import com.example.viko.view.screens.team.*
+import com.example.viko.view.screens.channel.SelectChannelSheetContent
+import com.example.viko.view.screens.channel.AddNewChannelSheetContent
 import com.example.viko.view.theme.*
 import kotlinx.coroutines.flow.*
 import org.junit.After
@@ -78,13 +80,56 @@ class PairingSheetFlowUiTest {
     }
 
     @Test fun existingChannelsStillOpenThePicker() {
-        val vm = setup(Channels(listOf(Channel("c1", "Operations"))))
+        val vm = setup(Channels(listOf(Channel("c1", "Operations"), Channel("c2", "Maintenance"),
+            Channel("c3", "Store"), Channel("c4", "Facilities"))))
         compose.onNodeWithText("Select Channel").performClick()
         compose.onNodeWithText("Search Channel").assertIsDisplayed()
         compose.onNodeWithText("Add New Channel").assertDoesNotExist()
+        capture("channel-populated.png")
         compose.onNodeWithText("Operations").performClick()
         compose.waitUntil(5_000) { vm.uiState.value.selectedChannelId == "c1" }
         compose.onNodeWithText("Linh").assertIsDisplayed()
+        compose.onNodeWithText("Operations").performClick()
+        compose.onNodeWithContentDescription("Selected").assertIsDisplayed()
+        capture("channel-selected.png")
+        compose.onNodeWithText("Search Channel").performTextInput("Maintenance")
+        compose.onNodeWithText("Facilities").assertDoesNotExist()
+        compose.onNode(hasText("Maintenance") and !hasSetTextAction()).performClick()
+        compose.waitUntil(5_000) { vm.uiState.value.selectedChannelId == "c2" }
+    }
+
+    @Test fun emptyPickerCanCreateOrCancelWithoutLosingItsPlace() {
+        var adding by mutableStateOf(false)
+        var created = ""
+        compose.setContent {
+            VikoTheme {
+                Box(Modifier.fillMaxSize().background(VBackground)) {
+                    ModalBottomSheet(onDismissRequest = {},
+                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                        containerColor = VBackground, dragHandle = { VikoDragHandle() }) {
+                        SelectChannelSheetContent(emptyList(), "", {}, { adding = true }, {})
+                    }
+                    if (adding) ModalBottomSheet(onDismissRequest = { adding = false },
+                        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                        containerColor = VBackground, dragHandle = null) {
+                        AddNewChannelSheetContent(onCreate = { created = it; adding = false },
+                            onClose = { adding = false })
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("No channel yet").assertIsDisplayed()
+        assertTrue(compose.onNodeWithTag("select-channel-sheet").fetchSemanticsNode().boundsInRoot.top > 100f)
+        capture("channel-empty.png")
+        compose.onNodeWithText("Add Channel").performClick()
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        capture("channel-create.png")
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.onNodeWithText("Search Channel").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add Channel").performClick()
+        compose.onNodeWithText("Enter Channel Name").performTextInput("  Warehouse  ")
+        compose.onNodeWithText("Continue").performClick()
+        compose.runOnIdle { assertEquals("Warehouse", created) }
     }
 
     private fun setup(channels: Channels): AddMemberViewModel {
