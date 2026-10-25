@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viko.R
+import com.example.viko.components.ExpandingVoicePulse
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
 import com.example.viko.view.theme.VOnSurfaceSecondary
@@ -64,7 +65,7 @@ fun AnnouncementSheetContent(onClose: () -> Unit) {
         Box(Modifier.fillMaxWidth().height(320.dp).testTag("announcement-icon-wrapper"),
             contentAlignment = Alignment.Center) {
             if (isSpeaking) {
-                AnnouncementSpeakingPulse(Modifier.matchParentSize().testTag("announcement-speaking-pulse"))
+                ExpandingVoicePulse(Modifier.matchParentSize().testTag("announcement-speaking-pulse"))
             }
             Box(
                 Modifier.size(168.dp).clip(CircleShape)
