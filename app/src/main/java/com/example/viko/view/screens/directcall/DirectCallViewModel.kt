@@ -4,7 +4,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.data.network.BadgeAudioServer
-import com.example.viko.data.network.VoiceMode
 import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.team.model.Worker
@@ -38,7 +37,7 @@ data class DirectCallUiState(
      * permission, or the badge has never been heard from so we have no address
      * for it. Silence with a lit-up button would be the worst possible feedback.
      */
-    val voiceOnly: Boolean = !VoiceMode.TRANSLATION_ENABLED,
+    val voiceOnly: Boolean = true,
     val talkError: String? = null
 )
 
@@ -62,17 +61,19 @@ class DirectCallViewModel(
      * release the button, since the cascade runs on the whole turn at once.
      */
     private val latestMessage = messageRepository.observeMessagesFor(workerId)
-        .map { it.firstOrNull() }
+        .map { rows -> rows.firstOrNull { it.originalLang == "vi" && it.targetLang == "ko" } }
 
-    private val translating = badgeRegistry.translating.map { workerId in it }
+    private val translationState = combine(badgeRegistry.translating, badgeRegistry.translationEnabled) { active, enabled ->
+        (workerId in active) to enabled
+    }
 
     val uiState: StateFlow<DirectCallUiState> = combine(
         workerRepository.observeWorker(workerId),
         talking,
         combine(talkError, audio.captureError) { requested, runtime -> runtime ?: requested },
         latestMessage,
-        translating
-    ) { worker, isTalking, error, message, isTranslating ->
+        translationState
+    ) { worker, isTalking, error, message, (isTranslating, enabled) ->
         DirectCallUiState(
             worker = worker,
             // Keep Stop reachable even if both people press at once.
@@ -85,9 +86,10 @@ class DirectCallViewModel(
             // cascade takes a few seconds on the whole turn, so the transcript always
             // lands after they have let go — gating on SPEAKING would mean it was
             // never once visible.
-            transcript = message?.originalText?.takeIf { VoiceMode.TRANSLATION_ENABLED && it.isNotBlank() },
-            translation = message?.translatedText?.takeIf { VoiceMode.TRANSLATION_ENABLED && it.isNotBlank() },
+            transcript = message?.originalText?.takeIf { enabled && it.isNotBlank() },
+            translation = message?.translatedText?.takeIf { enabled && it.isNotBlank() },
             isTranslating = isTranslating,
+            voiceOnly = !enabled,
             talkError = error
         )
     }.stateIn(

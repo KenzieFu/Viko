@@ -54,6 +54,21 @@ class Speaker(context: Context) : Closeable {
         }
     }
 
+    internal fun refreshOfflineVoice() {
+        val tts = engine ?: return
+        if (status is Status.Unavailable && selectOfflineVoice(tts, KOREAN) != null) {
+            configureAudio(tts)
+            status = Status.Ready
+        }
+    }
+
+    private fun configureAudio(tts: TextToSpeech) {
+        tts.setAudioAttributes(
+            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        )
+    }
+
     private fun configure(): Status {
         val tts = engine ?: return Status.Unavailable("engine went away during startup")
         return when (tts.setLanguage(KOREAN)) {
@@ -71,15 +86,7 @@ class Speaker(context: Context) : Closeable {
                 if (selectOfflineVoice(tts, KOREAN) == null) {
                     return Status.Unavailable(noOfflineVoiceMessage("Korean"))
                 }
-                tts.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        // MEDIA at loudspeaker volume, matching BadgeAudioServer's
-                        // playback. VOICE_COMMUNICATION routes to the earpiece on most
-                        // phones, which is useless on a factory floor.
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
+                configureAudio(tts)
                 Status.Ready
             }
         }

@@ -5,10 +5,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.SystemClock
 import com.example.viko.data.ai.Speaker
-import com.example.viko.data.ai.SpeechPipeline
 import com.example.viko.data.ai.VietnameseVoice
-import com.example.viko.data.ai.TagClassifier
-import com.example.viko.data.ai.TranslationPipeline
+import com.example.viko.data.ai.onevoice.OneVoicePipeline
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
@@ -80,37 +78,6 @@ class AppContainer(context: Context) {
      */
     val badgeAudio: BadgeAudioServer = BadgeAudioServer(context)
 
-    /**
-     * The badge control channel (TCP 5001 + mDNS). Started by
-     * [com.example.viko.VikoApplication]; it writes straight into the
-     * repositories above, so no screen depends on it directly.
-     */
-    /**
-     * On-device Vietnamese <-> Korean translation.
-     *
-     * Constructed eagerly because the constructor only resolves a directory path —
-     * the ~1.8GB of ONNX sessions behind it are opened on first use, so a phone with
-     * no models pushed (the default) never pays for one.
-     *
-     * Shared rather than per-screen: one set of graphs is all the device can afford,
-     * and both directions run through the same weights.
-     */
-    val translationPipeline by lazy { TranslationPipeline(context) }
-
-    /**
-     * Predicts the context tag that [translationPipeline] expects on its input.
-     * Separate objects rather than one because they are pushed, and fail,
-     * independently: a phone with the tagger but no translator should still tag.
-     */
-    val tagClassifier by lazy { TagClassifier(context) }
-
-    /**
-     * Speech in, translated text out — the whole cascade, in the order the
-     * reference defines. Holds the ASR models lazily, so a phone that only ever
-     * hears badge Vietnamese never maps the Korean model's 451MB.
-     */
-    val speechPipeline by lazy { SpeechPipeline(context, tagClassifier, translationPipeline) }
-
     /** Korean out of the loudspeaker. No model — Android's built-in engine. */
     val speaker by lazy { Speaker(context) }
 
@@ -129,7 +96,8 @@ class AppContainer(context: Context) {
         channels = channelRepository,
         alerts = alertRepository,
         messages = messageRepository,
-        speech = { speechPipeline },
+        modelDir = OneVoicePipeline.directory(context),
+        keepBothRecognizers = { OneVoicePipeline.canKeepBoth(context) },
         speaker = { speaker },
         voice = { vietnameseVoice }
     )

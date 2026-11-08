@@ -85,6 +85,13 @@ class VietnameseVoice(private val context: Context) : Closeable {
         }
     }
 
+    internal fun refreshOfflineVoice() {
+        val tts = engine ?: return
+        if (status is Status.Unavailable && selectOfflineVoice(tts, VIETNAMESE) != null) {
+            status = Status.Ready
+        }
+    }
+
     /**
      * Synthesises [vietnamese] and returns it as 16kHz mono PCM16, or null if
      * anything failed.
