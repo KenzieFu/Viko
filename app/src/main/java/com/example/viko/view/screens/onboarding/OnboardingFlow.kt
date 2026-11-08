@@ -83,7 +83,7 @@ internal fun OnboardingFlowContent(
                     // During guided setup the first channel is the only destination.
                     IconButton(onClick = onOpenChannel, modifier = Modifier.size(width = 64.dp, height = 56.dp)) {
                         Box(Modifier.size(32.dp).background(VBrand, CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Add, "Open team channel", tint = VOnSurface, modifier = Modifier.size(32.dp))
+                            Icon(Icons.Default.Add, "Open team channel", tint = VOnSurface, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
@@ -93,7 +93,7 @@ internal fun OnboardingFlowContent(
                 if (!roster) {
                     VikoListRow(state.channelName, Modifier.onGloballyPositioned { target = it.boundsInRoot() }, onOpenChannel) {
                         Text("${state.members.size}", fontSize = 12.sp, color = VOnSurfaceSecondary)
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(6.dp))
                         Icon(Icons.Default.ChevronRight, null, tint = VOnSurfaceSecondary, modifier = Modifier.size(16.dp))
                     }
                 } else {
