@@ -31,8 +31,15 @@ class OneVoiceInstrumentedTest {
         val expected = JSONArray(expectedFile.readText())
         assertEquals(3, expected.length())
 
-        OneVoicePipeline(root).use { pipeline ->
-            // Load each direction, repeat it warm, then switch recognizers.
+        OneVoicePipeline(root) { OneVoicePipeline.canKeepBoth(instrumentation.targetContext) }.use { pipeline ->
+            if (InstrumentationRegistry.getArguments().getString("prepareOneVoice") == "true") {
+                val start = SystemClock.elapsedRealtime()
+                pipeline.prepareTranslation()
+                pipeline.prepareWorker()
+                pipeline.prepareManager()
+                Log.i("OneVoiceTest", "Direct Call preparation elapsed=${SystemClock.elapsedRealtime() - start}ms")
+            }
+            // Repeat a phrase in each direction to exercise translation reuse.
             for (i in 0 until expected.length()) {
                 val row = expected.getJSONObject(i)
                 val direction = VoiceDirection.valueOf(row.getString("direction"))
@@ -77,5 +84,9 @@ class OneVoiceInstrumentedTest {
         assertTrue("Expected non-empty PCM16", pcm.size >= 32_000 && pcm.size % 2 == 0)
         assertTrue("Synthesised PCM is silent", pcm.any { it != 0.toByte() })
         Log.i("OneVoiceTest", "Vietnamese TTS: ${SystemClock.elapsedRealtime() - started}ms to synthesise ${pcm.size / 32_000f}s")
+        val repeatStart = SystemClock.elapsedRealtime()
+        val repeated = vietnamese.synthesise(rows.getJSONObject(rows.length() - 1).getString("translation"))
+        assertTrue("Reused speech should preserve the PCM", repeated != null && pcm.contentEquals(repeated))
+        Log.i("OneVoiceTest", "Repeated Vietnamese TTS elapsed=${SystemClock.elapsedRealtime() - repeatStart}ms")
     }
 }

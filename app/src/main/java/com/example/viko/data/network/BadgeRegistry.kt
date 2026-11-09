@@ -17,7 +17,12 @@ import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.type.WorkerStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +76,12 @@ class BadgeRegistry(
     private val _translationEnabled = MutableStateFlow(false)
     val translationEnabled = _translationEnabled.asStateFlow()
 
+    private val directCallOpened = MutableStateFlow(false)
+
+    fun prepareDirectCall() {
+        directCallOpened.value = true
+    }
+
     private data class Turn(val deviceId: String, val pcm: ByteArray, val direction: VoiceDirection)
 
     fun start(scope: CoroutineScope) {
@@ -111,7 +122,28 @@ class BadgeRegistry(
             _translationEnabled.value = true
             try {
                 OneVoicePipeline(modelDir, keepBothRecognizers).use { pipeline ->
-                    for (turn in turns) handleTurn(pipeline, turn)
+                    coroutineScope {
+                        val modelAccess = Mutex()
+                        val warmup = launch {
+                            directCallOpened.first { it }
+                            try {
+                                modelAccess.withLock { pipeline.prepareTranslation() }
+                                modelAccess.withLock { pipeline.prepareWorker() }
+                                modelAccess.withLock { pipeline.prepareManager() }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Could not prepare OneVoice models ahead of the call", e)
+                            } catch (e: LinkageError) {
+                                Log.w(TAG, "OneVoice libraries could not be loaded", e)
+                            }
+                        }
+                        try {
+                            for (turn in turns) handleTurn(pipeline, turn, modelAccess)
+                        } finally {
+                            warmup.cancelAndJoin()
+                        }
+                    }
                 }
             } finally {
                 _translationEnabled.value = false
@@ -122,12 +154,12 @@ class BadgeRegistry(
         }
     }
 
-    private suspend fun handleTurn(pipeline: OneVoicePipeline, turn: Turn) {
+    private suspend fun handleTurn(pipeline: OneVoicePipeline, turn: Turn, modelAccess: Mutex) {
         val (deviceId, pcm, direction) = turn
         val worker = workers.getWorker(deviceId) ?: return
         markTranslating(deviceId, true)
         try {
-            val result = pipeline.process(pcm, direction)
+            val result = modelAccess.withLock { pipeline.process(pcm, direction) }
             if (result == null) {
                 replayOriginal(turn)
                 return

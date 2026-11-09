@@ -52,6 +52,10 @@ class DirectCallViewModel(
     /** Also the badge's `device_id` — workers are keyed by it end to end. */
     private val workerId: String = checkNotNull(savedStateHandle[NavArgs.WORKER_ID])
 
+    init {
+        badgeRegistry.prepareDirectCall()
+    }
+
     private val talking = audio.isTalking
     private val talkError = MutableStateFlow<String?>(null)
 

@@ -8,6 +8,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import android.util.LruCache
 import com.example.viko.data.ai.LogMel
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
@@ -40,6 +41,7 @@ class OneVoicePipeline(
     private var ko: OfflineRecognizer? = null
     private var tagger: Tagger? = null
     private var translator: Translator? = null
+    private val recentTranslations = LruCache<Pair<VoiceDirection, String>, OneVoiceResult>(16)
 
     fun process(pcm: ByteArray, direction: VoiceDirection): OneVoiceResult? {
         require(pcm.size % 2 == 0 && pcm.size <= 30 * 32_000)
@@ -50,51 +52,83 @@ class OneVoicePipeline(
 
         val start = SystemClock.elapsedRealtime()
         val text = when (direction) {
-            VoiceDirection.Worker -> {
-                if (!keepBothRecognizers()) {
-                    ko?.release()
-                    ko = null
-                }
-                (vi ?: VietnameseAsr(File(root, "vi")).also { vi = it }).transcribe(samples)
-            }
-            VoiceDirection.Manager -> {
-                if (!keepBothRecognizers()) {
-                    vi?.close()
-                    vi = null
-                }
-                korean(samples)
-            }
+            VoiceDirection.Worker -> vietnamese().transcribe(samples)
+            VoiceDirection.Manager -> transcribeKorean(samples)
         }.trim()
         val afterAsr = SystemClock.elapsedRealtime()
         if (text.isBlank()) return null
-        val tag = (tagger ?: Tagger(File(root, "tagger")).also { tagger = it }).classify(text)
+        // A repeated instruction can skip tagging and decoding after ASR has
+        // independently produced the same transcript in the same direction.
+        val key = direction to text
+        recentTranslations.get(key)?.let { cached ->
+            Log.i("OneVoice", "${direction.source}->${direction.target} " +
+                "asr=${afterAsr - start}ms reused translation")
+            return cached
+        }
+        val tag = tagger().classify(text)
         val afterTag = SystemClock.elapsedRealtime()
-        val translated = (translator ?: Translator(File(root, "mt")).also { translator = it })
-            .translate(text, tag, direction)
+        val translated = translator().translate(text, tag, direction)
         Log.i("OneVoice", "${direction.source}->${direction.target} " +
             "asr=${afterAsr - start}ms tag=${afterTag - afterAsr}ms " +
             "mt=${SystemClock.elapsedRealtime() - afterTag}ms")
-        return OneVoiceResult(text, tag, translated)
+        return OneVoiceResult(text, tag, translated).also { result ->
+            if (result.translation.isNotBlank()) recentTranslations.put(key, result)
+        }
     }
 
-    private fun korean(samples: FloatArray): String {
-        val recognizer = ko ?: File(root, "ko").let { dir ->
-            OfflineRecognizer(
-                config = OfflineRecognizerConfig(
-                    modelConfig = OfflineModelConfig(
-                        transducer = OfflineTransducerModelConfig(
-                            encoder = File(dir, "encoder.onnx").path,
-                            decoder = File(dir, "decoder.onnx").path,
-                            joiner = File(dir, "joiner.onnx").path
-                        ),
-                        tokens = File(dir, "tokens.txt").path,
-                        numThreads = 4
-                    ),
-                    decodingMethod = "modified_beam_search",
-                    maxActivePaths = 8
-                )
-            ).also { ko = it }
+    // Called by the same worker that runs inference. Separate steps let a turn
+    // waiting for the models run before we start loading the other language.
+    internal fun prepareTranslation() {
+        translator()
+        tagger()
+    }
+
+    internal fun prepareWorker() {
+        if (ko == null || vi != null || keepBothRecognizers()) vietnamese()
+    }
+
+    internal fun prepareManager() {
+        if (vi != null && ko == null && keepBothRecognizers()) korean()
+    }
+
+    private fun tagger() = tagger ?: Tagger(File(root, "tagger")).also { tagger = it }
+    private fun translator() = translator ?: Translator(File(root, "mt")).also { translator = it }
+
+    private fun vietnamese(): VietnameseAsr {
+        vi?.let { return it }
+        if (ko != null && !keepBothRecognizers()) {
+            ko?.release()
+            ko = null
         }
+        return VietnameseAsr(File(root, "vi")).also { vi = it }
+    }
+
+    private fun korean(): OfflineRecognizer {
+        ko?.let { return it }
+        if (vi != null && !keepBothRecognizers()) {
+            vi?.close()
+            vi = null
+        }
+        val dir = File(root, "ko")
+        return OfflineRecognizer(
+            config = OfflineRecognizerConfig(
+                modelConfig = OfflineModelConfig(
+                    transducer = OfflineTransducerModelConfig(
+                        encoder = File(dir, "encoder.onnx").path,
+                        decoder = File(dir, "decoder.onnx").path,
+                        joiner = File(dir, "joiner.onnx").path
+                    ),
+                    tokens = File(dir, "tokens.txt").path,
+                    numThreads = 4
+                ),
+                decodingMethod = "modified_beam_search",
+                maxActivePaths = 8
+            )
+        ).also { ko = it }
+    }
+
+    private fun transcribeKorean(samples: FloatArray): String {
+        val recognizer = korean()
         val stream = recognizer.createStream()
         return try {
             stream.acceptWaveform(samples.copyOf(samples.size + 20_480), 16_000)
@@ -110,6 +144,7 @@ class OneVoicePipeline(
         ko?.release()
         tagger?.close()
         translator?.close()
+        recentTranslations.evictAll()
         vi = null
         ko = null
         tagger = null
@@ -263,7 +298,10 @@ private class VietnameseAsr(dir: File) : Closeable {
     private val decoder = CachedDecoder(dir)
 
     fun transcribe(samples: FloatArray): String {
-        val frames = mel.framesFor(samples.size)
+        // Short PTT calls can use 3.2 seconds of padding. Keep the original
+        // window sizing for longer recordings.
+        val padding = if (samples.size <= 10 * LogMel.SAMPLE_RATE) 320 else LogMel.PAD_FRAMES
+        val frames = mel.framesFor(samples.size, paddingFrames = padding)
         val (text, ended) = transcribe(samples, frames)
         // A shortened window must still let the model see trailing silence.
         // If it cannot finish, retry once with the reference 30-second window.
