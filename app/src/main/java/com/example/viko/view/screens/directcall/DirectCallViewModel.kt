@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.BadgeRegistry
+import com.example.viko.data.network.TranslationStatus
 import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
@@ -67,8 +68,8 @@ class DirectCallViewModel(
     private val latestMessage = messageRepository.observeMessagesFor(workerId)
         .map { rows -> rows.firstOrNull { it.originalLang == "vi" && it.targetLang == "ko" } }
 
-    private val translationState = combine(badgeRegistry.translating, badgeRegistry.translationEnabled) { active, enabled ->
-        (workerId in active) to enabled
+    private val translationState = combine(badgeRegistry.translating, badgeRegistry.translationStatus) { active, status ->
+        (workerId in active) to (status == TranslationStatus.ACTIVE)
     }
 
     val uiState: StateFlow<DirectCallUiState> = combine(

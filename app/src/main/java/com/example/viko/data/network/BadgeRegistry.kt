@@ -1,6 +1,7 @@
 package com.example.viko.data.network
 
 import android.util.Log
+import com.example.viko.data.settings.TranslationPreferences
 import com.example.viko.data.team.scanner.WifiDeviceScanner
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.data.ai.Speaker
@@ -17,10 +18,11 @@ import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.type.WorkerStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
@@ -34,6 +36,10 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.io.File
 import java.util.UUID
+
+enum class TranslationStatus {
+    OFF, CHECKING, ACTIVE, MODELS_MISSING, VOICES_MISSING, UNAVAILABLE
+}
 
 /**
  * Lists registrations for enrollment and updates already-enrolled workers.
@@ -53,6 +59,7 @@ class BadgeRegistry(
     private val alerts: AlertRepository,
     private val messages: MessageRepository,
     private val modelDir: File,
+    private val translationPreferences: TranslationPreferences,
     private val keepBothRecognizers: () -> Boolean,
     private val speaker: () -> Speaker,
     private val voice: () -> VietnameseVoice
@@ -73,8 +80,8 @@ class BadgeRegistry(
         _translating.update { if (active) it + deviceId else it - deviceId }
     }
 
-    private val _translationEnabled = MutableStateFlow(false)
-    val translationEnabled = _translationEnabled.asStateFlow()
+    private val _translationStatus = MutableStateFlow(TranslationStatus.OFF)
+    val translationStatus = _translationStatus.asStateFlow()
 
     private val directCallOpened = MutableStateFlow(false)
 
@@ -91,65 +98,94 @@ class BadgeRegistry(
         }
         server.start(scope)
         audio.start(scope)
-        if (!android.os.Process.is64Bit() || !OneVoicePipeline.installed(modelDir)) return
-
         scope.launch(Dispatchers.Default) {
-            val korean = speaker()
-            val vietnamese = voice()
-            withTimeoutOrNull(8_000) {
-                // The engine can publish installed voices shortly after its
-                // connection callback, especially after the phone boots.
-                while (korean.status !is Speaker.Status.Ready ||
-                    vietnamese.status !is VietnameseVoice.Status.Ready) {
-                    delay(500)
-                    korean.refreshOfflineVoice()
-                    vietnamese.refreshOfflineVoice()
-                }
-            }
-            if (korean.status !is Speaker.Status.Ready || vietnamese.status !is VietnameseVoice.Status.Ready) {
-                Log.w(TAG, "OneVoice requires installed offline Korean and Vietnamese voices")
-                return@launch
-            }
             val turns = Channel<Turn>(2)
             fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection) {
                 if (turns.trySend(Turn(id, pcm, direction)).isFailure) {
                     Log.w(TAG, "Translation busy; skipping turn")
                 }
             }
-
-            audio.onUtterance = { id, pcm -> enqueue(id, pcm, VoiceDirection.Worker) }
-            audio.onSupervisorUtterance = { id, pcm -> enqueue(id, pcm, VoiceDirection.Manager) }
-            _translationEnabled.value = true
+            val capture = BadgeAudioServer.TranslationCapture(
+                isEnabled = { translationPreferences.enabled.value },
+                worker = { id, pcm -> enqueue(id, pcm, VoiceDirection.Worker) },
+                manager = { id, pcm -> enqueue(id, pcm, VoiceDirection.Manager) }
+            )
             try {
                 OneVoicePipeline(modelDir, keepBothRecognizers).use { pipeline ->
                     coroutineScope {
                         val modelAccess = Mutex()
-                        val warmup = launch {
-                            directCallOpened.first { it }
-                            try {
-                                modelAccess.withLock { pipeline.prepareTranslation() }
-                                modelAccess.withLock { pipeline.prepareWorker() }
-                                modelAccess.withLock { pipeline.prepareManager() }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Could not prepare OneVoice models ahead of the call", e)
-                            } catch (e: LinkageError) {
-                                Log.w(TAG, "OneVoice libraries could not be loaded", e)
+                        val settings = launch {
+                            translationPreferences.enabled.collectLatest { enabled ->
+                                audio.translationCapture = null
+                                val status = if (enabled) {
+                                    _translationStatus.value = TranslationStatus.CHECKING
+                                    try {
+                                        checkTranslationSetup()
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Could not check OneVoice setup", e)
+                                        TranslationStatus.UNAVAILABLE
+                                    }
+                                } else {
+                                    TranslationStatus.OFF
+                                }
+                                if (status == TranslationStatus.ACTIVE) {
+                                    audio.translationCapture = capture
+                                }
+                                _translationStatus.value = status
                             }
                         }
+                        val warmup = launch { prepareModels(pipeline, modelAccess) }
                         try {
                             for (turn in turns) handleTurn(pipeline, turn, modelAccess)
                         } finally {
-                            warmup.cancelAndJoin()
+                            settings.cancel()
+                            warmup.cancel()
                         }
                     }
                 }
             } finally {
-                _translationEnabled.value = false
-                audio.onUtterance = null
-                audio.onSupervisorUtterance = null
+                audio.translationCapture = null
+                _translationStatus.value = TranslationStatus.OFF
                 turns.close()
+            }
+        }
+    }
+
+    private suspend fun checkTranslationSetup(): TranslationStatus {
+        if (!android.os.Process.is64Bit()) return TranslationStatus.UNAVAILABLE
+        if (!OneVoicePipeline.installed(modelDir)) return TranslationStatus.MODELS_MISSING
+
+        val korean = speaker()
+        val vietnamese = voice()
+        val ready = withTimeoutOrNull(8_000) {
+            // Installed voices can become available shortly after the engine connects.
+            while (korean.status !is Speaker.Status.Ready || vietnamese.status !is VietnameseVoice.Status.Ready) {
+                delay(500)
+                korean.refreshOfflineVoice()
+                vietnamese.refreshOfflineVoice()
+            }
+            true
+        }
+        return if (ready == true) TranslationStatus.ACTIVE else TranslationStatus.VOICES_MISSING
+    }
+
+    private suspend fun prepareModels(pipeline: OneVoicePipeline, modelAccess: Mutex) {
+        combine(directCallOpened, translationStatus) { opened, status ->
+            opened && status == TranslationStatus.ACTIVE
+        }.distinctUntilChanged().collectLatest { prepare ->
+            if (!prepare) return@collectLatest
+            try {
+                modelAccess.withLock { pipeline.prepareTranslation() }
+                modelAccess.withLock { pipeline.prepareWorker() }
+                modelAccess.withLock { pipeline.prepareManager() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not prepare OneVoice models ahead of the call", e)
+            } catch (e: LinkageError) {
+                Log.w(TAG, "OneVoice libraries could not be loaded", e)
             }
         }
     }
@@ -195,9 +231,10 @@ class BadgeRegistry(
         } catch (e: LinkageError) {
             Log.e(TAG, "OneVoice native library unavailable", e)
             // Missing ABI libraries cannot be repaired during this process.
-            audio.onUtterance = null
-            audio.onSupervisorUtterance = null
-            _translationEnabled.value = false
+            audio.translationCapture = null
+            if (translationPreferences.enabled.value) {
+                _translationStatus.value = TranslationStatus.UNAVAILABLE
+            }
             replayOriginal(turn)
         } finally {
             markTranslating(deviceId, false)

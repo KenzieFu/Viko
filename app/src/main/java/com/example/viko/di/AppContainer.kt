@@ -16,6 +16,7 @@ import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.BadgeControlServer
 import com.example.viko.data.network.BadgeRegistry
 import com.example.viko.data.settings.FactoryWifiRepositoryImpl
+import com.example.viko.data.settings.TranslationPreferences
 import com.example.viko.data.team.repository.WorkerRepositoryImpl
 import com.example.viko.data.team.scanner.BleDeviceScanner
 import com.example.viko.data.team.scanner.WifiDeviceScanner
@@ -88,6 +89,8 @@ class AppContainer(context: Context) {
      */
     val vietnameseVoice by lazy { VietnameseVoice(context) }
 
+    val translationPreferences = TranslationPreferences(context)
+
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
         discovery = wifiDiscovery,
@@ -97,6 +100,7 @@ class AppContainer(context: Context) {
         alerts = alertRepository,
         messages = messageRepository,
         modelDir = OneVoicePipeline.directory(context),
+        translationPreferences = translationPreferences,
         keepBothRecognizers = { OneVoicePipeline.canKeepBoth(context) },
         speaker = { speaker },
         voice = { vietnameseVoice }

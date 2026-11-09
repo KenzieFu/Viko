@@ -128,7 +128,7 @@ class BadgeAudioServer(context: Context) {
      */
     private val utterances = ConcurrentHashMap<String, BadgeUtterance>()
 
-    private class BadgeUtterance {
+    private class BadgeUtterance(val submit: (deviceId: String, pcm: ByteArray) -> Unit) {
         private val pcm = ByteArrayOutputStream()
         private var expected: Long? = null
 
@@ -149,25 +149,19 @@ class BadgeAudioServer(context: Context) {
         fun snapshot(): ByteArray = pcm.toByteArray()
     }
 
-    /**
-     * Called on `ptt_end` with the whole utterance as PCM16.
-     *
-     * Invoked on the receive thread, so the handler must hand off immediately —
-     * the cascade takes seconds and this loop has datagrams waiting.
-     */
+    internal data class TranslationCapture(
+        val isEnabled: () -> Boolean,
+        val worker: (deviceId: String, pcm: ByteArray) -> Unit,
+        val manager: (deviceId: String, pcm: ByteArray) -> Unit
+    )
+
+    /** Capture mode is selected once per PTT press, in either direction. */
     @Volatile
-    var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
+    internal var translationCapture: TranslationCapture? = null
 
     /** Write every received utterance to `files/captures/` as a WAV, for diagnosis. */
     @Volatile
     var dumpUtterances: Boolean = false
-
-    /**
-     * Called when the supervisor releases the talk button, with everything the
-     * phone mic captured. The mirror of [onUtterance] for the other direction.
-     */
-    @Volatile
-    var onSupervisorUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
     /** The supervisor's turn, accumulating while they hold the button. */
     private val _isTalking = MutableStateFlow(false)
@@ -390,14 +384,16 @@ class BadgeAudioServer(context: Context) {
      * and half of one turn glued to another transcribes as nonsense.
      */
     fun beginUtterance(deviceId: String) {
-        if (onUtterance == null) return
-        if (utterances.put(deviceId, BadgeUtterance()) != null) {
+        val submit = translationCapture?.takeIf { it.isEnabled() }?.worker
+        val previous = if (submit == null) utterances.remove(deviceId)
+        else utterances.put(deviceId, BadgeUtterance(submit))
+        if (previous != null) {
             Log.w(TAG, "$deviceId started a new turn without ending the last — discarding it")
         }
     }
 
     /**
-     * Ends the utterance and hands it to [onUtterance]. Called on `ptt_end`.
+     * Ends the utterance and hands it to the handler selected at the start. Called on `ptt_end`.
      *
      * Silent if nothing was buffered, which happens routinely: a badge whose
      * button was tapped rather than held sends both control packets with no audio
@@ -414,7 +410,7 @@ class BadgeAudioServer(context: Context) {
             if (pcm.isEmpty()) return@launch
             Log.i(TAG, "Captured ${pcm.size / 2} samples, ${describe(pcm)}")
             if (dumpUtterances) dump(deviceId, pcm)
-            onUtterance?.invoke(deviceId, pcm)
+            buffer.submit(deviceId, pcm)
         }
     }
 
@@ -528,8 +524,8 @@ class BadgeAudioServer(context: Context) {
         submitSupervisorTurn = false
         // ATOMIC guarantees the finally block runs even if this screen closes
         // before the IO dispatcher starts the job (the recorder is already open).
+        val submit = translationCapture?.takeIf { it.isEnabled() }?.manager
         captureJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
-            val submit = onSupervisorUtterance
             val recorded = if (submit != null) ByteArrayOutputStream() else null
             try {
                 senderMutex.withLock {

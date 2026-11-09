@@ -4,6 +4,8 @@ In Direct Call, the manager speaks Korean and the Viko badge plays the Vietnames
 
 The phone uses the November OneVoice checkpoints: Vietnamese PhoWhisper, Korean Zipformer, MiniLM context tagging and one shared M2M translator. The tag controls translation tone; it never creates an SOS alert. Model inference and speech synthesis work locally after setup. The app uses the live voice path if the model pack or either offline voice is missing. The local Wi-Fi still needs to connect the phone and badge; it does not need an internet uplink.
 
+In **Settings → AI translation**, switch translation on for Vietnamese and Korean or off for original voice. The app saves the selection and applies it to the next push-to-talk turn without a restart. The row shows when models or offline voices are missing.
+
 ## Provision a manager phone
 
 1. Build and install the debug app on a 64-bit Android phone. Allow the microphone, local network and Bluetooth permissions when prompted, and pair the badge on the factory Wi-Fi.
