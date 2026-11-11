@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val factoryWifi: FactoryWifi = FactoryWifi(),
-    val aiTranslationEnabled: Boolean = true,
+    val aiTranslationEnabled: Boolean = false,
     val translationStatus: TranslationStatus = TranslationStatus.OFF
 )
 

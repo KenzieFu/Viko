@@ -17,12 +17,12 @@ class PcmPlaybackQueueTest {
         assertArrayEquals(pcm(2), q.poll(0)!!.pcm)
         assertNull(q.poll(0))
     }
-    @Test fun overloadKeepsOnlySixNewestFrames() {
+    @Test fun overloadKeepsOnlyEightNewestFrames() {
         val q = PcmPlaybackQueue()
         repeat(100) { q.offer("a", it.toLong(), pcm(it), it * 20L) }
-        repeat(6) { assertArrayEquals(pcm(94 + it), q.poll(0)!!.pcm) }
+        repeat(8) { assertArrayEquals(pcm(92 + it), q.poll(0)!!.pcm) }
         assertNull(q.poll(0))
-        assertEquals(94L, q.overflow)
+        assertEquals(92L, q.overflow)
     }
     @Test fun differentBadgesDoNotInterleaveAndIdleReleasesChannel() {
         val q = PcmPlaybackQueue()
@@ -56,5 +56,25 @@ class PcmPlaybackQueueTest {
         assertTrue(q.offer("a", 0, pcm(2), 20))
         assertArrayEquals(pcm(), q.poll(0)!!.pcm)
         assertArrayEquals(pcm(2), q.poll(0)!!.pcm)
+    }
+    @Test fun lostPacketsDoNotReplaceQueuedSpeechWithSilence() {
+        val q = PcmPlaybackQueue()
+        repeat(7) { q.offer("a", it.toLong(), pcm(it + 1), it * 20L) }
+        q.offer("a", 10, pcm(11), 200)
+        repeat(7) { assertArrayEquals(pcm(it + 1), q.poll(0)!!.pcm) }
+        assertArrayEquals(pcm(11), q.poll(0)!!.pcm)
+        assertEquals(3L, q.missing)
+        assertEquals(0L, q.concealed)
+        assertEquals(0L, q.overflow)
+        assertNull(q.poll(0))
+    }
+    @Test fun fullQueueSacrificesOnlyOneOldFrameForRealSpeech() {
+        val q = PcmPlaybackQueue()
+        repeat(8) { q.offer("a", it.toLong(), pcm(it + 1), it * 20L) }
+        q.offer("a", 11, pcm(12), 220)
+        repeat(7) { assertArrayEquals(pcm(it + 2), q.poll(0)!!.pcm) }
+        assertArrayEquals(pcm(12), q.poll(0)!!.pcm)
+        assertEquals(0L, q.concealed)
+        assertEquals(1L, q.overflow)
     }
 }

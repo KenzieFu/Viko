@@ -114,6 +114,7 @@ class BadgeAudioServer(context: Context) {
     }
 
     private val appContext = context.applicationContext
+    private val voiceWifiLock = VoiceWifiLock(appContext)
 
     /** Last known IP per `device_id`. Rewritten whenever a badge is heard from. */
     private val badgeAddresses = ConcurrentHashMap<String, InetAddress>()
@@ -236,6 +237,7 @@ class BadgeAudioServer(context: Context) {
                 } finally {
                     socket = null
                     playback.clear()
+                    voiceWifiLock.release()
                 }
             }
         }
@@ -247,6 +249,7 @@ class BadgeAudioServer(context: Context) {
         var checkedAt = 0L
         while (isActive) {
             val now = SystemClock.elapsedRealtime()
+            voiceWifiLock.releaseIfIdle(_isTalking.value)
             if (now - checkedAt >= 1000) {
                 checkedAt = now
                 // A replaced/lost Wi-Fi network needs a fresh socket binding.
@@ -291,6 +294,7 @@ class BadgeAudioServer(context: Context) {
             sequence !in 0..0xffffffffL) return
         badgeAddresses[deviceId] = packet.address
         val now = SystemClock.elapsedRealtime()
+        voiceWifiLock.touch()
         lastBadgeAudioMs[deviceId] = now
         if (deviceId !in _activeBadges.value) {
             _activeBadges.update { it + deviceId }
@@ -541,6 +545,7 @@ class BadgeAudioServer(context: Context) {
             return "Could not start the microphone"
         }
         _isTalking.value = true
+        voiceWifiLock.touch()
         submitSupervisorTurn = false
         // ATOMIC guarantees the finally block runs even if this screen closes
         // before the IO dispatcher starts the job (the recorder is already open).
@@ -687,6 +692,7 @@ class BadgeAudioServer(context: Context) {
      */
     private fun sendTo(deviceId: String, target: InetAddress, audio: ByteArray, length: Int) {
         val bound = socket ?: throw IOException("Audio socket unavailable")
+        voiceWifiLock.touch()
         val header = JSONObject().apply {
             put("type", "audio")
             put("device_id", deviceId)

@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class TranslationPreferences(context: Context) {
     private val prefs = context.getSharedPreferences("voice_settings", Context.MODE_PRIVATE)
-    private val requested = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
+    private val requested = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false))
     val enabled = requested.asStateFlow()
 
     fun setEnabled(enabled: Boolean) {

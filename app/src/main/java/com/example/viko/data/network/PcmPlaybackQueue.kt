@@ -6,13 +6,15 @@ import java.util.concurrent.TimeUnit
 /** Bounded FIFO jitter buffer. Late packets are dropped, never played backwards. */
 internal class PcmPlaybackQueue {
     class Frame(val pcm: ByteArray, val receivedMs: Long)
-    private val frames = ArrayBlockingQueue<Frame>(6) // at most 120ms PCM
+    private val frames = ArrayBlockingQueue<Frame>(8) // at most 160ms PCM
     private var device: String? = null
     private var expected = 0L
     private var lastReceived = 0L
     var dropped = 0L
         private set
     var concealed = 0L
+        private set
+    var missing = 0L
         private set
     var overflow = 0L
         private set
@@ -32,7 +34,11 @@ internal class PcmPlaybackQueue {
         // Signed 32-bit difference also handles uint32 rollover.
         val gap = (sequence - expected).toInt()
         if (gap < 0) { dropped++; return false }
-        repeat(minOf(gap, 2)) {
+        missing += gap
+        // Never evict received speech to make room for synthetic silence.
+        // Reserve one free slot for the actual packet, even after a Wi-Fi burst.
+        val concealCount = minOf(gap, 2, maxOf(0, frames.remainingCapacity() - 1))
+        repeat(concealCount) {
             push(Frame(ByteArray(640), nowMs))
             concealed++
         }
@@ -51,7 +57,7 @@ internal class PcmPlaybackQueue {
     }
 
     @Synchronized
-    fun stats(): String = "queued=${frames.size} dropped=$dropped silence=$concealed overflow=$overflow"
+    fun stats(): String = "queued=${frames.size} dropped=$dropped missing=$missing silence=$concealed overflow=$overflow"
 
     fun poll(timeoutMs: Long): Frame? = frames.poll(timeoutMs, TimeUnit.MILLISECONDS)
 
