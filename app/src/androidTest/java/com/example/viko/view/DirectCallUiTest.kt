@@ -66,6 +66,19 @@ class DirectCallUiTest {
         compose.onNodeWithTag("direct-call-mic").assertIsEnabled()
     }
 
+    @Test fun badgeAudioHighlightsTheLargeMicInVoiceOnlyMode() {
+        state = state.copy(callState = CallState.LISTENING, voiceOnly = true)
+        showCall()
+        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(168.dp).assertIsNotEnabled()
+        compose.onNodeWithTag("direct-call-mic").assertContentDescriptionEquals("Badge microphone active")
+        compose.onNodeWithTag("direct-call-badge-mic-pulse").assertExists()
+        compose.onNodeWithText("BADGE SPEAKING").assertIsDisplayed()
+        compose.onNodeWithTag("direct-call-transcript").assertDoesNotExist()
+        compose.runOnIdle { state = state.copy(callState = CallState.IDLE) }
+        compose.onNodeWithTag("direct-call-badge-mic-pulse").assertDoesNotExist()
+        compose.onNodeWithTag("direct-call-mic").assertIsEnabled()
+    }
+
     @Test fun cancellationAndLeavingScreenDiscardTheHeldTurn() {
         showCall()
         compose.onNodeWithTag("direct-call-mic").performTouchInput { down(center) }

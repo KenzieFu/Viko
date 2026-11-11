@@ -25,6 +25,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
@@ -160,6 +161,11 @@ class BadgeAudioServer(context: Context) {
     /** The supervisor's turn, accumulating while they hold the button. */
     private val _isTalking = MutableStateFlow(false)
     val isTalking = _isTalking.asStateFlow()
+    // Audio packets are immediate evidence that a badge is talking. TCP PTT
+    // control can arrive later (or fail), so expose this separately to the UI.
+    private val _activeBadges = MutableStateFlow<Set<String>>(emptySet())
+    val activeBadges = _activeBadges.asStateFlow()
+    private val lastBadgeAudioMs = ConcurrentHashMap<String, Long>()
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError = _captureError.asStateFlow()
     @Volatile private var submitSupervisorTurn = false
@@ -278,12 +284,17 @@ class BadgeAudioServer(context: Context) {
         if (audioLength !in 2..CHUNK_BYTES || audioLength % 2 != 0 ||
             sequence !in 0..0xffffffffL) return
         badgeAddresses[deviceId] = packet.address
+        val now = SystemClock.elapsedRealtime()
+        lastBadgeAudioMs[deviceId] = now
+        if (deviceId !in _activeBadges.value) {
+            _activeBadges.update { it + deviceId }
+            Log.i(TAG, "audio active for $deviceId from ${packet.address.hostAddress}")
+        }
         if (relayLiveAudio && !_isTalking.value) {
             playback.offer(deviceId, sequence, data.copyOfRange(audioOffset, length),
-                android.os.SystemClock.elapsedRealtime())
+                now)
         }
 
-        val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastStatsMs >= 5000) {
             lastStatsMs = now
             Log.i(TAG, "playback ${playback.stats()}")
@@ -305,6 +316,15 @@ class BadgeAudioServer(context: Context) {
         var lastPlayed = 0L
         try {
             while (isActive) {
+                val now = SystemClock.elapsedRealtime()
+                _activeBadges.update { active ->
+                    active.filterTo(mutableSetOf()) { deviceId ->
+                        now - (lastBadgeAudioMs[deviceId] ?: 0L) <= IDLE_TIMEOUT_MS
+                    }
+                }
+                lastBadgeAudioMs.forEach { (deviceId, lastMs) ->
+                    if (now - lastMs > IDLE_TIMEOUT_MS) lastBadgeAudioMs.remove(deviceId, lastMs)
+                }
                 if (_isTalking.value) {
                     playback.clear()
                     releasePlayback()

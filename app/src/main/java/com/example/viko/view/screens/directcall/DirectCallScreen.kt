@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -100,7 +101,7 @@ fun DirectCallScreen(
     val listening = uiState.callState == CallState.LISTENING
     val speaking = uiState.callState == CallState.SPEAKING
     // A completed translation often arrives after the member releases their mic.
-    val showTranscript = !speaking && (listening || uiState.isTranslating ||
+    val showTranscript = !uiState.voiceOnly && !speaking && (listening || uiState.isTranslating ||
         uiState.translation != null || uiState.transcript != null)
 
     Column(
@@ -138,6 +139,7 @@ fun DirectCallScreen(
                 }
                 MicButton(
                     speaking = speaking,
+                    listening = listening,
                     compact = showTranscript,
                     enabled = worker.isOnline && !listening,
                     onStart = onStartTalking, onStop = onStopTalking, onCancel = onCancelTalking
@@ -221,7 +223,7 @@ private fun TranscriptCard(text: String?, source: String?, isTranslating: Boolea
 /** Press/release owns capture. Recomposition during a press must not restart the gesture. */
 @Composable
 private fun MicButton(
-    speaking: Boolean, compact: Boolean, enabled: Boolean,
+    speaking: Boolean, listening: Boolean, compact: Boolean, enabled: Boolean,
     onStart: () -> Unit, onStop: () -> Unit, onCancel: () -> Unit
 ) {
     val start by rememberUpdatedState(onStart)
@@ -231,13 +233,29 @@ private fun MicButton(
         if (speaking) {
             ExpandingVoicePulse(Modifier.matchParentSize().testTag("direct-call-speaking-pulse"), outerRadius = 210.dp)
         }
+        if (listening) {
+            ExpandingVoicePulse(
+                Modifier.matchParentSize().testTag("direct-call-badge-mic-pulse"),
+                color = VMemberSpeaking, outerRadius = 210.dp
+            )
+        }
         Box(
             Modifier.matchParentSize().testTag("direct-call-mic").clip(CircleShape)
-                .background(when { !enabled -> VSurface; speaking -> VMicBlue; else -> Color.White })
+                .background(when { listening -> VMemberSpeakingSurface; !enabled -> VSurface; speaking -> VMicBlue; else -> Color.White })
+                .then(if (listening) Modifier.border(2.dp, VMemberSpeaking, CircleShape) else Modifier)
                 .semantics {
                     role = Role.Button
-                    contentDescription = if (!enabled) "Microphone unavailable" else "Hold to speak"
-                    stateDescription = if (speaking) "Speaking" else if (!enabled) "Unavailable" else "Ready"
+                    contentDescription = when {
+                        listening -> "Badge microphone active"
+                        !enabled -> "Microphone unavailable"
+                        else -> "Hold to speak"
+                    }
+                    stateDescription = when {
+                        listening -> "Listening to badge"
+                        speaking -> "Speaking"
+                        !enabled -> "Unavailable"
+                        else -> "Ready"
+                    }
                     if (!enabled) disabled()
                     else onClick(label = if (speaking) "Stop speaking" else "Start speaking") {
                         // Accessibility users can explicitly start and stop without holding a gesture.
@@ -260,9 +278,16 @@ private fun MicButton(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Icon(painterResource(R.drawable.ic_mic), contentDescription = null,
-                tint = when { !enabled -> VMicBlue.copy(alpha = .25f); speaking -> Color.White; else -> VMicBlue },
-                modifier = Modifier.size(if (compact) 28.dp else 44.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(painterResource(R.drawable.ic_mic), contentDescription = null,
+                    tint = when { listening -> VMemberSpeakingText; !enabled -> VMicBlue.copy(alpha = .25f); speaking -> Color.White; else -> VMicBlue },
+                    modifier = Modifier.size(if (compact) 28.dp else 44.dp))
+                if (listening && !compact) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("BADGE SPEAKING", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        color = VMemberSpeakingText, letterSpacing = 1.sp)
+                }
+            }
         }
     }
 }

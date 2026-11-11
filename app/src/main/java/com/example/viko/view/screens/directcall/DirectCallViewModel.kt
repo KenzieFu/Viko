@@ -54,6 +54,9 @@ class DirectCallViewModel(
     private val workerId: String = checkNotNull(savedStateHandle[NavArgs.WORKER_ID])
 
     private val talking = audio.isTalking
+    private val audioState = combine(talking, audio.activeBadges) { isTalking, activeBadges ->
+        isTalking to (workerId in activeBadges)
+    }
     private val talkError = MutableStateFlow<String?>(null)
 
     /**
@@ -68,17 +71,17 @@ class DirectCallViewModel(
 
     val uiState: StateFlow<DirectCallUiState> = combine(
         workerRepository.observeWorker(workerId),
-        talking,
+        audioState,
         combine(talkError, audio.captureError) { requested, runtime -> runtime ?: requested },
         latestMessage,
         translating
-    ) { worker, isTalking, error, message, isTranslating ->
+    ) { worker, (isTalking, badgeAudioActive), error, message, isTranslating ->
         DirectCallUiState(
             worker = worker,
             // Keep Stop reachable even if both people press at once.
             callState = when {
                 isTalking -> CallState.SPEAKING
-                worker?.status == WorkerStatus.SPEAKING -> CallState.LISTENING
+                badgeAudioActive || worker?.status == WorkerStatus.SPEAKING -> CallState.LISTENING
                 else -> CallState.IDLE
             },
             // Deliberately NOT gated on the member still holding the channel. The

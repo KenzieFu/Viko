@@ -60,7 +60,8 @@ class BleProvisioner(context: Context) {
         private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
         private const val REQUESTED_MTU = 256
-        private const val PROVISION_TIMEOUT_MS = 20_000L
+        // The badge allows 30 seconds for physical confirmation, after GATT setup.
+        private const val PROVISION_TIMEOUT_MS = 45_000L
     }
 
     private val appContext = context.applicationContext
@@ -203,21 +204,27 @@ class BleProvisioner(context: Context) {
             }
 
             val payload = config.toJson().toByteArray(Charsets.UTF_8)
-            Log.i(TAG, "provisioning $address, payload ${payload.size} bytes")
+            Log.i(TAG, "pairing start device=$address ssid=${config.ssid} password_length=${config.password.length} payload_bytes=${payload.size}")
 
             var gatt: BluetoothGatt? = null
             var finished = false
+            var stage = "connecting"
             val handler = Handler(Looper.getMainLooper())
 
             fun finish(result: Result) {
                 if (finished) return
                 finished = true
+                Log.i(TAG, "pairing result device=$address stage=$stage result=${when (result) {
+                    is Result.Success -> "saved"
+                    is Result.Failure -> result.message
+                }}")
                 handler.removeCallbacksAndMessages(null)
                 runCatching { gatt?.close() }
                 if (cont.isActive) cont.resume(result)
             }
 
             val timeout = Runnable {
+                Log.w(TAG, "pairing timeout device=$address stage=$stage after=${PROVISION_TIMEOUT_MS}ms")
                 finish(Result.Failure("Timed out. Is the badge still in pairing mode?"))
             }
             handler.postDelayed(timeout, PROVISION_TIMEOUT_MS)
@@ -227,19 +234,22 @@ class BleProvisioner(context: Context) {
                 override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
                     when (newState) {
                         BluetoothProfile.STATE_CONNECTED -> {
-                            Log.i(TAG, "connected, discovering services")
-                            g.discoverServices()
+                            stage = "discovering services"
+                            Log.i(TAG, "pairing connected device=$address; discovering services")
+                            if (!g.discoverServices()) finish(Result.Failure("Could not start service discovery"))
                         }
                         BluetoothProfile.STATE_DISCONNECTED -> {
                             // A disconnect AFTER the badge notified "saved" is
                             // normal — it reboots into station mode. finish() is
                             // idempotent so that success is not overwritten here.
+                            Log.w(TAG, "pairing disconnected device=$address status=$status stage=$stage")
                             finish(Result.Failure("Disconnected (status $status)"))
                         }
                     }
                 }
 
                 override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+                    Log.i(TAG, "pairing services device=$address status=$status count=${g.services.size}")
                     if (status != BluetoothGatt.GATT_SUCCESS) {
                         finish(Result.Failure("Service discovery failed ($status)"))
                         return
@@ -248,13 +258,14 @@ class BleProvisioner(context: Context) {
                         finish(Result.Failure("Not a ViKo badge — service not found"))
                         return
                     }
-                    g.requestMtu(REQUESTED_MTU)
+                    stage = "negotiating MTU"
+                    if (!g.requestMtu(REQUESTED_MTU)) finish(Result.Failure("Could not request BLE MTU"))
                 }
 
                 override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
                     // ATT overhead is 3 bytes; a 23-byte MTU leaves 20 usable and
                     // would silently truncate the JSON on the badge side.
-                    Log.i(TAG, "MTU now $mtu (usable ${mtu - 3}), payload ${payload.size}")
+                    Log.i(TAG, "pairing MTU device=$address status=$status mtu=$mtu usable=${mtu - 3} payload=${payload.size}")
                     if (mtu - 3 < payload.size) {
                         finish(Result.Failure("MTU too small ($mtu) for ${payload.size}-byte config"))
                         return
@@ -263,27 +274,31 @@ class BleProvisioner(context: Context) {
                 }
 
                 private fun subscribeToStatus(g: BluetoothGatt) {
+                    stage = "subscribing to badge status"
                     val statusChar = g.getService(SERVICE_UUID)?.getCharacteristic(STATUS_CHAR_UUID)
                     if (statusChar == null) {
                         finish(Result.Failure("Status characteristic missing"))
                         return
                     }
-                    g.setCharacteristicNotification(statusChar, true)
-                    val cccd = statusChar.getDescriptor(CCCD_UUID)
-                    if (cccd == null) {
-                        // No CCCD: can't subscribe. Write anyway and fall back to
-                        // treating a successful write as success.
-                        writeConfig(g)
+                    if (!g.setCharacteristicNotification(statusChar, true)) {
+                        finish(Result.Failure("Could not enable badge status notifications"))
                         return
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    val cccd = statusChar.getDescriptor(CCCD_UUID)
+                    if (cccd == null) {
+                        finish(Result.Failure("Badge status notification descriptor missing"))
+                        return
+                    }
+                    val subscribed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothStatusCodes.SUCCESS
                     } else {
                         @Suppress("DEPRECATION")
                         cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         @Suppress("DEPRECATION")
                         g.writeDescriptor(cccd)
                     }
+                    Log.i(TAG, "pairing subscribe requested device=$address accepted=$subscribed")
+                    if (!subscribed) finish(Result.Failure("Could not subscribe to badge status"))
                 }
 
                 override fun onDescriptorWrite(
@@ -291,10 +306,16 @@ class BleProvisioner(context: Context) {
                     descriptor: BluetoothGattDescriptor,
                     status: Int
                 ) {
+                    Log.i(TAG, "pairing status subscription device=$address status=$status")
+                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                        finish(Result.Failure("Badge status subscription failed ($status)"))
+                        return
+                    }
                     writeConfig(g)
                 }
 
                 private fun writeConfig(g: BluetoothGatt) {
+                    stage = "writing config"
                     val configChar = g.getService(SERVICE_UUID)?.getCharacteristic(CONFIG_CHAR_UUID)
                     if (configChar == null) {
                         finish(Result.Failure("Config characteristic missing"))
@@ -314,6 +335,7 @@ class BleProvisioner(context: Context) {
                         @Suppress("DEPRECATION")
                         g.writeCharacteristic(configChar)
                     }
+                    Log.i(TAG, "pairing config write requested device=$address accepted=$ok bytes=${payload.size}")
                     if (!ok) finish(Result.Failure("Failed to send config"))
                 }
 
@@ -322,8 +344,11 @@ class BleProvisioner(context: Context) {
                     characteristic: BluetoothGattCharacteristic,
                     status: Int
                 ) {
+                    Log.i(TAG, "pairing config write completed device=$address status=$status")
                     if (status != BluetoothGatt.GATT_SUCCESS) {
                         finish(Result.Failure("Config write rejected ($status)"))
+                    } else {
+                        stage = "waiting for physical confirmation or saved status"
                     }
                     // Success path: wait for the badge's "saved" notify below.
                 }
@@ -343,11 +368,14 @@ class BleProvisioner(context: Context) {
                 ) = handleStatus(String(characteristic.value ?: byteArrayOf(), Charsets.UTF_8))
 
                 private fun handleStatus(status: String) {
-                    Log.i(TAG, "badge status: $status")
+                    Log.i(TAG, "pairing badge status device=$address stage=$stage status=$status")
                     when (status.trim()) {
                         "saved" -> finish(Result.Success)
                         "bad_json" -> finish(Result.Failure("Badge rejected the config (bad JSON)"))
                         "missing_fields" -> finish(Result.Failure("Badge rejected the config (missing fields)"))
+                        "hold_talk" -> stage = "hold Talk for 3 seconds"
+                        "confirm_on_badge" -> stage = "tap Talk, release, then hold for 3 seconds"
+                        "confirmation_timeout" -> finish(Result.Failure("Settings were not confirmed on the badge"))
                         // "waiting" is the initial value — ignore.
                     }
                 }

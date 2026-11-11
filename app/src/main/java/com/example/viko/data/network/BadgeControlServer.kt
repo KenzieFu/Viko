@@ -17,6 +17,8 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.Semaphore
 
 /**
  * The manager side of the badge control channel.
@@ -59,6 +61,7 @@ class BadgeControlServer(context: Context) {
         appContext.getSystemService(Context.NSD_SERVICE) as NsdManager
 
     private val _packets = MutableSharedFlow<BadgePacket>(extraBufferCapacity = 16)
+    private val connectionSlots = Semaphore(16)
 
     /** Every control packet a badge has sent since [start]. */
     val packets: SharedFlow<BadgePacket> = _packets.asSharedFlow()
@@ -89,24 +92,28 @@ class BadgeControlServer(context: Context) {
         }
     }
 
-    /**
-     * Handles exactly one badge connection.
-     *
-     * ponytail: serial accept — one badge at a time. Each message is a few
-     * hundred bytes and the read is capped by [READ_TIMEOUT_MS], so a handful
-     * of simultaneous badges queue for milliseconds. Move the body into its own
-     * `launch {}` if a whole factory of them ever collides here.
-     */
-    private suspend fun accept(server: ServerSocket) {
+    /** A silent socket must not hold up PTT from another badge for 3 seconds. */
+    private fun CoroutineScope.accept(server: ServerSocket) {
+        val socket = server.accept()
+        if (!connectionSlots.tryAcquire()) {
+            socket.close()
+            Log.w(TAG, "too many open badge control connections")
+            return
+        }
+        launch {
+            try { handle(socket) } finally { connectionSlots.release() }
+        }
+    }
+
+    /** Handles one newline-delimited control packet on its own IO coroutine. */
+    private suspend fun handle(socket: Socket) {
         val (line, source) = try {
-            server.accept().use { socket ->
+            socket.use {
                 socket.soTimeout = READ_TIMEOUT_MS
                 socket.getInputStream().bufferedReader().readLine() to socket.inetAddress
             }
         } catch (e: IOException) {
-            // Caught per-connection, not per-bind: one badge dropping mid-message
-            // shouldn't tear down and rebind the listening socket.
-            Log.w(TAG, "badge connection dropped mid-message", e)
+            Log.w(TAG, "badge connection dropped mid-message: ${e.message}")
             return
         }
 
