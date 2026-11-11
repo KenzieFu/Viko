@@ -53,7 +53,6 @@ import com.example.viko.view.theme.VListeningPanel
 import com.example.viko.view.theme.VMemberSpeaking
 import com.example.viko.view.theme.VMemberSpeakingText
 import com.example.viko.view.theme.VMemberSpeakingPulse
-import com.example.viko.type.WorkerStatus
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VMicRing
 import com.example.viko.view.theme.VOnSurface
@@ -110,7 +109,7 @@ fun ChannelCard(
     val activeCircleColor = if (isListening) VMemberSpeaking else VMicBlue
     val activeIconColor = Color.White
     val activeLabelColor = if (isListening) VMemberSpeakingText else VMicRing
-    val speaker = summary.members.firstOrNull { it.status == WorkerStatus.SPEAKING }
+    val speaker = summary.speaker
 
     // Only a live channel gets a panel. A staffed-but-quiet one is separated from
     // an empty one by opacity alone, which is what the Figma grid shows.

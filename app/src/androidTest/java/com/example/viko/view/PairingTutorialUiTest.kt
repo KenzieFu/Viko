@@ -118,6 +118,33 @@ class PairingTutorialUiTest {
         compose.onNodeWithContentDescription("Talk to Operations").assertIsDisplayed()
     }
 
+    @Test fun homeShowsSpeakerFromAudioBeforeTalkControlArrives() {
+        val activeBadgeIds = mutableStateOf(setOf("worker-2"))
+        compose.setContent {
+            TestTheme {
+                val members = listOf(
+                    previewWorker("worker-1", "Le Khanh Linh", "team"),
+                    previewWorker("worker-2", "Nguyen Minh Tam", "team")
+                )
+                HomeScreen(
+                    uiState = HomeUiState(
+                        channels = listOf(ChannelSummary(Channel("team", "Operations"), members,
+                            activeBadgeIds.value)),
+                        hasMembers = true, isLoaded = true
+                    ),
+                    onOpenNotifications = {}, onOpenSettings = {}, onDirectCall = {},
+                    onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
+                    onResolveAlert = {}, startTutorial = false
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Listening to Operations").assertIsDisplayed()
+        compose.onNodeWithText("Nguyen Minh Tam").assertIsDisplayed()
+        compose.runOnIdle { activeBadgeIds.value = emptySet() }
+        compose.onNodeWithText("Nguyen Minh Tam").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Talk to Operations").assertIsDisplayed()
+    }
+
     @Test fun largeTextIntroCanScrollToSkipWithoutStartingTutorial() {
         var skipped = false
         var started = false

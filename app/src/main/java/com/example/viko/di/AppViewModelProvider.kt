@@ -36,7 +36,8 @@ object AppViewModelProvider {
             HomeViewModel(
                 workerRepository = container().workerRepository,
                 channelRepository = container().channelRepository,
-                alertRepository = container().alertRepository
+                alertRepository = container().alertRepository,
+                audio = container().badgeAudio
             )
         }
         initializer {
