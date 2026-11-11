@@ -130,9 +130,9 @@ class LogMel(filterFile: File) {
      * the encoder's second convolution has stride 2, and clamped to the 30s the
      * model was trained on.
      */
-    fun framesFor(samples: Int): Int {
+    fun framesFor(samples: Int, paddingFrames: Int = PAD_FRAMES): Int {
         val speech = (samples + HOP - 1) / HOP
-        val needed = speech + PAD_FRAMES
+        val needed = speech + paddingFrames
         val even = needed + (needed and 1)
         return even.coerceIn(MIN_FRAMES, FRAMES)
     }

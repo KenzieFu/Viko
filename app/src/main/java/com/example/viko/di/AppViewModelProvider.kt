@@ -65,7 +65,11 @@ object AppViewModelProvider {
             )
         }
         initializer {
-            SettingsViewModel(factoryWifiRepository = container().factoryWifiRepository)
+            SettingsViewModel(
+                factoryWifiRepository = container().factoryWifiRepository,
+                translationPreferences = container().translationPreferences,
+                badgeRegistry = container().badgeRegistry
+            )
         }
         initializer {
             ManageChannelViewModel(

@@ -2,6 +2,9 @@ package com.example.viko.view.screens.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -32,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -41,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.ScreenHeader
 import com.example.viko.components.VikoDragHandle
+import com.example.viko.data.network.TranslationStatus
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.settings.model.FactoryWifi
 import com.example.viko.view.screens.settings.components.FactoryWifiSheetContent
@@ -69,7 +75,8 @@ fun SettingsScreen(
         onOpenManageMembers = onOpenManageMembers,
         onOpenManageChannels = onOpenManageChannels,
         onReplayOnboarding = onReplayOnboarding,
-        onSaveFactoryWifi = viewModel::saveFactoryWifi
+        onSaveFactoryWifi = viewModel::saveFactoryWifi,
+        onAiTranslationChange = viewModel::setAiTranslation
     )
 }
 
@@ -81,7 +88,8 @@ fun SettingsScreen(
     onOpenManageMembers: () -> Unit,
     onOpenManageChannels: () -> Unit,
     onReplayOnboarding: () -> Unit,
-    onSaveFactoryWifi: (FactoryWifi) -> Unit
+    onSaveFactoryWifi: (FactoryWifi) -> Unit,
+    onAiTranslationChange: (Boolean) -> Unit
 ) {
     var showWifiSheet by rememberSaveable { mutableStateOf(false) }
 
@@ -98,11 +106,14 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         Column(
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             SettingsRow(title = "Manage Members", onClick = onOpenManageMembers)
             SettingsRow(title = "Manage Channels", onClick = onOpenManageChannels)
+            AiTranslationRow(uiState, onAiTranslationChange)
             SettingsRow(title = "Replay onboarding", value = "Keeps your data", onClick = onReplayOnboarding)
             // One network for the whole factory — every access point shares the
             // SSID and password — so it is a setting, not a field per member.
@@ -131,6 +142,48 @@ fun SettingsScreen(
                 onClose = { showWifiSheet = false }
             )
         }
+    }
+}
+
+@Composable
+private fun AiTranslationRow(uiState: SettingsUiState, onChange: (Boolean) -> Unit) {
+    val checked = uiState.aiTranslationEnabled
+    val description = if (!checked) {
+        "Use original voice"
+    } else {
+        when (uiState.translationStatus) {
+            TranslationStatus.OFF, TranslationStatus.CHECKING -> "Checking translation setup…"
+            TranslationStatus.ACTIVE -> "Vietnamese ↔ Korean"
+            TranslationStatus.MODELS_MISSING -> "Install the OneVoice models to translate"
+            TranslationStatus.VOICES_MISSING -> "Install offline Korean and Vietnamese voices"
+            TranslationStatus.UNAVAILABLE -> "Translation unavailable"
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(VSurface)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "AI translation",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = VOnSurface
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = VOnSurfaceSecondary
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -179,7 +232,7 @@ private fun SettingsScreenPreview() {
         SettingsScreen(
             uiState = SettingsUiState(FactoryWifi(ssid = "FactoryTranslate_AP")),
             onBack = {}, onOpenManageMembers = {}, onOpenManageChannels = {},
-            onReplayOnboarding = {}, onSaveFactoryWifi = {}
+            onReplayOnboarding = {}, onSaveFactoryWifi = {}, onAiTranslationChange = {}
         )
     }
 }

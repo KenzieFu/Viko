@@ -121,42 +121,48 @@ class BadgeAudioServer(context: Context) {
     /**
      * Speech accumulating between `ptt_start` and `ptt_end`, per badge.
      *
-     * A **tee**, not an interception: [play] still gets every chunk the moment it
-     * arrives, so the supervisor hears the worker live and the voice link keeps
-     * working even if nothing downstream does. Transcription happens afterwards
-     * from this copy.
+     * In translation mode the turn is collected for inference. Otherwise frames
+     * go directly to the playback queue.
      *
      * Keyed by `device_id` so two badges holding their buttons at once do not
      * interleave into one another's utterance.
      */
-    private val utterances = ConcurrentHashMap<String, ByteArrayOutputStream>()
+    private val utterances = ConcurrentHashMap<String, BadgeUtterance>()
 
-    /**
-     * Called on `ptt_end` with the whole utterance as PCM16.
-     *
-     * Invoked on the receive thread, so the handler must hand off immediately —
-     * the cascade takes seconds and this loop has datagrams waiting.
-     */
-    @Volatile
-    var onUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
+    private class BadgeUtterance(val submit: (deviceId: String, pcm: ByteArray) -> Unit) {
+        private val pcm = ByteArrayOutputStream()
+        private var expected: Long? = null
 
-    /** Live relay is the default for the voice-only build. */
+        @Synchronized
+        fun append(sequence: Long, data: ByteArray, offset: Int, length: Int) {
+            val gap = (sequence - (expected ?: sequence)).toInt()
+            if (gap < 0) return // Duplicate or late packet.
+            val missing = minOf(gap, 3) * CHUNK_BYTES
+            if (missing > 0 && pcm.size() + missing <= MAX_UTTERANCE_BYTES) {
+                pcm.write(ByteArray(missing))
+            }
+            val count = minOf(length, MAX_UTTERANCE_BYTES - pcm.size())
+            if (count > 0) pcm.write(data, offset, count)
+            expected = (sequence + 1) and 0xffffffffL
+        }
+
+        @Synchronized
+        fun snapshot(): ByteArray = pcm.toByteArray()
+    }
+
+    internal data class TranslationCapture(
+        val isEnabled: () -> Boolean,
+        val worker: (deviceId: String, pcm: ByteArray) -> Unit,
+        val manager: (deviceId: String, pcm: ByteArray) -> Unit
+    )
+
+    /** Capture mode is selected once per PTT press, in either direction. */
     @Volatile
-    var relayLiveAudio: Boolean = !VoiceMode.TRANSLATION_ENABLED
+    internal var translationCapture: TranslationCapture? = null
 
     /** Write every received utterance to `files/captures/` as a WAV, for diagnosis. */
     @Volatile
     var dumpUtterances: Boolean = false
-
-    @Volatile
-    var relayLiveMic: Boolean = !VoiceMode.TRANSLATION_ENABLED
-
-    /**
-     * Called when the supervisor releases the talk button, with everything the
-     * phone mic captured. The mirror of [onUtterance] for the other direction.
-     */
-    @Volatile
-    var onSupervisorUtterance: ((deviceId: String, pcm: ByteArray) -> Unit)? = null
 
     /** The supervisor's turn, accumulating while they hold the button. */
     private val _isTalking = MutableStateFlow(false)
@@ -290,7 +296,8 @@ class BadgeAudioServer(context: Context) {
             _activeBadges.update { it + deviceId }
             Log.i(TAG, "audio active for $deviceId from ${packet.address.hostAddress}")
         }
-        if (relayLiveAudio && !_isTalking.value) {
+        val utterance = utterances[deviceId]
+        if (utterance == null && !_isTalking.value) {
             playback.offer(deviceId, sequence, data.copyOfRange(audioOffset, length),
                 now)
         }
@@ -299,16 +306,7 @@ class BadgeAudioServer(context: Context) {
             lastStatsMs = now
             Log.i(TAG, "playback ${playback.stats()}")
         }
-        // Tee into the utterance buffer if this badge is mid-turn. After play(),
-        // deliberately: a failure here must never cost the supervisor the live audio.
-        utterances[deviceId]?.let { buffer ->
-            if (buffer.size() + audioLength <= MAX_UTTERANCE_BYTES) {
-                buffer.write(data, audioOffset, audioLength)
-            } else if (buffer.size() < MAX_UTTERANCE_BYTES) {
-                Log.w(TAG, "$deviceId utterance hit ${MAX_UTTERANCE_BYTES / (SAMPLE_RATE * 2)}s, truncating")
-                buffer.write(data, audioOffset, MAX_UTTERANCE_BYTES - buffer.size())
-            }
-        }
+        utterance?.append(sequence, data, audioOffset, audioLength)
     }
 
     /** The sole owner of AudioTrack; the receive thread never waits for the DAC. */
@@ -406,30 +404,34 @@ class BadgeAudioServer(context: Context) {
      * and half of one turn glued to another transcribes as nonsense.
      */
     fun beginUtterance(deviceId: String) {
-        if (!VoiceMode.TRANSLATION_ENABLED) return
-        if (utterances.put(deviceId, ByteArrayOutputStream()) != null) {
+        val submit = translationCapture?.takeIf { it.isEnabled() }?.worker
+        val previous = if (submit == null) utterances.remove(deviceId)
+        else utterances.put(deviceId, BadgeUtterance(submit))
+        if (previous != null) {
             Log.w(TAG, "$deviceId started a new turn without ending the last — discarding it")
         }
     }
 
     /**
-     * Ends the utterance and hands it to [onUtterance]. Called on `ptt_end`.
+     * Ends the utterance and hands it to the handler selected at the start. Called on `ptt_end`.
      *
      * Silent if nothing was buffered, which happens routinely: a badge whose
      * button was tapped rather than held sends both control packets with no audio
      * between them.
      */
-    fun endUtterance(deviceId: String) {
-        val buffer = utterances.remove(deviceId) ?: return
-        val pcm = buffer.toByteArray()
-        if (pcm.isEmpty()) return
-        Log.i(
-            TAG,
-            "$deviceId utterance: ${pcm.size / 2} samples, " +
-                "${pcm.size / (SAMPLE_RATE * 2f)}s, ${describe(pcm)}"
-        )
-        if (dumpUtterances) dump(deviceId, pcm)
-        onUtterance?.invoke(deviceId, pcm)
+    fun endUtterance(deviceId: String, scope: CoroutineScope) {
+        val buffer = utterances[deviceId] ?: return
+        scope.launch(Dispatchers.IO) {
+            // TCP PTT release can overtake the last few UDP audio frames.
+            // A new press invalidates this buffer without touching the new turn.
+            delay(60.milliseconds)
+            if (!utterances.remove(deviceId, buffer)) return@launch
+            val pcm = buffer.snapshot()
+            if (pcm.isEmpty()) return@launch
+            Log.i(TAG, "Captured ${pcm.size / 2} samples, ${describe(pcm)}")
+            if (dumpUtterances) dump(deviceId, pcm)
+            buffer.submit(deviceId, pcm)
+        }
     }
 
     /**
@@ -542,8 +544,9 @@ class BadgeAudioServer(context: Context) {
         submitSupervisorTurn = false
         // ATOMIC guarantees the finally block runs even if this screen closes
         // before the IO dispatcher starts the job (the recorder is already open).
+        val submit = translationCapture?.takeIf { it.isEnabled() }?.manager
         captureJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
-            val recorded = if (VoiceMode.TRANSLATION_ENABLED) ByteArrayOutputStream() else null
+            val recorded = if (submit != null) ByteArrayOutputStream() else null
             try {
                 senderMutex.withLock {
                     outgoingSequence = 0
@@ -555,15 +558,21 @@ class BadgeAudioServer(context: Context) {
                         if (read == 0) { delay(1.milliseconds); continue }
                         filled += read
                         if (filled < CHUNK_BYTES) continue
-                        if (relayLiveMic) sendTo(deviceId, target, chunk, filled)
+                        if (recorded == null) sendTo(deviceId, target, chunk, filled)
                         recorded?.let {
                             val keep = minOf(filled, MAX_UTTERANCE_BYTES - it.size())
                             if (keep > 0) it.write(chunk, 0, keep)
                         }
                         filled = 0
                     }
-                    if (filled > 0 && filled % 2 == 0 && relayLiveMic)
-                        sendTo(deviceId, target, chunk, filled)
+                    val tail = filled and -2
+                    if (tail > 0) {
+                        if (recorded == null) sendTo(deviceId, target, chunk, tail)
+                        else {
+                            val keep = minOf(tail, MAX_UTTERANCE_BYTES - recorded.size())
+                            if (keep > 0) recorded.write(chunk, 0, keep)
+                        }
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -575,7 +584,7 @@ class BadgeAudioServer(context: Context) {
                 record.release()
                 _isTalking.value = false
                 if (submitSupervisorTurn && recorded != null && recorded.size() > 0)
-                    onSupervisorUtterance?.invoke(deviceId, recorded.toByteArray())
+                    submit?.invoke(deviceId, recorded.toByteArray())
             }
         }
         return null
@@ -586,6 +595,18 @@ class BadgeAudioServer(context: Context) {
         // another capture. Never snapshot a buffer while its producer is writing.
         submitSupervisorTurn = deviceId != null
         _isTalking.value = false
+    }
+
+    /** Reuse the bounded playback queue if inference or offline speech fails. */
+    suspend fun playLocalPcm(deviceId: String, pcm: ByteArray) {
+        var sequence = 0L
+        var offset = 0
+        while (offset < pcm.size && !isTalking.value) {
+            val end = minOf(offset + CHUNK_BYTES, pcm.size)
+            playback.offer(deviceId, sequence++, pcm.copyOfRange(offset, end), SystemClock.elapsedRealtime())
+            offset = end
+            delay(CHUNK_MS.milliseconds)
+        }
     }
 
     /**

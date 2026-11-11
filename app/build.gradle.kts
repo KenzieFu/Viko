@@ -22,6 +22,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // The upstream static AAR includes a second ONNX Runtime on 32-bit x86.
+    // Leave x86_64 and the ARM ABIs available.
+    packaging { jniLibs.excludes += "**/x86/**" }
     buildTypes {
         release {
             optimization {
@@ -59,6 +62,7 @@ dependencies {
     // HuggingFace tokenizers, whose native .so must come from the Android artifact.
     // The models themselves are never packaged — see scripts/push-models.sh.
     implementation(libs.onnxruntime.android)
+    implementation("com.k2fsa:sherpa-onnx-static-link-onnxruntime:1.13.3@aar")
     implementation(libs.djl.tokenizers)
     runtimeOnly(libs.djl.tokenizer.native)
     implementation(libs.jtransforms)

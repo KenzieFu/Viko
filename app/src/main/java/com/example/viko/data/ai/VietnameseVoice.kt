@@ -4,6 +4,7 @@ import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import android.util.LruCache
 import java.io.Closeable
 import java.io.File
 import java.nio.ByteBuffer
@@ -56,6 +57,9 @@ class VietnameseVoice(private val context: Context) : Closeable {
         private set
 
     private var engine: TextToSpeech? = null
+    private val recentAudio = object : LruCache<String, ByteArray>(512 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray) = value.size
+    }
 
     init {
         engine = TextToSpeech(context.applicationContext) { code ->
@@ -85,12 +89,20 @@ class VietnameseVoice(private val context: Context) : Closeable {
         }
     }
 
+    internal fun refreshOfflineVoice() {
+        val tts = engine ?: return
+        if (status is Status.Unavailable && selectOfflineVoice(tts, VIETNAMESE) != null) {
+            status = Status.Ready
+        }
+    }
+
     /**
      * Synthesises [vietnamese] and returns it as 16kHz mono PCM16, or null if
      * anything failed.
      *
      * Blocking, on the order of a second. Call it off the main thread.
      */
+    @Synchronized
     fun synthesise(vietnamese: String): ByteArray? {
         if (vietnamese.isBlank()) return null
         val tts = engine
@@ -99,9 +111,13 @@ class VietnameseVoice(private val context: Context) : Closeable {
             return null
         }
 
+        recentAudio.get(vietnamese)?.let { return it.copyOf() }
         val file = File(context.cacheDir, "viko-tts-${System.nanoTime()}.wav")
         return try {
-            if (!writeWav(tts, vietnamese, file)) null else readAsPcm16(file)
+            if (!writeWav(tts, vietnamese, file)) null
+            else readAsPcm16(file)?.also { pcm ->
+                if (pcm.isNotEmpty()) recentAudio.put(vietnamese, pcm.copyOf())
+            }
         } catch (e: Exception) {
             Log.e(TAG, "vietnamese synthesis failed", e)
             null
@@ -231,7 +247,9 @@ class VietnameseVoice(private val context: Context) : Closeable {
         return bytes
     }
 
+    @Synchronized
     override fun close() {
+        recentAudio.evictAll()
         runCatching { engine?.stop() }
         runCatching { engine?.shutdown() }
         engine = null

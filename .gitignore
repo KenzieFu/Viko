@@ -47,3 +47,4 @@ google-services.json
 
 # Claude Code working notes — local only
 /Claude.md
+__pycache__/

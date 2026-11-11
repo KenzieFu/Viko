@@ -1,11 +1,13 @@
 package com.example.viko.data.network
 
 import android.util.Log
+import com.example.viko.data.settings.TranslationPreferences
 import com.example.viko.data.team.scanner.WifiDeviceScanner
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.data.ai.Speaker
-import com.example.viko.data.ai.SpeechPipeline
 import com.example.viko.data.ai.VietnameseVoice
+import com.example.viko.data.ai.onevoice.OneVoicePipeline
+import com.example.viko.data.ai.onevoice.VoiceDirection
 import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
@@ -14,7 +16,17 @@ import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.type.WorkerStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +34,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.io.File
+import java.util.UUID
+
+enum class TranslationStatus {
+    OFF, CHECKING, ACTIVE, MODELS_MISSING, VOICES_MISSING, UNAVAILABLE
+}
 
 /**
  * Lists registrations for enrollment and updates already-enrolled workers.
@@ -40,7 +58,9 @@ class BadgeRegistry(
     private val channels: ChannelRepository,
     private val alerts: AlertRepository,
     private val messages: MessageRepository,
-    private val speech: () -> SpeechPipeline,
+    private val modelDir: File,
+    private val translationPreferences: TranslationPreferences,
+    private val keepBothRecognizers: () -> Boolean,
     private val speaker: () -> Speaker,
     private val voice: () -> VietnameseVoice
 ) {
@@ -60,71 +80,175 @@ class BadgeRegistry(
         _translating.update { if (active) it + deviceId else it - deviceId }
     }
 
+    private val _translationStatus = MutableStateFlow(TranslationStatus.OFF)
+    val translationStatus = _translationStatus.asStateFlow()
+
+    private val directCallOpened = MutableStateFlow(false)
+
+    fun prepareDirectCall() {
+        directCallOpened.value = true
+    }
+
+    private data class Turn(val deviceId: String, val pcm: ByteArray, val direction: VoiceDirection)
+
     fun start(scope: CoroutineScope) {
         // Subscribe before accepting packets: SharedFlow has no replay.
         scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-            server.packets.collect(::apply)
+            server.packets.collect { apply(it, scope) }
         }
         server.start(scope)
         audio.start(scope)
-        if (!VoiceMode.TRANSLATION_ENABLED) return
-
-        // Runs on the receive thread, so it must not block: the cascade takes
-        // seconds and there are datagrams queued behind it. Dispatchers.Default
-        // rather than IO because this is CPU-bound inference, not waiting on a
-        // socket, and it must not compete with the audio thread for IO workers.
-        audio.onUtterance = { deviceId, pcm ->
-            scope.launch(Dispatchers.Default) { translate(deviceId, pcm) }
-        }
-        audio.onSupervisorUtterance = { deviceId, pcm ->
-            scope.launch(Dispatchers.Default) { answer(deviceId, pcm) }
+        scope.launch(Dispatchers.Default) {
+            val turns = Channel<Turn>(2)
+            fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection) {
+                if (turns.trySend(Turn(id, pcm, direction)).isFailure) {
+                    Log.w(TAG, "Translation busy; skipping turn")
+                }
+            }
+            val capture = BadgeAudioServer.TranslationCapture(
+                isEnabled = { translationPreferences.enabled.value },
+                worker = { id, pcm -> enqueue(id, pcm, VoiceDirection.Worker) },
+                manager = { id, pcm -> enqueue(id, pcm, VoiceDirection.Manager) }
+            )
+            try {
+                OneVoicePipeline(modelDir, keepBothRecognizers).use { pipeline ->
+                    coroutineScope {
+                        val modelAccess = Mutex()
+                        val settings = launch {
+                            translationPreferences.enabled.collectLatest { enabled ->
+                                audio.translationCapture = null
+                                val status = if (enabled) {
+                                    _translationStatus.value = TranslationStatus.CHECKING
+                                    try {
+                                        checkTranslationSetup()
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Could not check OneVoice setup", e)
+                                        TranslationStatus.UNAVAILABLE
+                                    }
+                                } else {
+                                    TranslationStatus.OFF
+                                }
+                                if (status == TranslationStatus.ACTIVE) {
+                                    audio.translationCapture = capture
+                                }
+                                _translationStatus.value = status
+                            }
+                        }
+                        val warmup = launch { prepareModels(pipeline, modelAccess) }
+                        try {
+                            for (turn in turns) handleTurn(pipeline, turn, modelAccess)
+                        } finally {
+                            settings.cancel()
+                            warmup.cancel()
+                        }
+                    }
+                }
+            } finally {
+                audio.translationCapture = null
+                _translationStatus.value = TranslationStatus.OFF
+                turns.close()
+            }
         }
     }
 
-    /**
-     * One badge utterance: Vietnamese speech in, Korean spoken to the supervisor
-     * and a transcript stored.
-     *
-     * Everything here is best-effort. The models are pushed by hand and any stage
-     * may be missing, in which case the supervisor still heard the raw speech live
-     * — [BadgeAudioServer] played it as it arrived — and this simply adds nothing.
-     */
-    private suspend fun translate(deviceId: String, pcm: ByteArray) {
+    private suspend fun checkTranslationSetup(): TranslationStatus {
+        if (!android.os.Process.is64Bit()) return TranslationStatus.UNAVAILABLE
+        if (!OneVoicePipeline.installed(modelDir)) return TranslationStatus.MODELS_MISSING
+
+        val korean = speaker()
+        val vietnamese = voice()
+        val ready = withTimeoutOrNull(8_000) {
+            // Installed voices can become available shortly after the engine connects.
+            while (korean.status !is Speaker.Status.Ready || vietnamese.status !is VietnameseVoice.Status.Ready) {
+                delay(500)
+                korean.refreshOfflineVoice()
+                vietnamese.refreshOfflineVoice()
+            }
+            true
+        }
+        return if (ready == true) TranslationStatus.ACTIVE else TranslationStatus.VOICES_MISSING
+    }
+
+    private suspend fun prepareModels(pipeline: OneVoicePipeline, modelAccess: Mutex) {
+        combine(directCallOpened, translationStatus) { opened, status ->
+            opened && status == TranslationStatus.ACTIVE
+        }.distinctUntilChanged().collectLatest { prepare ->
+            if (!prepare) return@collectLatest
+            try {
+                modelAccess.withLock { pipeline.prepareTranslation() }
+                modelAccess.withLock { pipeline.prepareWorker() }
+                modelAccess.withLock { pipeline.prepareManager() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not prepare OneVoice models ahead of the call", e)
+            } catch (e: LinkageError) {
+                Log.w(TAG, "OneVoice libraries could not be loaded", e)
+            }
+        }
+    }
+
+    private suspend fun handleTurn(pipeline: OneVoicePipeline, turn: Turn, modelAccess: Mutex) {
+        val (deviceId, pcm, direction) = turn
+        val worker = workers.getWorker(deviceId) ?: return
         markTranslating(deviceId, true)
-        val result = try {
-            speech().process(pcm, sourceLanguage = "vi", targetLanguage = "ko")
+        try {
+            val result = modelAccess.withLock { pipeline.process(pcm, direction) }
+            if (result == null) {
+                replayOriginal(turn)
+                return
+            }
+            val translated = result.translation
+            if (translated.isNotBlank()) {
+                messages.addMessage(
+                    TranslationMessage(
+                        id = UUID.randomUUID().toString(),
+                        workerId = deviceId,
+                        workerName = worker.name,
+                        channelId = worker.channelId,
+                        originalText = result.transcript,
+                        translatedText = translated,
+                        originalLang = direction.source,
+                        targetLang = direction.target,
+                        timestamp = Instant.now().toString()
+                    )
+                )
+            }
+            val delivered = translated.isNotBlank() && when (direction) {
+                VoiceDirection.Worker -> !audio.isTalking.value && speaker().speak(translated)
+                VoiceDirection.Manager -> voice().synthesise(translated)?.let {
+                    audio.sendPcm(deviceId, it)
+                } ?: false
+            }
+            if (!delivered) replayOriginal(turn)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "cascade failed for $deviceId", e)
-            return
+            Log.e(TAG, "OneVoice turn failed", e)
+            replayOriginal(turn)
+        } catch (e: LinkageError) {
+            Log.e(TAG, "OneVoice native library unavailable", e)
+            // Missing ABI libraries cannot be repaired during this process.
+            audio.translationCapture = null
+            if (translationPreferences.enabled.value) {
+                _translationStatus.value = TranslationStatus.UNAVAILABLE
+            }
+            replayOriginal(turn)
         } finally {
-            // In `finally`, so a crash or an unintelligible utterance clears the
-            // indicator too. A spinner that never stops is worse than no spinner.
             markTranslating(deviceId, false)
         }
-        if (!result.hasText) return
-
-        val worker = workers.getWorker(deviceId)
-        messages.addMessage(
-            TranslationMessage(
-                id = "$deviceId-${System.currentTimeMillis()}",
-                workerId = deviceId,
-                workerName = worker?.name ?: deviceId,
-                channelId = worker?.channelId.orEmpty(),
-                originalText = result.transcript.orEmpty(),
-                translatedText = result.translation.orEmpty(),
-                originalLang = result.sourceLanguage,
-                targetLang = result.targetLanguage,
-                timestamp = Instant.now().toString()
-            )
-        )
-
-        // Only speak a real translation. Reading the Vietnamese aloud to a Korean
-        // supervisor would be worse than the silence, and they already heard it.
-        result.translation?.takeIf { it.isNotBlank() }?.let { speaker().speak(it) }
-        Log.i(TAG, "$deviceId: '${result.transcript}' -> <${result.tag}> -> '${result.translation}'")
     }
 
-    private suspend fun apply(packet: BadgePacket) {
+    private suspend fun replayOriginal(turn: Turn) {
+        when (turn.direction) {
+            VoiceDirection.Worker -> audio.playLocalPcm(turn.deviceId, turn.pcm)
+            VoiceDirection.Manager -> audio.sendPcm(turn.deviceId, turn.pcm)
+        }
+    }
+
+    private suspend fun apply(packet: BadgePacket, scope: CoroutineScope) {
         // Every control message is fresh evidence of where this badge is, and
         // the audio channel needs an address before the supervisor can talk to
         // a badge that has only registered.
@@ -151,8 +275,11 @@ class BadgeRegistry(
                 // by a silence timeout: BadgeAudioServer's IDLE_TIMEOUT_MS exists to
                 // reset clock drift between the badge's I2S and this phone's DAC, and
                 // a gap in speech is not the end of a turn.
-                if (packet.speaking) audio.beginUtterance(packet.deviceId)
-                else audio.endUtterance(packet.deviceId)
+                if (packet.speaking) {
+                    if (known != null) audio.beginUtterance(packet.deviceId)
+                } else {
+                    audio.endUtterance(packet.deviceId, scope)
+                }
 
                 known?.let {
                     workers.updateWorker(
@@ -184,56 +311,8 @@ class BadgeRegistry(
         }
     }
 
-    /**
-     * One supervisor turn: Korean speech in, Vietnamese spoken out of the badge.
-     *
-     * The mirror of [translate], sharing every stage — the same tagger, the same
-     * MT weights with the direction flipped, and the same silence gate. Only the
-     * ends differ: `whisper-ko` instead of `whisper-vi`, and the result goes back
-     * over UDP as bytes rather than out of this phone's speaker.
-     *
-     * The badge already heard the raw Korean live while the button was held, so a
-     * failure here costs the translation, not the channel.
-     */
-    private suspend fun answer(deviceId: String, pcm: ByteArray) {
-        markTranslating(deviceId, true)
-        val result = try {
-            speech().process(pcm, sourceLanguage = "ko", targetLanguage = "vi")
-        } catch (e: Exception) {
-            Log.e(TAG, "reverse cascade failed for $deviceId", e)
-            return
-        } finally {
-            markTranslating(deviceId, false)
-        }
-        val vietnamese = result.translation?.takeIf { it.isNotBlank() } ?: return
-
-        val audioBytes = voice().synthesise(vietnamese)
-        if (audioBytes == null) {
-            Log.w(TAG, "could not synthesise Vietnamese for $deviceId")
-            return
-        }
-        audio.sendPcm(deviceId, audioBytes)
-
-        val worker = workers.getWorker(deviceId)
-        messages.addMessage(
-            TranslationMessage(
-                id = "$deviceId-sup-${System.currentTimeMillis()}",
-                workerId = deviceId,
-                workerName = worker?.name ?: deviceId,
-                channelId = worker?.channelId.orEmpty(),
-                originalText = result.transcript.orEmpty(),
-                translatedText = vietnamese,
-                originalLang = result.sourceLanguage,
-                targetLang = result.targetLanguage,
-                timestamp = Instant.now().toString()
-            )
-        )
-        Log.i(TAG, "$deviceId <- '${result.transcript}' -> <${result.tag}> -> '$vietnamese'")
-    }
-
     private companion object {
         const val TAG = "VikoAI"
-        const val UNKNOWN_BATTERY = 100
         const val UNASSIGNED = "Unassigned"
     }
 }

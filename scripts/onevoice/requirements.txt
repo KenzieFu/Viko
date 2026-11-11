@@ -1,0 +1,9 @@
+# Model export was verified on Python 3.12 on macOS arm64.
+numpy==1.26.4
+onnx==1.19.1
+onnxruntime==1.24.4
+protobuf==6.33.6
+sentencepiece==0.2.1
+tokenizers==0.22.2
+torch==2.15.0
+transformers==4.57.3

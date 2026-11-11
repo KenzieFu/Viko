@@ -14,7 +14,8 @@ room = "2.8.4"
 ksp = "2.2.10-2.0.2"
 # 1.29.0 deliberately, not 1.22: quantised-kernel behaviour changed between
 # them, and 1.22 diverges from the torch reference on the golden fixture.
-onnxruntime = "1.29.0"
+# Android OneVoice fixtures match on 1.24.3; re-run them before upgrading.
+onnxruntime = "1.24.3"
 djl = "0.33.0"
 # Pure-Java FFT. Whisper needs a 400-point transform and 400 = 2^4 x 5^2, so a
 # radix-2 implementation cannot do it; JTransforms handles mixed radix.
