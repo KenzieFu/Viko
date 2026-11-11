@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -118,6 +120,7 @@ class BadgeAudioServer(context: Context) {
 
     /** Last known IP per `device_id`. Rewritten whenever a badge is heard from. */
     private val badgeAddresses = ConcurrentHashMap<String, InetAddress>()
+    @Volatile private var savedBadgeAddresses = emptyMap<String, InetAddress>()
 
     /**
      * Speech accumulating between `ptt_start` and `ptt_end`, per badge.
@@ -247,6 +250,7 @@ class BadgeAudioServer(context: Context) {
         val buffer = ByteArray(MAX_DATAGRAM)
         val packet = DatagramPacket(buffer, buffer.size)
         var checkedAt = 0L
+        var lastHello = 0L
         while (isActive) {
             val now = SystemClock.elapsedRealtime()
             voiceWifiLock.releaseIfIdle(_isTalking.value)
@@ -254,6 +258,10 @@ class BadgeAudioServer(context: Context) {
                 checkedAt = now
                 // A replaced/lost Wi-Fi network needs a fresh socket binding.
                 if (wifiNetwork() != wifi) return
+            }
+            if (now - lastHello >= 3_000) {
+                lastHello = now
+                sendManagerHellos(bound, wifi)
             }
             try {
                 packet.length = buffer.size // DatagramPacket shrinks after a short datagram
@@ -502,6 +510,30 @@ class BadgeAudioServer(context: Context) {
      */
     fun rememberBadge(deviceId: String, address: InetAddress) {
         badgeAddresses[deviceId] = address
+    }
+
+    /** Check in at previously paired badges when a hotspot blocks mDNS discovery. */
+    internal fun setSavedBadgeAddresses(addresses: Map<String, String>) {
+        savedBadgeAddresses = addresses.mapNotNull { (id, address) ->
+            Os.inet_pton(OsConstants.AF_INET, address)?.let { id to it }
+        }.toMap()
+    }
+
+    private fun sendManagerHellos(bound: DatagramSocket, wifi: android.net.Network) {
+        val onLink = connectivity.getLinkProperties(wifi)?.routes.orEmpty().filter {
+            !it.hasGateway() && it.destination.prefixLength > 0
+        }
+        for ((id, address) in savedBadgeAddresses) {
+            if (onLink.none { it.destination.contains(address) }) continue
+            val json = JSONObject().put("type", "manager_hello").put("device_id", id)
+                .toString().toByteArray(Charsets.UTF_8)
+            val frame = ByteBuffer.allocate(2 + json.size).putShort(json.size.toShort()).put(json).array()
+            try {
+                bound.send(DatagramPacket(frame, frame.size, address, AUDIO_PORT))
+            } catch (e: IOException) {
+                Log.d(TAG, "Badge check-in could not be sent to $id at ${address.hostAddress}", e)
+            }
+        }
     }
 
     /**

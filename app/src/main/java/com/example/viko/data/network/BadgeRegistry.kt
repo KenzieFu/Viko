@@ -98,6 +98,11 @@ class BadgeRegistry(
         }
         server.start(scope)
         audio.start(scope)
+        scope.launch {
+            workers.observeWorkers().collect { rows ->
+                audio.setSavedBadgeAddresses(rows.filter { it.isPaired }.associate { it.id to it.deviceAddress })
+            }
+        }
         scope.launch(Dispatchers.Default) {
             val turns = Channel<Turn>(2)
             fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection) {
