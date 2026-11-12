@@ -11,13 +11,18 @@ import com.example.viko.VikoApplication
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
 import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.TranslationStatus
+import com.example.viko.domain.channel.model.Channel as TeamChannel
+import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.team.model.Worker
+import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.navigation.NavArgs
 import com.example.viko.type.WorkerStatus
 import com.example.viko.view.screens.directcall.DirectCallViewModel
+import com.example.viko.view.screens.home.HomeViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -32,6 +37,64 @@ import java.util.UUID
 
 /** Real UDP/TCP -> registry -> Room tests. Never add test members to a real phone. */
 class LiveSpeakingIntegrationTest {
+    @Test fun homeMicStreamsLiveToOnlineMembersOfTheSelectedChannel() = runBlocking<Unit> {
+        assumeTrue("Emulator only", Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as VikoApplication
+        val container = app.container
+        val audio = container.badgeAudio
+        instrumentation.uiAutomation.grantRuntimePermission(app.packageName, android.Manifest.permission.RECORD_AUDIO)
+        val team = TeamChannel("channel-test", "Operations")
+        val other = TeamChannel("other-test", "Facilities")
+        fun worker(channelId: String, online: Boolean) = Worker(
+            id = "talk-test-${UUID.randomUUID()}", name = "Test badge", channelId = channelId,
+            zone = "", deviceAddress = "127.0.0.1", macAddress = "", batteryLevel = 70, isOnline = online
+        )
+        val teamMembers = listOf(worker(team.id, true), worker(team.id, true))
+        val excluded = listOf(worker(team.id, false), worker(other.id, true))
+        val workers = teamMembers + excluded
+        workers.forEach { audio.rememberBadge(it.id, InetAddress.getLoopbackAddress()) }
+
+        val store = ViewModelStore()
+        val model = withContext(Dispatchers.Main) {
+            ViewModelProvider.create(store, viewModelFactory {
+                initializer {
+                    HomeViewModel(
+                        object : WorkerRepository by container.workerRepository {
+                            override fun observeWorkers() = flowOf(workers)
+                        },
+                        object : ChannelRepository by container.channelRepository {
+                            override fun observeChannels() = flowOf(listOf(team, other))
+                        },
+                        container.alertRepository, audio
+                    )
+                }
+            })[HomeViewModel::class]
+        }
+        try {
+            withTimeout(3_000) { model.uiState.first { it.isLoaded } }
+            withContext(Dispatchers.Main) { model.toggleChannelTalk(team.id) }
+            val result = withTimeout(3_000) {
+                model.uiState.first { it.talkingChannelId != null || it.talkError != null }
+            }
+            assertEquals(result.talkError, team.id, result.talkingChannelId)
+            val heard = withTimeout(5_000) {
+                audio.activeBadges.first { ids -> teamMembers.all { it.id in ids } }
+            }
+            assertTrue(excluded.none { it.id in heard })
+
+            withContext(Dispatchers.Main) { model.toggleChannelTalk(team.id) }
+            withTimeout(3_000) { model.uiState.first { it.talkingChannelId == null } }
+            assertFalse(audio.isTalking.value)
+            withTimeout(3_000) { audio.activeBadges.first { ids -> workers.none { it.id in ids } } }
+        } finally {
+            withContext(Dispatchers.Main) {
+                model.stopChannelTalk()
+                store.clear()
+            }
+        }
+    }
+
     @Test fun directCallUpdatesAfterBothTranslatedTurns() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("requireDirectCallTranslation") == "true")
         withTestMember { app, id ->

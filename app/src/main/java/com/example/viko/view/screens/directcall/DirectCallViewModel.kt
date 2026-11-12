@@ -111,22 +111,20 @@ class DirectCallViewModel(
 
     /** The second tap submits the captured turn once. */
     fun stopTalking() {
-        if (talking.value) audio.stopTalking(workerId)
+        if (talking.value) audio.stopTalking(viewModelScope, submitTranslation = true)
     }
 
     /** Cancellation, navigation, or backgrounding discards the partial turn. */
     fun cancelTalking() {
-        audio.stopTalking()
+        audio.stopTalking(viewModelScope)
     }
 
     /**
      * Leaving the screen must not leave the mic open and streaming.
      *
-     * No badge id: walking away mid-sentence is not a turn anyone meant to send,
-     * and translating a half-finished thought into the worker's ear is worse than
-     * saying nothing.
+     * Cancel the capture without submitting a partial translation.
      */
     override fun onCleared() {
-        audio.stopTalking()
+        audio.stopTalking(viewModelScope)
     }
 }

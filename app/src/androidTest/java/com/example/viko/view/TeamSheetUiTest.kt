@@ -29,6 +29,7 @@ class TeamSheetUiTest {
     private val renamed = mutableListOf<Pair<String, String>>()
     private var called: String? = null
     private var assigned: Pair<String, String>? = null
+    private var talkingChannelId by mutableStateOf<String?>(null)
 
     @Test fun liveSpeakingInterruptsTeamTalkWithoutAutomaticallyRestarting() {
         openTeam()
@@ -107,13 +108,15 @@ class TeamSheetUiTest {
                     HomeScreen(
                         uiState = HomeUiState(channels = listOf(ChannelSummary(Channel("team", "Operations"), workers)),
                             unassignedToChannel = mapOf("team" to listOf(previewWorker("6", "New colleague", "other"))),
-                            hasMembers = true, isLoaded = true),
+                            hasMembers = true, isLoaded = true, talkingChannelId = talkingChannelId),
                         onOpenNotifications = {}, onOpenSettings = {}, onDirectCall = { called = it },
                         onRenameWorker = { id, name -> renamed += id to name
                             workers = workers.map { if (it.id == id) it.copy(name = name) else it } },
                         onRemoveWorker = { id -> removed += id; workers = workers.filterNot { it.id == id } },
                         onAssignWorkerToChannel = { id, channel -> assigned = id to channel },
-                        onResolveAlert = {}
+                        onResolveAlert = {},
+                        onToggleTalk = { id -> talkingChannelId = if (talkingChannelId == id) null else id },
+                        onStopTalking = { talkingChannelId = null }
                     )
                 }
             }

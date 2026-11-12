@@ -63,16 +63,20 @@ class PairingTutorialUiTest {
     @Test fun homeGridKeepsNavigationAndChannelActionsWorking() {
         var notifications = false
         var settings = false
+        val talkingChannel = mutableStateOf<String?>(null)
         compose.setContent {
             TestTheme {
                 HomeScreen(
                     uiState = HomeUiState(channels = listOf("Operations", "Facilities", "Assembly", "Security").mapIndexed { index, name ->
                         val id = "channel-$index"
                         ChannelSummary(Channel(id, name), listOf(previewWorker("worker-$index", "Member $index", id)))
-                    }, activeAlertCount = 1, hasMembers = true, isLoaded = true),
+                    }, activeAlertCount = 1, hasMembers = true, isLoaded = true,
+                        talkingChannelId = talkingChannel.value),
                     onOpenNotifications = { notifications = true }, onOpenSettings = { settings = true }, onDirectCall = {},
                     onRenameWorker = { _, _ -> }, onRemoveWorker = {}, onAssignWorkerToChannel = { _, _ -> },
-                    onResolveAlert = {}, startTutorial = false
+                    onResolveAlert = {}, startTutorial = false,
+                    onToggleTalk = { id -> talkingChannel.value = if (talkingChannel.value == id) null else id },
+                    onStopTalking = { talkingChannel.value = null }
                 )
             }
         }
@@ -80,9 +84,11 @@ class PairingTutorialUiTest {
         compose.onNodeWithText("Make Announcement").assertIsDisplayed()
         capture("home-layout-grid.png")
         compose.onNodeWithContentDescription("Talk to Operations").performTouchInput { click() }
+        compose.runOnIdle { assertEquals("channel-0", talkingChannel.value) }
         compose.onNodeWithContentDescription("Talking to Operations").assertIsDisplayed()
         capture("home-layout-talking.png")
         compose.onNodeWithContentDescription("Talking to Operations").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Talk to Operations").assertIsDisplayed()
         compose.onNodeWithContentDescription("Notification Button").performTouchInput { click() }
         compose.onNodeWithContentDescription("Settings").performTouchInput { click() }
         compose.runOnIdle { assertTrue(notifications); assertTrue(settings) }

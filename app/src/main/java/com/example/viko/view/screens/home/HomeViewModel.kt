@@ -12,6 +12,7 @@ import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.type.AlertStatus
 import com.example.viko.type.WorkerStatus
 import com.example.viko.utils.UI_STATE_TIMEOUT_MS
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -44,7 +45,9 @@ data class HomeUiState(
      * nothing here" must wait for this — otherwise the first frame of a populated
      * install reads as empty and onboarding opens over a working factory.
      */
-    val isLoaded: Boolean = false
+    val isLoaded: Boolean = false,
+    val talkingChannelId: String? = null,
+    val talkError: String? = null
 ) {
     /** No badge has been paired yet, so pairing is the first thing to do. */
     val needsOnboarding: Boolean get() = isLoaded && !hasMembers
@@ -57,15 +60,20 @@ class HomeViewModel(
     private val workerRepository: WorkerRepository,
     channelRepository: ChannelRepository,
     private val alertRepository: AlertRepository,
-    audio: BadgeAudioServer
+    private val audio: BadgeAudioServer
 ) : ViewModel() {
+
+    private data class ChannelTalk(val channelId: String? = null, val error: String? = null)
+
+    private val channelTalk = MutableStateFlow(ChannelTalk())
 
     val uiState: StateFlow<HomeUiState> = combine(
         channelRepository.observeChannels(),
         workerRepository.observeWorkers(),
         alertRepository.observeAlerts(),
-        audio.activeBadges
-    ) { channels, workers, alerts, activeBadgeIds ->
+        audio.activeBadges,
+        channelTalk
+    ) { channels, workers, alerts, activeBadgeIds, talk ->
         val byChannel = workers.groupBy { it.channelId }
         HomeUiState(
             channels = channels.map { ChannelSummary(it, byChannel[it.id].orEmpty(), activeBadgeIds) },
@@ -77,13 +85,46 @@ class HomeViewModel(
             // insertion order, so the last active one is the one just raised.
             activeAlert = alerts.lastOrNull { it.status == AlertStatus.ACTIVE },
             hasMembers = workers.isNotEmpty(),
-            isLoaded = true
+            isLoaded = true,
+            talkingChannelId = talk.channelId,
+            talkError = talk.error
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(UI_STATE_TIMEOUT_MS),
         initialValue = HomeUiState()
     )
+
+    init {
+        viewModelScope.launch {
+            audio.isTalking.collect {
+                if (!audio.isTalking.value && channelTalk.value.channelId != null) {
+                    channelTalk.value = ChannelTalk(error = audio.captureError.value)
+                }
+            }
+        }
+    }
+
+    fun toggleChannelTalk(channelId: String) {
+        val current = channelTalk.value.channelId
+        if (current != null) {
+            if (current == channelId) stopChannelTalk()
+            return
+        }
+
+        val channel = uiState.value.channels.firstOrNull { it.channel.id == channelId } ?: return
+        if (channel.hasSpeakingMember) return
+        val recipients = channel.members.filter { it.isOnline }.map { it.id }
+        val error = audio.startChannelTalk(recipients, viewModelScope)
+        channelTalk.value = if (error == null && audio.isTalking.value) ChannelTalk(channelId = channelId)
+            else ChannelTalk(error = error ?: audio.captureError.value)
+    }
+
+    fun stopChannelTalk() {
+        val wasTalking = channelTalk.value.channelId != null
+        channelTalk.value = ChannelTalk()
+        if (wasTalking) audio.stopTalking(viewModelScope)
+    }
 
     fun assignWorkerToChannel(workerId: String, channelId: String) = viewModelScope.launch {
         workerRepository.assignToChannel(workerId, channelId)

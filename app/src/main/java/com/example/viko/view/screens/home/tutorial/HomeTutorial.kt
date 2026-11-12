@@ -13,8 +13,8 @@ enum class TutorialStep(
     val body: String
 ) {
     PressAndHold(
-        title = "Press and hold to talk",
-        body = "Talk to your whole team by press and hold the mic button."
+        title = "Tap to talk",
+        body = "Tap the mic to talk to your whole team. Tap again to stop."
     ),
     Announcement(
         title = "Make announcement to all channels",

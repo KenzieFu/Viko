@@ -18,6 +18,25 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class OneVoiceInstrumentedTest {
+    @Test fun supertonicGeneratesKoreanPcm() =
+        assertNeuralVoice(VoiceDirection.Worker, "안녕하세요. 작업을 시작해 주세요.")
+
+    @Test fun vieneuTurboGeneratesVietnamesePcm() =
+        assertNeuralVoice(VoiceDirection.Manager, "Xin chào, hãy kiểm tra khu vực số ba.")
+
+    private fun assertNeuralVoice(direction: VoiceDirection, text: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as VikoApplication
+        val voices = app.container.neuralVoices
+        if (InstrumentationRegistry.getArguments().getString("requireNeuralVoices") != "true") {
+            assumeTrue("Install the neural voice pack first", voices.installed())
+        }
+        assertTrue("Neural voice pack is missing or incomplete", voices.installed())
+        val pcm = checkNotNull(voices.synthesise(text, direction))
+        assertTrue("Expected speech for ${direction.target}", pcm.size in 16_000..480_000 && pcm.size % 2 == 0)
+        assertTrue("Repeated speech should reuse the same PCM", pcm.contentEquals(voices.synthesise(text, direction)))
+    }
+
     @Test
     fun reproducesBothReferenceDirectionsOnAndroid() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

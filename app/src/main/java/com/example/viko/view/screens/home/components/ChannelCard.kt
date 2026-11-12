@@ -100,7 +100,7 @@ fun ChannelCard(
     val isSpeaking = audioMode != ChannelAudioMode.Idle
     val isListening = audioMode == ChannelAudioMode.Listening
 
-    // Staffed but nobody holding the mic — looks the same as an empty channel,
+    // Staffed but nobody using the mic — looks the same as an empty channel,
     // only at full opacity. Tracked separately because the mic IS tappable here,
     // which the accessibility label has to reflect.
     val isReady = isActive && !isSpeaking
@@ -149,7 +149,7 @@ fun ChannelCard(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null, // The custom audio pulse supplies feedback without tinting the panel.
-                        enabled = isActive,
+                        enabled = audioMode == ChannelAudioMode.Talking || (isActive && !isListening),
                         onClick = onMicTap
                     )
                     .padding(vertical = 6.dp),

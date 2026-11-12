@@ -175,7 +175,7 @@ class BadgeAudioServer(context: Context) {
     @Volatile
     var dumpUtterances: Boolean = false
 
-    /** The supervisor's turn, accumulating while they hold the button. */
+    /** Whether the supervisor's microphone is capturing a turn. */
     private val _isTalking = MutableStateFlow(false)
     val isTalking = _isTalking.asStateFlow()
     private val _captureError = MutableStateFlow<String?>(null)
@@ -197,14 +197,9 @@ class BadgeAudioServer(context: Context) {
 
     private var receiveJob: Job? = null
     private var captureJob: Job? = null
+    private var captureOwner: CoroutineScope? = null
 
     private var track: AudioTrack? = null
-
-    /**
-     * Sequence counter for outgoing audio, reset per utterance so the badge sees
-     * a stream starting at 0 exactly as its own does.
-     */
-    private var outgoingSequence = 0L
 
     val hasMicPermission: Boolean
         get() = ContextCompat.checkSelfPermission(
@@ -520,20 +515,19 @@ class BadgeAudioServer(context: Context) {
     }
 
     /**
-     * Streams the phone mic to one badge until [stopTalking]. Returns null on
-     * success, or a reason to show the supervisor — a talk button that lights up
-     * and sends nothing is the worst outcome, so every way this can fail says so
-     * rather than returning quietly.
-     *
-     * ponytail: one target badge at a time. A broadcast announcement to a whole
-     * channel means sending each chunk to several addresses; add that when the
-     * announcement sheet is wired up, not before.
+     * Starts a direct call. Returns null on success or a message to show the manager.
      */
+    fun startTalking(deviceId: String, scope: CoroutineScope): String? =
+        startCapture(listOf(deviceId), scope, directCallId = deviceId)
+
+    fun startChannelTalk(deviceIds: List<String>, scope: CoroutineScope): String? =
+        startCapture(deviceIds, scope, directCallId = null)
+
     @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
-    fun startTalking(deviceId: String, scope: CoroutineScope): String? {
-        _captureError.value = null
+    private fun startCapture(deviceIds: List<String>, scope: CoroutineScope, directCallId: String?): String? {
         if (!scope.isActive) return "Call screen is closing"
         if (captureJob?.isCompleted == false) return "Microphone already active or stopping"
+        _captureError.value = null
         if (!hasMicPermission) {
             Log.w(TAG, "cannot talk: RECORD_AUDIO not granted")
             return "Microphone permission needed to talk"
@@ -544,13 +538,12 @@ class BadgeAudioServer(context: Context) {
             Log.w(TAG, "cannot talk: audio socket not bound yet")
             return "Audio channel starting — try again in a moment"
         }
-        val target = badgeAddresses[deviceId]
-        if (target == null) {
-            Log.w(TAG, "cannot talk: no address known for $deviceId — has it registered?")
-            return "Badge offline — nothing has been heard from it yet"
+        val targets = deviceIds.distinct().mapNotNull { id -> badgeAddresses[id]?.let { id to it } }
+        if (targets.isEmpty()) {
+            return if (directCallId == null) "No reachable badges in this channel"
+            else "Badge offline — nothing has been heard from it yet"
         }
 
-        _captureError.value = null
         val record = newRecord() ?: return "Microphone unavailable — close other recording apps and retry"
         try {
             record.startRecording()
@@ -559,17 +552,18 @@ class BadgeAudioServer(context: Context) {
             record.release()
             return "Could not start the microphone"
         }
+        captureOwner = scope
         _isTalking.value = true
         voiceWifiLock.touch()
         submitSupervisorTurn = false
         // ATOMIC guarantees the finally block runs even if this screen closes
         // before the IO dispatcher starts the job (the recorder is already open).
-        val submit = translationCapture?.takeIf { it.isEnabled() }?.manager
+        val submit = directCallId?.let { translationCapture?.takeIf { it.isEnabled() }?.manager }
         captureJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             val recorded = if (submit != null) ByteArrayOutputStream() else null
             try {
                 senderMutex.withLock {
-                    outgoingSequence = 0
+                    var sequence = 0L
                     val chunk = ByteArray(CHUNK_BYTES)
                     var filled = 0
                     while (isActive && _isTalking.value) {
@@ -578,7 +572,7 @@ class BadgeAudioServer(context: Context) {
                         if (read == 0) { delay(1.milliseconds); continue }
                         filled += read
                         if (filled < CHUNK_BYTES) continue
-                        if (recorded == null) sendTo(deviceId, target, chunk, filled)
+                        if (recorded == null) sendLiveFrame(targets, sequence++, chunk, filled)
                         recorded?.let {
                             val keep = minOf(filled, MAX_UTTERANCE_BYTES - it.size())
                             if (keep > 0) it.write(chunk, 0, keep)
@@ -587,7 +581,7 @@ class BadgeAudioServer(context: Context) {
                     }
                     val tail = filled and -2
                     if (tail > 0) {
-                        if (recorded == null) sendTo(deviceId, target, chunk, tail)
+                        if (recorded == null) sendLiveFrame(targets, sequence, chunk, tail)
                         else {
                             val keep = minOf(tail, MAX_UTTERANCE_BYTES - recorded.size())
                             if (keep > 0) recorded.write(chunk, 0, keep)
@@ -603,17 +597,18 @@ class BadgeAudioServer(context: Context) {
                 runCatching { record.stop() }
                 record.release()
                 _isTalking.value = false
-                if (submitSupervisorTurn && recorded != null && recorded.size() > 0)
-                    submit?.invoke(deviceId, recorded.toByteArray())
+                if (submitSupervisorTurn && directCallId != null && recorded != null && recorded.size() > 0)
+                    submit?.invoke(directCallId, recorded.toByteArray())
             }
         }
         return null
     }
 
-    fun stopTalking(deviceId: String? = null) {
+    fun stopTalking(scope: CoroutineScope, submitTranslation: Boolean = false) {
+        if (captureOwner !== scope) return
         // Let the current blocking read finish (20ms), then release before allowing
         // another capture. Never snapshot a buffer while its producer is writing.
-        submitSupervisorTurn = deviceId != null
+        submitSupervisorTurn = submitTranslation
         _isTalking.value = false
     }
 
@@ -653,12 +648,12 @@ class BadgeAudioServer(context: Context) {
         }
         if (pcm.size % 2 != 0) return false
         return try { senderMutex.withLock {
-            outgoingSequence = 0
+            var sequence = 0L
             var offset = 0
             var deadline = System.nanoTime()
             while (offset < pcm.size) {
                 val length = minOf(CHUNK_BYTES, pcm.size - offset)
-                sendTo(deviceId, target, pcm.copyOfRange(offset, offset + length), length)
+                sendTo(deviceId, target, sequence++, pcm.copyOfRange(offset, offset + length), length)
                 offset += length
                 // No fast pre-roll or unbounded catch-up bursts after a stall.
                 deadline = maxOf(deadline + CHUNK_NANOS, System.nanoTime())
@@ -700,19 +695,32 @@ class BadgeAudioServer(context: Context) {
         return record
     }
 
+    private fun sendLiveFrame(targets: List<Pair<String, InetAddress>>, sequence: Long, audio: ByteArray, length: Int) {
+        var delivered = false
+        var lastError: IOException? = null
+        for ((id, address) in targets) {
+            try {
+                sendTo(id, address, sequence, audio, length)
+                delivered = true
+            } catch (error: IOException) {
+                lastError = error
+            }
+        }
+        if (!delivered) lastError?.let { throw it }
+    }
+
     /**
      * Sends one chunk to a badge in the badge's own frame format. `device_id` is
      * the *target* badge — its firmware drops any chunk not addressed to it,
      * since every badge listens on the same port.
      */
-    private fun sendTo(deviceId: String, target: InetAddress, audio: ByteArray, length: Int) {
+    private fun sendTo(deviceId: String, target: InetAddress, sequence: Long, audio: ByteArray, length: Int) {
         val bound = socket ?: throw IOException("Audio socket unavailable")
         voiceWifiLock.touch()
         val header = JSONObject().apply {
             put("type", "audio")
             put("device_id", deviceId)
-            put("sequence", outgoingSequence)
-            outgoingSequence = (outgoingSequence + 1) and 0xffffffffL
+            put("sequence", sequence and 0xffffffffL)
             put("audio_format", PCM16)
         }.toString().toByteArray(Charsets.UTF_8)
 

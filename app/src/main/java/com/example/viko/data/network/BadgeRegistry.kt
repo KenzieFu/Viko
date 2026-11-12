@@ -8,6 +8,7 @@ import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
 import com.example.viko.data.ai.onevoice.VoiceDirection
+import com.example.viko.data.ai.onevoice.tts.OfflineNeuralVoices
 import com.example.viko.domain.alert.model.EmergencyAlert
 import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
@@ -57,7 +58,7 @@ internal data class TranslationProgress(
  * Workers are keyed by the badge's permanent `device_id`, never by IP — DHCP
  * leases change on every reconnect (Detailed System.docx, "Topology").
  */
-class BadgeRegistry(
+class BadgeRegistry internal constructor(
     private val server: BadgeControlServer,
     private val discovery: WifiDeviceScanner,
     private val audio: BadgeAudioServer,
@@ -68,6 +69,7 @@ class BadgeRegistry(
     private val modelDir: File,
     private val translationPreferences: TranslationPreferences,
     private val keepBothRecognizers: () -> Boolean,
+    private val neuralVoices: OfflineNeuralVoices,
     private val speaker: () -> Speaker,
     private val voice: () -> VietnameseVoice
 ) {
@@ -212,6 +214,7 @@ class BadgeRegistry(
                 _translationProgress.value = emptyMap()
                 _translationStatus.value = TranslationStatus.OFF
                 turns.close()
+                neuralVoices.close()
             }
         }
     }
@@ -219,6 +222,7 @@ class BadgeRegistry(
     private suspend fun checkTranslationSetup(): TranslationStatus {
         if (!android.os.Process.is64Bit()) return TranslationStatus.UNAVAILABLE
         if (!OneVoicePipeline.installed(modelDir)) return TranslationStatus.MODELS_MISSING
+        if (neuralVoices.installed()) return TranslationStatus.ACTIVE
 
         val korean = speaker()
         val vietnamese = voice()
@@ -284,12 +288,7 @@ class BadgeRegistry(
                 )
             )
             finishText()
-            val delivered = when (direction) {
-                VoiceDirection.Worker -> !audio.isTalking.value && speaker().speak(translated)
-                VoiceDirection.Manager -> voice().synthesise(translated)?.let {
-                    audio.sendPcm(deviceId, it)
-                } ?: false
-            }
+            val delivered = speakTranslation(deviceId, translated, direction)
             if (!delivered) replayOriginal(turn)
         } catch (e: CancellationException) {
             throw e
@@ -308,6 +307,25 @@ class BadgeRegistry(
             replayOriginal(turn)
         } finally {
             finishText()
+        }
+    }
+
+    private suspend fun speakTranslation(deviceId: String, text: String, direction: VoiceDirection): Boolean {
+        if (direction == VoiceDirection.Worker && audio.isTalking.value) return false
+        if (neuralVoices.installed()) {
+            val pcm = neuralVoices.synthesise(text, direction) ?: return false
+            return when (direction) {
+                VoiceDirection.Worker -> {
+                    if (audio.isTalking.value) return false
+                    audio.playLocalPcm(deviceId, pcm)
+                    true
+                }
+                VoiceDirection.Manager -> audio.sendPcm(deviceId, pcm)
+            }
+        }
+        return when (direction) {
+            VoiceDirection.Worker -> speaker().speak(text)
+            VoiceDirection.Manager -> voice().synthesise(text)?.let { audio.sendPcm(deviceId, it) } ?: false
         }
     }
 

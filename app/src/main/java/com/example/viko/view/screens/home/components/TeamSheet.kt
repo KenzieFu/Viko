@@ -31,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -74,6 +73,7 @@ import com.example.viko.view.theme.VBorder
 import com.example.viko.view.theme.VButtonBlue
 import com.example.viko.view.theme.VMicBlue
 import com.example.viko.view.theme.VOnSurface
+import com.example.viko.view.theme.VOnSurfaceSecondary
 import com.example.viko.view.theme.VSurface
 import com.example.viko.view.theme.VikoTheme
 
@@ -97,7 +97,11 @@ fun TeamSheetContent(
     onAssignWorker: (String) -> Unit,
     onPairNewMember: () -> Unit,
     showDirectCallTutorial: Boolean = false,
-    onFinishTutorial: () -> Unit = {}
+    onFinishTutorial: () -> Unit = {},
+    isTalking: Boolean = false,
+    talkError: String? = null,
+    onToggleTalk: () -> Unit = {},
+    onStopTalking: () -> Unit = {}
 ) {
     var sheetOrigin by remember { mutableStateOf(Offset.Zero) }
     var firstMemberBounds by remember { mutableStateOf<Rect?>(null) }
@@ -105,18 +109,7 @@ fun TeamSheetContent(
     var isEditMode by rememberSaveable { mutableStateOf(false) }
     var isPickingMember by rememberSaveable { mutableStateOf(false) }
     var deleteTargetId by rememberSaveable { mutableStateOf<String?>(null) }
-    // Not saveable: it stands in for holding the mic, which ends with the sheet.
-    var isTalking by remember { mutableStateOf(false) }
     val draftNames = remember { mutableStateMapOf<String, String>() }
-
-    // A member holding their own button has the channel — no talking over them,
-    // and a press that was live when they cut in ends there.
-    val isMemberSpeaking = summary.hasSpeakingMember
-    val isTeamTalking = isTalking && !isMemberSpeaking && !isEditMode
-    LaunchedEffect(isMemberSpeaking, isEditMode) {
-        // An interrupted conversation must require a new tap, never resume on its own.
-        if (isMemberSpeaking || isEditMode) isTalking = false
-    }
 
     Box(
         modifier = Modifier
@@ -125,7 +118,7 @@ fun TeamSheetContent(
             .testTag("team-sheet")
             .onGloballyPositioned { sheetOrigin = it.boundsInWindow().topLeft }
     ) {
-        if (isTeamTalking) {
+        if (isTalking && !isEditMode) {
             AnnouncementWaveBackground(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -150,6 +143,7 @@ fun TeamSheetContent(
                 },
                 isEditMode = isEditMode,
                 onEdit = {
+                    onStopTalking()
                     draftNames.clear()
                     isEditMode = true
                 },
@@ -204,10 +198,14 @@ fun TeamSheetContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                talkError?.let {
+                    Text(it, color = VOnSurfaceSecondary, fontSize = 14.sp,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+                }
                 TalkToTeamButton(
-                    isTalking = isTeamTalking,
-                    enabled = summary.isActive && !isMemberSpeaking,
-                    onToggle = { isTalking = !isTeamTalking }
+                    isTalking = isTalking,
+                    enabled = isTalking || (summary.isActive && !summary.hasSpeakingMember),
+                    onToggle = onToggleTalk
                 )
             }
         }
@@ -304,7 +302,7 @@ private fun TeamSheetHeader(
 }
 
 /**
- * Dark card with a mic while idle; bright blue *Speaking...* while held. Fades
+ * Dark card with a mic while idle; bright blue *Speaking...* while live. Fades
  * out and stops responding while a member has the channel, or nobody is on it.
  */
 @Composable

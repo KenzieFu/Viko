@@ -7,6 +7,7 @@ import android.os.SystemClock
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
+import com.example.viko.data.ai.onevoice.tts.OfflineNeuralVoices
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
 import com.example.viko.data.local.AppDatabase
@@ -79,7 +80,7 @@ class AppContainer(context: Context) {
      */
     val badgeAudio: BadgeAudioServer = BadgeAudioServer(context)
 
-    /** Korean out of the loudspeaker. No model — Android's built-in engine. */
+    /** System voices are available for devices provisioned before the neural voice pack. */
     val speaker by lazy { Speaker(context) }
 
     /**
@@ -88,6 +89,7 @@ class AppContainer(context: Context) {
      * entirely.
      */
     val vietnameseVoice by lazy { VietnameseVoice(context) }
+    internal val neuralVoices = OfflineNeuralVoices(OneVoicePipeline.directory(context).resolveSibling("voices-v1"))
 
     val translationPreferences = TranslationPreferences(context)
 
@@ -102,6 +104,7 @@ class AppContainer(context: Context) {
         modelDir = OneVoicePipeline.directory(context),
         translationPreferences = translationPreferences,
         keepBothRecognizers = { OneVoicePipeline.canKeepBoth(context) },
+        neuralVoices = neuralVoices,
         speaker = { speaker },
         voice = { vietnameseVoice }
     )

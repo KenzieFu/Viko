@@ -1,5 +1,9 @@
 package com.example.viko.view.screens.home
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +39,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,19 +51,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.R
 import com.example.viko.components.VikoBlueButton
 import com.example.viko.components.VikoDragHandle
 import com.example.viko.di.AppViewModelProvider
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -106,8 +114,16 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var permissionHint by remember { mutableStateOf<String?>(null) }
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionHint = if (granted) "Microphone ready — tap to speak" else "Microphone permission needed to talk"
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.stopChannelTalk() }
+    DisposableEffect(viewModel) { onDispose { viewModel.stopChannelTalk() } }
+
     HomeScreen(
-        uiState = uiState,
+        uiState = uiState.copy(talkError = permissionHint ?: uiState.talkError),
         startTutorial = startTutorial,
         onOpenNotifications = onOpenNotifications,
         onOpenSettings = onOpenSettings,
@@ -115,7 +131,21 @@ fun HomeScreen(
         onRenameWorker = viewModel::renameWorker,
         onRemoveWorker = viewModel::removeWorker,
         onAssignWorkerToChannel = viewModel::assignWorkerToChannel,
-        onResolveAlert = viewModel::resolveAlert
+        onResolveAlert = viewModel::resolveAlert,
+        onToggleTalk = { channelId ->
+            permissionHint = null
+            if (uiState.talkingChannelId == channelId ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            ) {
+                viewModel.toggleChannelTalk(channelId)
+            } else {
+                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        },
+        onStopTalking = {
+            permissionHint = null
+            viewModel.stopChannelTalk()
+        }
     )
 }
 
@@ -130,7 +160,9 @@ fun HomeScreen(
     onRemoveWorker: (String) -> Unit,
     onAssignWorkerToChannel: (String, String) -> Unit,
     onResolveAlert: (String) -> Unit,
-    startTutorial: Boolean = false
+    startTutorial: Boolean = false,
+    onToggleTalk: (String) -> Unit = {},
+    onStopTalking: () -> Unit = {}
 ) {
     // Which sheet is open is view state, but it still has to survive an Activity
     // recreation — a rotation should not close the roster the supervisor opened.
@@ -138,9 +170,13 @@ fun HomeScreen(
     var showAnnouncementSheet by rememberSaveable { mutableStateOf(false) }
     var openTeamSheetChannelId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Talking is deliberately NOT saveable: it stands in for holding the mic, and
-    // that ends when the screen goes away.
-    var talkingChannelId by remember { mutableStateOf<String?>(null) }
+    val talkingChannelId = uiState.talkingChannelId
+    val talkingChannel = uiState.channels.firstOrNull { it.channel.id == talkingChannelId }
+    val shouldStopTalking = talkingChannelId != null &&
+        (talkingChannel == null || !talkingChannel.isActive || talkingChannel.hasSpeakingMember)
+    LaunchedEffect(talkingChannelId, shouldStopTalking) {
+        if (shouldStopTalking) onStopTalking()
+    }
 
     var showAddMember by rememberSaveable { mutableStateOf(false) }
     // Set when pairing was started from a team sheet's Add Member: the new
@@ -182,9 +218,18 @@ fun HomeScreen(
 
             HomeTopBar(
                 activeAlertCount = uiState.activeAlertCount,
-                onSosTap = { showSosSheet = true },
-                onNotificationsTap = onOpenNotifications,
-                onSettingsTap = onOpenSettings,
+                onSosTap = {
+                    onStopTalking()
+                    showSosSheet = true
+                },
+                onNotificationsTap = {
+                    onStopTalking()
+                    onOpenNotifications()
+                },
+                onSettingsTap = {
+                    onStopTalking()
+                    onOpenSettings()
+                },
                 onSosBounds = { targets = targets.copy(sos = it) }
             )
 
@@ -213,13 +258,8 @@ fun HomeScreen(
                                 summary.hasSpeakingMember -> ChannelAudioMode.Listening
                                 else -> ChannelAudioMode.Idle
                             },
-                            onMicTap = {
-                                talkingChannelId = if (isManagerTalking) null else summary.channel.id
-                            },
+                            onMicTap = { onToggleTalk(summary.channel.id) },
                             onChipTap = { openTeamSheetChannelId = summary.channel.id },
-                            // One mic, one channel: while a channel is held, every
-                            // other card goes inert so the only tap available is
-                            // letting go of the one you are on.
                             enabled = talkingChannelId == null || isManagerTalking,
                             onMicBounds = { bounds ->
                                 if (isTourTarget) targets = targets.copy(channelMic = bounds)
@@ -235,8 +275,17 @@ fun HomeScreen(
                 }
             }
 
+            if (openTeamSheetChannelId == null) {
+                uiState.talkError?.let {
+                    Text(it, color = VOnSurfaceSecondary, fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                }
+            }
             MakeAnnouncementButton(
-                onClick = { showAnnouncementSheet = true },
+                onClick = {
+                    onStopTalking()
+                    showAnnouncementSheet = true
+                },
                 modifier = Modifier.onGloballyPositioned {
                     targets = targets.copy(announcement = it.boundsInRoot())
                 }
@@ -247,7 +296,10 @@ fun HomeScreen(
             AlertCard(
                 alert = alert,
                 titleMaxLines = 1,
-                onDirectCall = { onDirectCall(alert.workerId) },
+                onDirectCall = {
+                    onStopTalking()
+                    onDirectCall(alert.workerId)
+                },
                 onResolve = {
                     dismissedAlertId = alert.id
                     onResolveAlert(alert.id)
@@ -256,7 +308,10 @@ fun HomeScreen(
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 24.dp)
-                    .clickable(onClick = onOpenNotifications)
+                    .clickable {
+                        onStopTalking()
+                        onOpenNotifications()
+                    }
             )
         }
     }
@@ -290,6 +345,7 @@ fun HomeScreen(
     if (teamSummary != null) {
         ModalBottomSheet(
             onDismissRequest = {
+                onStopTalking()
                 openTeamSheetChannelId = null
                 if (introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall) {
                     introStage = IntroStage.None
@@ -303,6 +359,7 @@ fun HomeScreen(
                 summary = teamSummary,
                 assignableWorkers = uiState.unassignedToChannel[teamSummary.channel.id].orEmpty(),
                 onDirectCall = { workerId ->
+                    onStopTalking()
                     openTeamSheetChannelId = null
                     onDirectCall(workerId)
                 },
@@ -316,6 +373,10 @@ fun HomeScreen(
                     openTeamSheetChannelId = null
                     showAddMember = true
                 },
+                isTalking = talkingChannelId == teamSummary.channel.id,
+                talkError = uiState.talkError,
+                onToggleTalk = { onToggleTalk(teamSummary.channel.id) },
+                onStopTalking = onStopTalking,
                 showDirectCallTutorial = introStage == IntroStage.Tutorial && tutorialStep == TutorialStep.DirectCall,
                 onFinishTutorial = {
                     openTeamSheetChannelId = null

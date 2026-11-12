@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -101,10 +103,10 @@ fun DirectCallScreen(
     val speaking = uiState.callState == CallState.SPEAKING
     Column(
         Modifier.fillMaxSize().background(VBackground)
-            .statusBarsPadding().navigationBarsPadding().padding(vertical = 24.dp),
+            .statusBarsPadding().navigationBarsPadding().padding(top = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(24.dp)) {
+        Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(24.dp).zIndex(1f)) {
             Text("DIRECT CALL", fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 1.5.sp,
                 color = VOnSurfaceSecondary, textAlign = TextAlign.Center,
                 modifier = Modifier.align(Alignment.Center))
@@ -113,54 +115,67 @@ fun DirectCallScreen(
             }
         }
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val contentHeight = maxHeight
+            val compact = maxHeight < 600.dp
+            val fontScale = LocalDensity.current.fontScale
+            val scrollLayout = maxHeight < 400.dp || (fontScale > 1.3f && maxHeight < 500.dp)
+            val cardHeight = (maxHeight * .33f).coerceIn(112.dp, 220.dp)
+            val pulseRadius = (maxWidth * .49f).coerceIn(140.dp, 218.dp)
+            val feedback = uiState.talkError ?: uiState.translationProblem
             Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                Modifier.fillMaxWidth().then(
+                    if (scrollLayout) Modifier.verticalScroll(rememberScrollState()) else Modifier.fillMaxHeight()
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(minOf(contentHeight * .15f, 64.dp)))
-                CallerIdentity(worker, listening, speaking)
+                if (scrollLayout) Spacer(Modifier.height(24.dp))
+                else Spacer(Modifier.weight(if (uiState.voiceOnly) 1f else 3f))
+                CallerIdentity(worker, listening, speaking, pulseRadius)
                 if (uiState.voiceOnly) {
+                    Spacer(Modifier.height(16.dp))
                     Text("Voice only — translation is off", fontSize = 14.sp, lineHeight = 20.sp,
                         color = VOnSurfaceSecondary, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp))
+                        modifier = Modifier.padding(horizontal = 20.dp))
                 } else {
-                    Spacer(Modifier.height(16.dp))
-                    TranscriptCard(
-                        uiState,
-                        Modifier.height(minOf(220.dp, maxOf(112.dp, contentHeight - 132.dp)))
-                    )
+                    Spacer(Modifier.height(if (compact) 16.dp else 28.dp))
+                    TranslationCard(uiState, Modifier.height(cardHeight))
                 }
-                uiState.talkError?.let { error ->
-                    Text(error, fontSize = 14.sp, lineHeight = 20.sp,
-                        color = VWarning, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp))
+                Spacer(Modifier.height(if (compact || uiState.voiceOnly) 24.dp else 48.dp))
+                MicButton(
+                    speaking = speaking,
+                    listening = listening,
+                    enabled = speaking || (worker.isOnline && !listening),
+                    onStart = onStartTalking, onStop = onStopTalking
+                )
+                if (!scrollLayout) Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = if (scrollLayout) 24.dp else 40.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    feedback?.let {
+                        Text(it, fontSize = 14.sp, lineHeight = 20.sp, color = VWarning,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        MicButton(
-            speaking = speaking,
-            listening = listening,
-            showBadgeLabel = uiState.voiceOnly,
-            enabled = worker.isOnline && !listening,
-            onStart = onStartTalking, onStop = onStopTalking
-        )
     }
 }
 
 @Composable
-private fun CallerIdentity(worker: Worker, listening: Boolean, speaking: Boolean) {
+private fun CallerIdentity(worker: Worker, listening: Boolean, speaking: Boolean, pulseRadius: Dp) {
     Box(Modifier.fillMaxWidth().testTag("direct-call-identity"), contentAlignment = Alignment.Center) {
         if (listening) {
             ExpandingVoicePulse(
-                Modifier.matchParentSize().testTag("direct-call-listening-pulse"),
-                color = VMemberSpeakingSurface, innerRadius = 120.dp, outerRadius = 170.dp, maxAlpha = .5f
+                Modifier.matchParentSize().offset(y = (-26).dp).testTag("direct-call-listening-pulse"),
+                color = VMemberSpeakingSurface, innerRadius = pulseRadius * .78f,
+                outerRadius = pulseRadius, maxAlpha = .32f
             )
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(worker.name, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold,
-                color = VOnSurface, textAlign = TextAlign.Center)
+                color = VOnSurface, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val status = when {
                 listening -> "Speaking..."
@@ -194,38 +209,22 @@ private fun CallerIdentity(worker: Worker, listening: Boolean, speaking: Boolean
 }
 
 @Composable
-private fun TranscriptCard(state: DirectCallUiState, modifier: Modifier = Modifier) {
-    val status = when {
-        state.isTranslating -> "Translating…"
-        state.translationProblem != null -> state.translationProblem
-        state.translation == null && state.transcript == null -> "Translations appear here"
-        state.translationFromManager -> "Korean → Vietnamese"
-        else -> "Vietnamese → Korean"
-    }
-    Column(
+private fun TranslationCard(state: DirectCallUiState, modifier: Modifier = Modifier) {
+    val text = if (state.isTranslating) "Translating…" else state.translation
+    val shape = RoundedCornerShape(12.dp)
+    Box(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp).then(modifier)
-            .testTag("direct-call-transcript").clip(RoundedCornerShape(12.dp)).background(VSurface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .testTag("direct-call-transcript").clip(shape).background(VSurface).border(1.dp, VBorder, shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        contentAlignment = Alignment.Center
     ) {
-        Text(status, fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary,
-            textAlign = TextAlign.Center, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        if (state.translation != null || state.transcript != null) {
-            Spacer(Modifier.height(8.dp))
-            // Each result starts at the top, including repeated phrases with a new message ID.
-            key(state.translationMessageId) {
-                Column(
-                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    state.translation?.let { Text(it, fontSize = 16.sp, lineHeight = 24.sp,
-                        color = VOnSurface, textAlign = TextAlign.Center) }
-                    state.transcript?.let {
-                        if (state.translation != null) Spacer(Modifier.height(8.dp))
-                        Text(it, fontSize = 14.sp, lineHeight = 20.sp,
-                            color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
-                    }
-                }
+        if (text != null) {
+            // A new result starts at the top even when it repeats the last phrase.
+            key(state.translationMessageId, state.isTranslating) {
+                Text(text, fontSize = 16.sp, lineHeight = 24.sp, color = VOnSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()))
             }
         }
     }
@@ -234,28 +233,20 @@ private fun TranscriptCard(state: DirectCallUiState, modifier: Modifier = Modifi
 /** A tap starts capture; the next tap submits the turn. Screen disposal cancels it. */
 @Composable
 private fun MicButton(
-    speaking: Boolean, listening: Boolean, showBadgeLabel: Boolean, enabled: Boolean,
+    speaking: Boolean, listening: Boolean, enabled: Boolean,
     onStart: () -> Unit, onStop: () -> Unit
 ) {
-    Box(Modifier.size(120.dp).zIndex(-1f), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(88.dp).zIndex(if (speaking) -1f else 0f), contentAlignment = Alignment.Center) {
         if (speaking) {
             ExpandingVoicePulse(Modifier.matchParentSize().testTag("direct-call-speaking-pulse"), outerRadius = 210.dp)
-        }
-        if (listening) {
-            ExpandingVoicePulse(
-                Modifier.matchParentSize().testTag("direct-call-badge-mic-pulse"),
-                color = VMemberSpeaking, outerRadius = 210.dp
-            )
         }
         Box(
             Modifier.matchParentSize().testTag("direct-call-mic").clip(CircleShape)
                 .background(when {
-                    listening -> VMemberSpeakingSurface
                     !enabled -> VSurface
                     speaking -> VMicBlue
                     else -> Color.White
                 })
-                .then(if (listening) Modifier.border(2.dp, VMemberSpeaking, CircleShape) else Modifier)
                 .semantics {
                     contentDescription = when {
                         listening -> "Badge microphone active"
@@ -276,21 +267,13 @@ private fun MicButton(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(painterResource(R.drawable.ic_mic), contentDescription = null,
-                    tint = when {
-                        listening -> VMemberSpeakingText
-                        !enabled -> VMicBlue.copy(alpha = .25f)
-                        speaking -> Color.White
-                        else -> VMicBlue
-                    },
-                    modifier = Modifier.size(36.dp))
-                if (listening && showBadgeLabel) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("BADGE SPEAKING", fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        color = VMemberSpeakingText, letterSpacing = .5.sp)
-                }
-            }
+            Icon(painterResource(R.drawable.ic_mic), contentDescription = null,
+                tint = when {
+                    !enabled -> VMicBlue.copy(alpha = .25f)
+                    speaking -> Color.White
+                    else -> VMicBlue
+                },
+                modifier = Modifier.size(24.dp))
         }
     }
 }
