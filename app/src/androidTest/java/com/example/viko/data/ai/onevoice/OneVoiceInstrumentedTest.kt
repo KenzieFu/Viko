@@ -1,5 +1,7 @@
 package com.example.viko.data.ai.onevoice
 
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -7,7 +9,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.viko.VikoApplication
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.VietnameseVoice
+import com.example.viko.data.ai.onevoice.tts.MossStreamingDecoder
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -15,16 +21,44 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class OneVoiceInstrumentedTest {
+    @Test fun incrementalCodecPreservesAudioAcrossChunks() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = OneVoicePipeline.directory(context).resolveSibling("voices-v1").resolve("vieneu")
+        val stepFile = File(directory, "moss_audio_tokenizer_decode_step.onnx")
+        assumeTrue("Install the voice pack with the incremental codec", stepFile.isFile)
+        val codes = JSONObject(File(directory, "preset.json").readText()).getJSONArray("codes")
+        val frames = List(12) { index ->
+            val row = codes.getJSONArray(index)
+            IntArray(row.length()) { row.getInt(it) }
+        }
+        val env = OrtEnvironment.getEnvironment()
+        OrtSession.SessionOptions().use { options ->
+            options.setIntraOpNumThreads(2)
+            val full = env.createSession(File(directory, "moss_audio_tokenizer_decode_full.onnx").path, options).use {
+                MossStreamingDecoder.runCodec(env, it, frames).use(MossStreamingDecoder::readCodecAudio)
+            }
+            val streamed = env.createSession(stepFile.path, options).use { session ->
+                MossStreamingDecoder(env, session, File(directory, "codec_browser_onnx_meta.json")).stream().use { decoder ->
+                    frames.chunked(4).fold(FloatArray(0)) { audio, chunk -> audio + decoder.decode(chunk) }
+                }
+            }
+            assertEquals(full.size, streamed.size)
+            assertTrue("Incremental audio differs at a chunk boundary",
+                full.indices.maxOf { abs(full[it] - streamed[it]) } < .001f)
+        }
+    }
+
     @Test fun supertonicGeneratesKoreanPcm() =
         assertNeuralVoice(VoiceDirection.Worker, "안녕하세요. 작업을 시작해 주세요.")
 
     @Test fun vieneuTurboGeneratesVietnamesePcm() =
         assertNeuralVoice(VoiceDirection.Manager, "Xin chào, hãy kiểm tra khu vực số ba.")
 
-    private fun assertNeuralVoice(direction: VoiceDirection, text: String) {
+    private fun assertNeuralVoice(direction: VoiceDirection, text: String) = runBlocking<Unit> {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as VikoApplication
         val voices = app.container.neuralVoices
@@ -32,9 +66,20 @@ class OneVoiceInstrumentedTest {
             assumeTrue("Install the neural voice pack first", voices.installed())
         }
         assertTrue("Neural voice pack is missing or incomplete", voices.installed())
-        val pcm = checkNotNull(voices.synthesise(text, direction))
-        assertTrue("Expected speech for ${direction.target}", pcm.size in 16_000..480_000 && pcm.size % 2 == 0)
-        assertTrue("Repeated speech should reuse the same PCM", pcm.contentEquals(voices.synthesise(text, direction)))
+        val chunks = voices.stream(text, direction).toList()
+        val size = chunks.sumOf { it.size }
+        assertTrue("Expected speech for ${direction.target}", size in 16_000..480_000 && size % 2 == 0)
+        assertTrue("Expected audible speech", chunks.any { pcm -> pcm.any { it != 0.toByte() } })
+        if (direction == VoiceDirection.Worker || voices.hasStreamingCodec()) {
+            assertTrue("Expected multiple PCM chunks for ${direction.target}", chunks.size > 1)
+        }
+        if (direction == VoiceDirection.Manager && InstrumentationRegistry.getArguments()
+                .getString("requireStreamingCodec") == "true") {
+            assertTrue("Install the voice pack with the incremental codec", voices.hasStreamingCodec())
+        }
+        val repeated = voices.stream(text, direction).toList().single()
+        assertTrue("Repeated speech should reuse the same PCM",
+            chunks.fold(ByteArray(0)) { pcm, chunk -> pcm + chunk }.contentEquals(repeated))
     }
 
     @Test

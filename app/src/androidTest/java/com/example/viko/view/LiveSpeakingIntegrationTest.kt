@@ -22,6 +22,7 @@ import com.example.viko.view.screens.home.HomeViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -37,6 +38,38 @@ import java.util.UUID
 
 /** Real UDP/TCP -> registry -> Room tests. Never add test members to a real phone. */
 class LiveSpeakingIntegrationTest {
+    @Test fun sendsFirstAudioBeforeTheRestOfTheReplyIsGenerated() = runBlocking {
+        withTestMember { app, id ->
+            val audio = app.container.badgeAudio
+            audio.rememberBadge(id, InetAddress.getLoopbackAddress())
+            withTimeout(3_000) {
+                while (id !in audio.translationWorkerIds) delay(10)
+            }
+            val prior = audio.translationCapture
+            val firstFrame = CompletableDeferred<Unit>()
+            val received = CompletableDeferred<ByteArray>()
+            val start = ByteArray(960) { 1 }
+            val end = ByteArray(960) { 2 }
+            audio.translationCapture = BadgeAudioServer.TranslationCapture(
+                isEnabled = { true },
+                worker = { device, pcm, _ -> if (device == id) received.complete(pcm) },
+                manager = { _, _, _ -> }
+            )
+            try {
+                assertTrue(withTimeout(3_000) {
+                    audio.sendPcm(id, flow {
+                        emit(start)
+                        firstFrame.await()
+                        emit(end)
+                    }, firstFrame = { firstFrame.complete(Unit) })
+                })
+                assertArrayEquals(start + end, withTimeout(3_000) { received.await() })
+            } finally {
+                audio.translationCapture = prior
+            }
+        }
+    }
+
     @Test fun homeMicStreamsLiveToOnlineMembersOfTheSelectedChannel() = runBlocking<Unit> {
         assumeTrue("Emulator only", Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -104,7 +137,8 @@ class LiveSpeakingIntegrationTest {
                 container.badgeRegistry.translationStatus.first { it == TranslationStatus.ACTIVE }
             }
             val fixtures = File(OneVoicePipeline.directory(app).parentFile, "onevoice-test")
-            val capture = checkNotNull(container.badgeAudio.translationCapture)
+            val audio = container.badgeAudio
+            val capture = checkNotNull(audio.translationCapture)
             val store = ViewModelStore()
             val model = withContext(Dispatchers.Main) {
                 ViewModelProvider.create(store, viewModelFactory {
@@ -122,18 +156,25 @@ class LiveSpeakingIntegrationTest {
                 val pending = async(start = CoroutineStart.UNDISPATCHED) {
                     withTimeout(5_000) { model.uiState.first { it.isTranslating } }
                 }
-                capture.worker(id, File(fixtures, "vi_sample.pcm").readBytes())
+                capture.worker(id, File(fixtures, "vi_sample.pcm").readBytes(), android.os.SystemClock.elapsedRealtime())
                 pending.await()
                 val workerTurn = withTimeout(25_000) {
                     model.uiState.first { it.translation != null && !it.isTranslating }
                 }
                 assertFalse(workerTurn.translationFromManager)
-                capture.manager(id, File(fixtures, "ko_sample.pcm").readBytes())
+                // Loop the outgoing Vietnamese packets back through the UDP receiver.
+                // Keep the reply from being interpreted as another worker turn.
+                audio.rememberBadge(id, InetAddress.getLoopbackAddress())
+                audio.translationCapture = capture.copy(worker = { _, _, _ -> })
+                capture.manager(id, File(fixtures, "ko_sample.pcm").readBytes(), android.os.SystemClock.elapsedRealtime())
                 val managerTurn = withTimeout(25_000) {
                     model.uiState.first { it.translation != null && it.translationFromManager && !it.isTranslating }
                 }
                 assertNotEquals(workerTurn.translationMessageId, managerTurn.translationMessageId)
+                withTimeout(15_000) { audio.activeBadges.first { id in it } }
+                withTimeout(12_000) { audio.activeBadges.first { id !in it } }
             } finally {
+                audio.translationCapture = capture
                 withContext(Dispatchers.Main) { store.clear() }
             }
         }
@@ -149,8 +190,8 @@ class LiveSpeakingIntegrationTest {
             val priorCapture = audio.translationCapture
             audio.translationCapture = BadgeAudioServer.TranslationCapture(
                 isEnabled = { true },
-                worker = { deviceId, pcm -> if (deviceId == id) turns.trySend(pcm) },
-                manager = { _, _ -> }
+                worker = { deviceId, pcm, _ -> if (deviceId == id) turns.trySend(pcm) },
+                manager = { _, _, _ -> }
             )
             try {
                 withContext(Dispatchers.IO) {

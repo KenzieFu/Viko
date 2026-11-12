@@ -22,11 +22,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
@@ -128,7 +135,7 @@ class BadgeAudioServer(context: Context) {
     // Owned by the UDP receiver. Capture mode is chosen on the first packet.
     private val utterances = mutableMapOf<String, BadgeUtterance>()
 
-    private class BadgeUtterance(val submit: ((deviceId: String, pcm: ByteArray) -> Unit)?) {
+    private class BadgeUtterance(val submit: ((deviceId: String, pcm: ByteArray, endedAt: Long) -> Unit)?) {
         private val pcm = submit?.let { ByteArrayOutputStream() }
         private var expected: Long? = null
         private var sawFirstPacket = false
@@ -163,8 +170,8 @@ class BadgeAudioServer(context: Context) {
 
     internal data class TranslationCapture(
         val isEnabled: () -> Boolean,
-        val worker: (deviceId: String, pcm: ByteArray) -> Unit,
-        val manager: (deviceId: String, pcm: ByteArray) -> Unit
+        val worker: (deviceId: String, pcm: ByteArray, endedAt: Long) -> Unit,
+        val manager: (deviceId: String, pcm: ByteArray, endedAt: Long) -> Unit
     )
 
     /** Capture mode is selected once per PTT press, in either direction. */
@@ -180,7 +187,7 @@ class BadgeAudioServer(context: Context) {
     val isTalking = _isTalking.asStateFlow()
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError = _captureError.asStateFlow()
-    @Volatile private var submitSupervisorTurn = false
+    @Volatile private var submitSupervisorTurnAt: Long? = null
     private val senderMutex = Mutex()
     private val playback = PcmPlaybackQueue()
     private var playbackJob: Job? = null
@@ -421,7 +428,7 @@ class BadgeAudioServer(context: Context) {
             Log.d(TAG, describe(pcm))
             dump(deviceId, pcm)
         }
-        turn.submit?.invoke(deviceId, pcm)
+        turn.submit?.invoke(deviceId, pcm, turn.lastReceivedAt)
     }
 
     /**
@@ -555,37 +562,35 @@ class BadgeAudioServer(context: Context) {
         captureOwner = scope
         _isTalking.value = true
         voiceWifiLock.touch()
-        submitSupervisorTurn = false
+        submitSupervisorTurnAt = null
         // ATOMIC guarantees the finally block runs even if this screen closes
         // before the IO dispatcher starts the job (the recorder is already open).
         val submit = directCallId?.let { translationCapture?.takeIf { it.isEnabled() }?.manager }
         captureJob = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             val recorded = if (submit != null) ByteArrayOutputStream() else null
             try {
-                senderMutex.withLock {
-                    var sequence = 0L
-                    val chunk = ByteArray(CHUNK_BYTES)
-                    var filled = 0
-                    while (isActive && _isTalking.value) {
-                        val read = record.read(chunk, filled, CHUNK_BYTES - filled, AudioRecord.READ_BLOCKING)
-                        if (read < 0) throw IOException("AudioRecord read failed: $read")
-                        if (read == 0) { delay(1.milliseconds); continue }
-                        filled += read
-                        if (filled < CHUNK_BYTES) continue
-                        if (recorded == null) sendLiveFrame(targets, sequence++, chunk, filled)
-                        recorded?.let {
-                            val keep = minOf(filled, MAX_UTTERANCE_BYTES - it.size())
-                            if (keep > 0) it.write(chunk, 0, keep)
-                        }
-                        filled = 0
+                var sequence = 0L
+                val chunk = ByteArray(CHUNK_BYTES)
+                var filled = 0
+                while (isActive && _isTalking.value) {
+                    val read = record.read(chunk, filled, CHUNK_BYTES - filled, AudioRecord.READ_BLOCKING)
+                    if (read < 0) throw IOException("AudioRecord read failed: $read")
+                    if (read == 0) { delay(1.milliseconds); continue }
+                    filled += read
+                    if (filled < CHUNK_BYTES) continue
+                    if (recorded == null) sendLiveFrame(targets, sequence++, chunk, filled)
+                    recorded?.let {
+                        val keep = minOf(filled, MAX_UTTERANCE_BYTES - it.size())
+                        if (keep > 0) it.write(chunk, 0, keep)
                     }
-                    val tail = filled and -2
-                    if (tail > 0) {
-                        if (recorded == null) sendLiveFrame(targets, sequence, chunk, tail)
-                        else {
-                            val keep = minOf(tail, MAX_UTTERANCE_BYTES - recorded.size())
-                            if (keep > 0) recorded.write(chunk, 0, keep)
-                        }
+                    filled = 0
+                }
+                val tail = filled and -2
+                if (tail > 0) {
+                    if (recorded == null) sendLiveFrame(targets, sequence, chunk, tail)
+                    else {
+                        val keep = minOf(tail, MAX_UTTERANCE_BYTES - recorded.size())
+                        if (keep > 0) recorded.write(chunk, 0, keep)
                     }
                 }
             } catch (e: CancellationException) {
@@ -597,8 +602,9 @@ class BadgeAudioServer(context: Context) {
                 runCatching { record.stop() }
                 record.release()
                 _isTalking.value = false
-                if (submitSupervisorTurn && directCallId != null && recorded != null && recorded.size() > 0)
-                    submit?.invoke(directCallId, recorded.toByteArray())
+                val endedAt = submitSupervisorTurnAt
+                if (endedAt != null && directCallId != null && recorded != null && recorded.size() > 0)
+                    submit?.invoke(directCallId, recorded.toByteArray(), endedAt)
             }
         }
         return null
@@ -608,36 +614,20 @@ class BadgeAudioServer(context: Context) {
         if (captureOwner !== scope) return
         // Let the current blocking read finish (20ms), then release before allowing
         // another capture. Never snapshot a buffer while its producer is writing.
-        submitSupervisorTurn = submitTranslation
+        submitSupervisorTurnAt = if (submitTranslation) SystemClock.elapsedRealtime() else null
         _isTalking.value = false
     }
 
-    /** Reuse the bounded playback queue if inference or offline speech fails. */
-    suspend fun playLocalPcm(deviceId: String, pcm: ByteArray) {
-        var sequence = 0L
-        var offset = 0
-        while (offset < pcm.size && !isTalking.value) {
-            val end = minOf(offset + CHUNK_BYTES, pcm.size)
-            playback.offer(deviceId, sequence++, pcm.copyOfRange(offset, end), SystemClock.elapsedRealtime())
-            offset = end
-            delay(CHUNK_MS.milliseconds)
-        }
-    }
+    suspend fun playLocalPcm(deviceId: String, pcm: ByteArray) = playLocalPcm(deviceId, flowOf(pcm))
 
-    /**
-     * Sends an already-prepared PCM16 buffer to a badge — synthesised Vietnamese,
-     * rather than the live mic.
-     *
-     * **Paced in real time.** The badge has a small jitter buffer sized for one
-     * chunk per 20ms, and firing a whole utterance at wire speed overruns it: the
-     * chunks arrive faster than its DAC drains them and the tail is dropped. The
-     * mic path gets this pacing for free from the blocking `AudioRecord.read`;
-     * here it has to be deliberate.
-     *
-     * Suspends for roughly the duration of the audio. Returns false if the badge's
-     * address is unknown or the socket is down.
-     */
-    suspend fun sendPcm(deviceId: String, pcm: ByteArray): Boolean {
+    suspend fun playLocalPcm(deviceId: String, chunks: Flow<ByteArray>, firstFrame: () -> Unit = {}): Boolean =
+        pacePcm(chunks, firstFrame) { frame, sequence ->
+            playback.offer(deviceId, sequence, frame, SystemClock.elapsedRealtime())
+        }
+
+    suspend fun sendPcm(deviceId: String, pcm: ByteArray) = sendPcm(deviceId, flowOf(pcm))
+
+    suspend fun sendPcm(deviceId: String, chunks: Flow<ByteArray>, firstFrame: () -> Unit = {}): Boolean {
         val target = badgeAddresses[deviceId] ?: run {
             Log.w(TAG, "cannot send to $deviceId: no address known")
             return false
@@ -646,25 +636,76 @@ class BadgeAudioServer(context: Context) {
             Log.w(TAG, "cannot send to $deviceId: audio socket not bound")
             return false
         }
-        if (pcm.size % 2 != 0) return false
-        return try { senderMutex.withLock {
-            var sequence = 0L
-            var offset = 0
-            var deadline = System.nanoTime()
-            while (offset < pcm.size) {
-                val length = minOf(CHUNK_BYTES, pcm.size - offset)
-                sendTo(deviceId, target, sequence++, pcm.copyOfRange(offset, offset + length), length)
-                offset += length
-                // No fast pre-roll or unbounded catch-up bursts after a stall.
-                deadline = maxOf(deadline + CHUNK_NANOS, System.nanoTime())
-                val waitMs = (deadline - System.nanoTime()) / 1_000_000
-                if (waitMs > 0) delay(waitMs.milliseconds)
+        return withContext(Dispatchers.IO) {
+            senderMutex.withLock {
+                pacePcm(chunks, firstFrame) { frame, sequence ->
+                    sendTo(deviceId, target, sequence, frame, frame.size)
+                    true
+                }
             }
-            true
-        } } catch (e: IOException) {
-            Log.w(TAG, "prepared audio transmission failed", e)
-            false
         }
+    }
+
+    private class ReplyInterrupted : CancellationException()
+
+    /** Synthesised chunks may be larger than a datagram. Pace frames across chunk boundaries. */
+    private suspend fun pacePcm(
+        chunks: Flow<ByteArray>, firstFrame: () -> Unit, deliver: (ByteArray, Long) -> Boolean
+    ): Boolean = supervisorScope {
+        var sequence = 0L
+        var nextFrameAt = 0L
+        var delivered = false
+        val stream = async(start = CoroutineStart.LAZY) {
+            chunks.pcmFrames().collect { frame ->
+                val remaining = nextFrameAt - System.nanoTime()
+                if (remaining > 0) delay((remaining + 999_999) / 1_000_000)
+                if (isTalking.value) throw ReplyInterrupted()
+                val accepted = deliver(frame, sequence++)
+                if (accepted && !delivered) firstFrame()
+                delivered = delivered || accepted
+                // Restart pacing after a slow inference chunk. Never burst packets to catch up.
+                nextFrameAt = System.nanoTime() + CHUNK_NANOS
+            }
+        }
+        val interrupt = launch(start = CoroutineStart.UNDISPATCHED) {
+            isTalking.first { it }
+            stream.cancel(ReplyInterrupted())
+        }
+        try {
+            stream.await()
+            delivered
+        } catch (_: ReplyInterrupted) {
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "prepared audio stream stopped", e)
+            // Preserve a partially delivered reply without replaying the original.
+            delivered
+        } finally {
+            interrupt.cancel()
+        }
+    }
+
+    private fun Flow<ByteArray>.pcmFrames(): Flow<ByteArray> = flow {
+        var frame = ByteArray(CHUNK_BYTES)
+        var filled = 0
+        collect { chunk ->
+            require(chunk.size % 2 == 0) { "PCM16 requires complete samples" }
+            var offset = 0
+            while (offset < chunk.size) {
+                val count = minOf(CHUNK_BYTES - filled, chunk.size - offset)
+                chunk.copyInto(frame, filled, offset, offset + count)
+                filled += count
+                offset += count
+                if (filled == CHUNK_BYTES) {
+                    emit(frame)
+                    frame = ByteArray(CHUNK_BYTES)
+                    filled = 0
+                }
+            }
+        }
+        if (filled > 0) emit(frame.copyOf(filled))
     }
 
     private fun newRecord(): AudioRecord? {

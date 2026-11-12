@@ -4,20 +4,21 @@ import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import java.nio.IntBuffer
 import java.nio.LongBuffer
 import java.nio.channels.FileChannel
 import kotlin.math.exp
 import kotlin.random.Random
 
 /** VieNeu v3 Turbo CPU inference with the upstream int8 graphs and preset conditioning. */
-internal class VieNeuTurbo(private val directory: File) : Closeable {
+internal class VieNeuTurbo(private val directory: File, streamCodec: Boolean) : Closeable {
     private val env = OrtEnvironment.getEnvironment()
     private val config = JSONObject(File(directory, "config.json").readText())
     private val preset = JSONObject(File(directory, "preset.json").readText())
@@ -50,7 +51,8 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
     private val prefill: OrtSession
     private val backbone: OrtSession
     private val acoustic: OrtSession
-    private val codec: OrtSession
+    private val fullCodec: OrtSession?
+    private val streamingCodec: MossStreamingDecoder?
 
     init {
         try {
@@ -60,7 +62,10 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
             prefill = session("vieneu_prefill.onnx")
             backbone = session("vieneu_decode_step.onnx")
             acoustic = session("vieneu_acoustic_cached.onnx")
-            codec = session("moss_audio_tokenizer_decode_full.onnx")
+            fullCodec = if (streamCodec) null else session("moss_audio_tokenizer_decode_full.onnx")
+            streamingCodec = if (streamCodec) MossStreamingDecoder(
+                env, session("moss_audio_tokenizer_decode_step.onnx"), File(directory, "codec_browser_onnx_meta.json")
+            ) else null
         } catch (failure: Exception) {
             close()
             throw failure
@@ -77,7 +82,7 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
         env.createSession(File(directory, name).path, options).also(resources::add)
     }
 
-    fun synthesise(text: String): FloatArray {
+    suspend fun stream(text: String, emit: suspend (FloatArray) -> Unit) {
         val phonemes = phonemizer.convert(text)
         val chunks = phonemes.split(Regex("\\s+")).filter(String::isNotEmpty)
             .fold(mutableListOf<StringBuilder>()) { result, word ->
@@ -86,19 +91,29 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
                 else last.append(' ').append(word)
                 result
             }
-        val rendered = chunks.map { generate(it.toString()) }
-        if (rendered.isEmpty()) return FloatArray(0)
-        val pause = 3_840
-        val output = FloatArray(rendered.sumOf { it.size } + pause * (rendered.size - 1))
-        var offset = 0
-        for (samples in rendered) {
-            samples.copyInto(output, offset)
-            offset += samples.size + pause
+        for ((index, chunk) in chunks.withIndex()) {
+            if (index > 0) emit(FloatArray(3_840))
+            streamingCodec?.stream().use { decoder ->
+                val pending = mutableListOf<IntArray>()
+                generate(chunk.toString()) { frame ->
+                    pending += frame
+                    // Four 80 ms codec frames give a short initial playback buffer.
+                    if (decoder != null && pending.size == 4) {
+                        emit(decoder.decode(pending))
+                        pending.clear()
+                    }
+                }
+                if (pending.isNotEmpty()) {
+                    if (decoder != null) emit(decoder.decode(pending))
+                    else MossStreamingDecoder.runCodec(env, checkNotNull(fullCodec), pending).use {
+                        emit(MossStreamingDecoder.readCodecAudio(it))
+                    }
+                }
+            }
         }
-        return output
     }
 
-    private fun generate(phonemes: String): FloatArray {
+    private suspend fun generate(phonemes: String, onFrame: suspend (IntArray) -> Unit) {
         val phones = tokenizer.encode(phonemes, false, false).ids.map { it.toInt() }
         val promptIds = listOf(config.getInt("default_style_token_id"), config.getInt("text_prompt_start_token_id")) +
             phones + config.getInt("text_prompt_end_token_id")
@@ -107,7 +122,6 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
         promptIds.forEachIndexed { i, id -> row(id).copyInto(prompt, i * hidden) }
         reference.forEachIndexed { i, codes -> row(referenceSlot, codes).copyInto(prompt, (promptIds.size + i) * hidden) }
 
-        val frames = mutableListOf<IntArray>()
         val maxFrames = minOf(300, 24 + 2 * phonemes.length, config.getInt("max_position_embeddings") - length)
         require(maxFrames > 0) { "VieNeu text prompt is too long" }
         val history = ArrayDeque<IntArray>()
@@ -116,8 +130,9 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
         }
         try {
             for (i in 0 until maxFrames) {
+                currentCoroutineContext().ensureActive()
                 val (codes, finished) = frame(hiddenRow(state, if (i == 0) length - 1 else 0), history)
-                frames.add(codes)
+                onFrame(codes)
                 if (finished || i == maxFrames - 1) break
                 history.addLast(codes)
                 if (history.size > 50) history.removeFirst()
@@ -129,7 +144,6 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
         } finally {
             state.close()
         }
-        return decode(frames)
     }
 
     private fun frame(condition: FloatArray, history: List<IntArray>): Pair<IntArray, Boolean> {
@@ -181,26 +195,6 @@ internal class VieNeuTurbo(private val directory: File) : Closeable {
         return floats(vector, 1, length, hidden.toLong()).use { input ->
             OnnxTensor.createTensor(env, LongBuffer.wrap(positions), longArrayOf(1, length)).use { ids ->
                 session.run(past + mapOf(name to input, "position_ids" to ids))
-            }
-        }
-    }
-
-    private fun decode(frames: List<IntArray>): FloatArray {
-        val flattened = IntArray(frames.size * codebooks) { frames[it / codebooks][it % codebooks] }
-        val codesShape = longArrayOf(1, frames.size.toLong(), codebooks.toLong())
-        return OnnxTensor.createTensor(env, IntBuffer.wrap(flattened), codesShape).use { codes ->
-            OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(frames.size)), longArrayOf(1)).use { lengths ->
-                codec.run(mapOf("audio_codes" to codes, "audio_code_lengths" to lengths)).use { out ->
-                    val tensor = out[0] as OnnxTensor
-                    val buffer = tensor.floatBuffer
-                    val length = tensor.info.shape.last().toInt()
-                    val channels = buffer.remaining() / length
-                    val audio = FloatArray(length)
-                    repeat(channels) {
-                        for (i in audio.indices) audio[i] += buffer.get() / channels
-                    }
-                    audio
-                }
             }
         }
     }

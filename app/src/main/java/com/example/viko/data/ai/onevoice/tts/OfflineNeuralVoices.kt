@@ -9,14 +9,29 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsSupertonicModelConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.json.JSONObject
-import java.io.Closeable
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.text.BreakIterator
+import java.util.Locale
 import kotlin.math.roundToInt
 
-internal class OfflineNeuralVoices(private val directory: File) : Closeable {
+internal class OfflineNeuralVoices(
+    private val directory: File,
+    private val keepBoth: () -> Boolean
+) {
+    private val access = Mutex()
     private var korean: OfflineTts? = null
     private var vietnamese: VieNeuTurbo? = null
     private val recent = object : LruCache<Pair<VoiceDirection, String>, ByteArray>(2 * 1024 * 1024) {
@@ -33,32 +48,83 @@ internal class OfflineNeuralVoices(private val directory: File) : Closeable {
         }
     }.getOrDefault(false)
 
-    @Synchronized
-    fun synthesise(text: String, direction: VoiceDirection): ByteArray? {
-        if (text.isBlank()) return null
-        val key = direction to text
-        recent.get(key)?.let { return it }
-        val start = SystemClock.elapsedRealtime()
-        // Keep only one voice loaded. Recognition and translation also need native memory.
-        val pcm = when (direction) {
-            VoiceDirection.Worker -> {
-                vietnamese?.close()
-                vietnamese = null
-                val engine = korean ?: openSupertonic().also { korean = it }
-                val generated = engine.generateWithConfig(
-                    text, GenerationConfig(sid = 0, numSteps = 8, extra = mapOf("lang" to "ko"))
-                )
-                pcm16(generated.samples, generated.sampleRate)
-            }
-            VoiceDirection.Manager -> {
-                korean?.release()
-                korean = null
-                val engine = vietnamese ?: VieNeuTurbo(File(directory, "vieneu")).also { vietnamese = it }
-                pcm16(engine.synthesise(text), 48_000)
-            }
+    fun hasStreamingCodec(): Boolean = runCatching {
+        val files = JSONObject(File(directory, "pack.json").readText()).getJSONObject("files")
+        listOf("codec_browser_onnx_meta.json", "moss_audio_tokenizer_decode_step.onnx").all { name ->
+            val path = "vieneu/$name"
+            val size = files.getLong(path)
+            size > 0 && File(directory, path).length() == size
         }
-        Log.i("VikoNeuralTts", "${direction.target} ${SystemClock.elapsedRealtime() - start}ms, ${pcm.size / 32_000f}s")
-        return pcm.takeIf { it.any { sample -> sample != 0.toByte() } }?.also { recent.put(key, it) }
+    }.getOrDefault(false)
+
+    suspend fun prepare() {
+        if (!installed() || !keepBoth()) return
+        access.withLock { koreanEngine() }
+        yield()
+        access.withLock { if (keepBoth()) vietnameseEngine() }
+    }
+
+    fun stream(text: String, direction: VoiceDirection) = flow {
+        if (text.isBlank()) return@flow
+        access.withLock {
+            val key = direction to text
+            val started = SystemClock.elapsedRealtime()
+            recent.get(key)?.let {
+                Log.i("VikoNeuralTts", "${direction.target} cached PCM")
+                emit(it)
+                return@withLock
+            }
+
+            val captured = ByteArrayOutputStream()
+            var bytes = 0L
+            suspend fun chunk(samples: FloatArray, rate: Int) {
+                val pcm = pcm16(samples, rate)
+                if (pcm.isEmpty()) return
+                if (bytes == 0L) Log.i("VikoNeuralTts", "${direction.target} first PCM ${SystemClock.elapsedRealtime() - started}ms")
+                bytes += pcm.size
+                if (bytes <= CACHE_BYTES) captured.write(pcm)
+                emit(pcm)
+            }
+
+            when (direction) {
+                VoiceDirection.Worker -> {
+                    val engine = koreanEngine()
+                    val config = GenerationConfig(sid = 0, numSteps = 8, extra = mapOf("lang" to "ko"))
+                    val sentences = BreakIterator.getSentenceInstance(Locale.KOREAN)
+                    sentences.setText(text)
+                    var start = sentences.first()
+                    var end = sentences.next()
+                    while (end != BreakIterator.DONE) {
+                        val sentence = text.substring(start, end).trim()
+                        if (sentence.isNotEmpty()) {
+                            val audio = engine.generateWithConfig(sentence, config)
+                            chunk(audio.samples, audio.sampleRate)
+                        }
+                        start = end
+                        end = sentences.next()
+                    }
+                }
+                VoiceDirection.Manager -> vietnameseEngine().stream(text) { chunk(it, 48_000) }
+            }
+            Log.i("VikoNeuralTts", "${direction.target} stream complete ${SystemClock.elapsedRealtime() - started}ms, ${bytes / 32_000f}s")
+            if (bytes in 1..CACHE_BYTES.toLong()) recent.put(key, captured.toByteArray())
+        }
+    }.buffer(2).flowOn(Dispatchers.Default)
+
+    private fun koreanEngine(): OfflineTts {
+        if (vietnamese != null && !keepBoth()) {
+            vietnamese?.close()
+            vietnamese = null
+        }
+        return korean ?: openSupertonic().also { korean = it }
+    }
+
+    private fun vietnameseEngine(): VieNeuTurbo {
+        if (korean != null && !keepBoth()) {
+            korean?.release()
+            korean = null
+        }
+        return vietnamese ?: VieNeuTurbo(File(directory, "vieneu"), hasStreamingCodec()).also { vietnamese = it }
     }
 
     private fun openSupertonic(): OfflineTts {
@@ -76,16 +142,18 @@ internal class OfflineNeuralVoices(private val directory: File) : Closeable {
         )))
     }
 
-    @Synchronized
-    override fun close() {
-        korean?.release()
-        korean = null
-        vietnamese?.close()
-        vietnamese = null
-        recent.evictAll()
+    suspend fun close() = withContext(NonCancellable) {
+        access.withLock {
+            korean?.release()
+            korean = null
+            vietnamese?.close()
+            vietnamese = null
+            recent.evictAll()
+        }
     }
 
     companion object {
+        private const val CACHE_BYTES = 2 * 1024 * 1024
         private val required = listOf(
             "supertonic/duration_predictor.int8.onnx", "supertonic/text_encoder.int8.onnx",
             "supertonic/vector_estimator.int8.onnx", "supertonic/vocoder.int8.onnx",

@@ -30,6 +30,8 @@ The exporter checks the release manifest before opening the local checkpoints. T
 
 The Korean pack uses Sherpa-ONNX’s int8 conversion of Supertonic 3 under the upstream OpenRAIL-M model license included in the pack. The Vietnamese int8 model, [MOSS codec](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX), and [SEA-G2P](https://github.com/pnnbao97/sea-g2p/tree/v0.10.0) use Apache 2.0. The bundled 64-bit SEA-G2P libraries can be rebuilt with Android NDK r28c, Rust 1.89, and the upstream v0.10.0 source using `bash scripts/onevoice/build-phonemizer.sh ANDROID_NDK_DIR SEA_G2P_SOURCE_DIR`.
 
+The current voice pack adds the incremental MOSS decoder and its state metadata. Rebuild and install the voice pack to enable within-sentence streaming for Vietnamese. Existing packs still play Vietnamese using the full decoder. Supertonic plays each Korean sentence as it becomes available. Viko sends UDP frames at the audio sample cadence and keeps speech replies ordered while the recognizer works on the next turn. Devices with enough memory prepare and retain both voices when Direct Call opens.
+
 ## Verify both directions
 
 ```sh
@@ -37,12 +39,15 @@ The Korean pack uses Sherpa-ONNX’s int8 conversion of Supertonic 3 under the u
 scripts/onevoice/install.sh /tmp/viko-onevoice-models /tmp/viko-onevoice-fixtures
 adb shell am instrument -w \
   -e class com.example.viko.data.ai.onevoice.OneVoiceInstrumentedTest \
-  -e requireOneVoice true -e requireNeuralVoices true -e prepareOneVoice true \
+  -e requireOneVoice true -e requireNeuralVoices true -e requireStreamingCodec true \
+  -e prepareOneVoice true \
   com.example.viko.test/androidx.test.runner.AndroidJUnitRunner
-adb logcat -d -s OneVoice OneVoiceTest VikoNeuralTts
+adb logcat -d -s OneVoice OneVoiceTest VikoNeuralTts VikoTurn
 ```
 
 The Android test checks the transcript, tag and translated text from the three bundled recordings against the Python reference. It repeats a clip in each direction to measure warm inference separately. `requireNeuralVoices` also requires both neural models to generate 16 kHz mono PCM. For an offline inference check, turn off Wi-Fi and mobile data. For a wearable test, use a local Wi-Fi network without internet, speak in both directions, listen to the phone and badge, and time from PTT release to first translated audio.
+
+`VikoTurn` records time to text and first audio dispatch, with turn finalization, queue time, and time waiting for the recognizer or translator. The phone measures from the stop tap for manager speech and from the last received audio packet for badge speech. Dispatch precedes actual playback. `VikoNeuralTts` records first PCM and total generation time. Compare cold starts, warm uncached replies, and alternating directions separately.
 
 Keep Android ONNX Runtime pinned until the reference tests pass on the replacement version. Opening Direct Call starts loading the shared translation models and the Vietnamese recognizer. Phones with sufficient free memory also load Korean ahead of the call. The first turn still waits for any models that are loading. Phones with limited free memory load the other recognizer when the direction changes. The 30-second capture cap applies in both directions. Model parity on a few clips does not establish translation accuracy for factory noise, accents or unfamiliar phrases.
 

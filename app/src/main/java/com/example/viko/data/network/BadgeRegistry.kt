@@ -1,5 +1,6 @@
 package com.example.viko.data.network
 
+import android.os.SystemClock
 import android.util.Log
 import com.example.viko.data.settings.TranslationPreferences
 import com.example.viko.data.team.scanner.WifiDeviceScanner
@@ -112,7 +113,11 @@ class BadgeRegistry internal constructor(
         directCallOpened.value = true
     }
 
-    private data class Turn(val id: Long, val deviceId: String, val pcm: ByteArray, val direction: VoiceDirection)
+    private data class Turn(
+        val id: Long, val deviceId: String, val pcm: ByteArray, val direction: VoiceDirection,
+        val endedAt: Long, val queuedAt: Long = SystemClock.elapsedRealtime()
+    )
+    private data class Reply(val turn: Turn, val translation: String?)
     private val talkLock = Mutex()
 
     fun start(scope: CoroutineScope) {
@@ -161,8 +166,8 @@ class BadgeRegistry internal constructor(
         }
         scope.launch(Dispatchers.Default) {
             val turns = Channel<Turn>(2)
-            fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection) {
-                val turn = Turn(turnIds.incrementAndGet(), id, pcm, direction)
+            fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection, endedAt: Long) {
+                val turn = Turn(turnIds.incrementAndGet(), id, pcm, direction, endedAt)
                 startTurn(turn)
                 if (turns.trySend(turn).isFailure) {
                     finishTurn(turn, "Translation busy. Try speaking again.")
@@ -171,13 +176,18 @@ class BadgeRegistry internal constructor(
             }
             val capture = BadgeAudioServer.TranslationCapture(
                 isEnabled = { translationPreferences.enabled.value },
-                worker = { id, pcm -> enqueue(id, pcm, VoiceDirection.Worker) },
-                manager = { id, pcm -> enqueue(id, pcm, VoiceDirection.Manager) }
+                worker = { id, pcm, endedAt -> enqueue(id, pcm, VoiceDirection.Worker, endedAt) },
+                manager = { id, pcm, endedAt -> enqueue(id, pcm, VoiceDirection.Manager, endedAt) }
             )
             try {
                 OneVoicePipeline(modelDir, keepBothRecognizers).use { pipeline ->
                     coroutineScope {
                         val modelAccess = Mutex()
+                        val replies = Channel<Reply>(2)
+                        // Keep speech in order while the next turn can already produce text.
+                        val speech = launch {
+                            for (reply in replies) playReply(reply)
+                        }
                         val settings = launch {
                             translationPreferences.enabled.collectLatest { enabled ->
                                 audio.translationCapture = null
@@ -202,8 +212,10 @@ class BadgeRegistry internal constructor(
                         }
                         val warmup = launch { prepareModels(pipeline, modelAccess) }
                         try {
-                            for (turn in turns) handleTurn(pipeline, turn, modelAccess)
+                            for (turn in turns) handleTurn(pipeline, turn, modelAccess, replies)
                         } finally {
+                            replies.cancel()
+                            speech.cancel()
                             settings.cancel()
                             warmup.cancel()
                         }
@@ -247,6 +259,7 @@ class BadgeRegistry internal constructor(
                 modelAccess.withLock { pipeline.prepareTranslation() }
                 modelAccess.withLock { pipeline.prepareWorker() }
                 modelAccess.withLock { pipeline.prepareManager() }
+                neuralVoices.prepare()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -257,8 +270,11 @@ class BadgeRegistry internal constructor(
         }
     }
 
-    private suspend fun handleTurn(pipeline: OneVoicePipeline, turn: Turn, modelAccess: Mutex) {
+    private suspend fun handleTurn(
+        pipeline: OneVoicePipeline, turn: Turn, modelAccess: Mutex, replies: Channel<Reply>
+    ) {
         val (_, deviceId, pcm, direction) = turn
+        val startedAt = SystemClock.elapsedRealtime()
         var textFinished = false
         fun finishText(problem: String? = null) {
             if (textFinished) return
@@ -267,10 +283,14 @@ class BadgeRegistry internal constructor(
         }
         try {
             val worker = workers.getWorker(deviceId) ?: return
-            val result = modelAccess.withLock { pipeline.process(pcm, direction) }
+            val waitingAt = SystemClock.elapsedRealtime()
+            val (modelWait, result) = modelAccess.withLock {
+                val waited = SystemClock.elapsedRealtime() - waitingAt
+                waited to pipeline.process(pcm, direction)
+            }
             if (result == null || result.translation.isBlank()) {
                 finishText("No translation for this turn. Try speaking again.")
-                replayOriginal(turn)
+                replies.send(Reply(turn, null))
                 return
             }
             val translated = result.translation
@@ -288,14 +308,17 @@ class BadgeRegistry internal constructor(
                 )
             )
             finishText()
-            val delivered = speakTranslation(deviceId, translated, direction)
-            if (!delivered) replayOriginal(turn)
+            Log.i("VikoTurn", "turn=${turn.id} target=${direction.target} " +
+                "end_to_text_ms=${SystemClock.elapsedRealtime() - turn.endedAt} " +
+                "finalize_ms=${turn.queuedAt - turn.endedAt} queue_ms=${startedAt - turn.queuedAt} " +
+                "model_wait_ms=$modelWait")
+            replies.send(Reply(turn, translated))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "OneVoice turn failed", e)
             finishText("Translation failed. Try speaking again.")
-            replayOriginal(turn)
+            replies.send(Reply(turn, null))
         } catch (e: LinkageError) {
             Log.e(TAG, "OneVoice native library unavailable", e)
             // Missing ABI libraries cannot be repaired during this process.
@@ -304,23 +327,41 @@ class BadgeRegistry internal constructor(
                 _translationStatus.value = TranslationStatus.UNAVAILABLE
             }
             finishText("Translation unavailable.")
-            replayOriginal(turn)
+            replies.send(Reply(turn, null))
         } finally {
             finishText()
         }
     }
 
-    private suspend fun speakTranslation(deviceId: String, text: String, direction: VoiceDirection): Boolean {
+    private suspend fun playReply(reply: Reply) {
+        val delivered = try {
+            reply.translation?.let { speakTranslation(reply.turn, it) } ?: false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not play translated speech", e)
+            false
+        } catch (e: LinkageError) {
+            Log.w(TAG, "Offline speech library unavailable", e)
+            false
+        }
+        if (!delivered) replayOriginal(reply.turn)
+    }
+
+    private suspend fun speakTranslation(turn: Turn, text: String): Boolean {
+        val deviceId = turn.deviceId
+        val direction = turn.direction
         if (direction == VoiceDirection.Worker && audio.isTalking.value) return false
         if (neuralVoices.installed()) {
-            val pcm = neuralVoices.synthesise(text, direction) ?: return false
+            val chunks = neuralVoices.stream(text, direction)
+            val firstFrame = {
+                Log.i("VikoTurn", "turn=${turn.id} target=${direction.target} " +
+                    "end_to_first_dispatch_ms=${SystemClock.elapsedRealtime() - turn.endedAt}")
+                Unit
+            }
             return when (direction) {
-                VoiceDirection.Worker -> {
-                    if (audio.isTalking.value) return false
-                    audio.playLocalPcm(deviceId, pcm)
-                    true
-                }
-                VoiceDirection.Manager -> audio.sendPcm(deviceId, pcm)
+                VoiceDirection.Worker -> audio.playLocalPcm(deviceId, chunks, firstFrame)
+                VoiceDirection.Manager -> audio.sendPcm(deviceId, chunks, firstFrame)
             }
         }
         return when (direction) {

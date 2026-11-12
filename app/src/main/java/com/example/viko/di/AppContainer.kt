@@ -89,7 +89,9 @@ class AppContainer(context: Context) {
      * entirely.
      */
     val vietnameseVoice by lazy { VietnameseVoice(context) }
-    internal val neuralVoices = OfflineNeuralVoices(OneVoicePipeline.directory(context).resolveSibling("voices-v1"))
+    internal val neuralVoices = OfflineNeuralVoices(OneVoicePipeline.directory(context).resolveSibling("voices-v1")) {
+        OneVoicePipeline.canKeepBoth(context)
+    }
 
     val translationPreferences = TranslationPreferences(context)
 
