@@ -7,7 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -61,9 +61,8 @@ fun DirectCallScreen(
     val context = LocalContext.current
     var permissionHint by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // The permission dialog interrupts the gesture. Granting access must not
-        // open the mic after the finger has already been lifted.
-        permissionHint = if (granted) "Microphone ready — hold to speak" else "Microphone permission needed to talk"
+        // Permission approval must not open the mic automatically.
+        permissionHint = if (granted) "Microphone ready — tap to speak" else "Microphone permission needed to talk"
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.cancelTalking() }
     DirectCallScreen(
@@ -100,10 +99,6 @@ fun DirectCallScreen(
     }
     val listening = uiState.callState == CallState.LISTENING
     val speaking = uiState.callState == CallState.SPEAKING
-    // A completed translation often arrives after the member releases their mic.
-    val showTranscript = !uiState.voiceOnly && !speaking && (listening || uiState.isTranslating ||
-        uiState.translation != null || uiState.transcript != null)
-
     Column(
         Modifier.fillMaxSize().background(VBackground)
             .statusBarsPadding().navigationBarsPadding().padding(vertical = 24.dp),
@@ -120,38 +115,37 @@ fun DirectCallScreen(
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val contentHeight = maxHeight
             Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = contentHeight),
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(contentHeight * .25f))
+                Spacer(Modifier.height(minOf(contentHeight * .15f, 64.dp)))
                 CallerIdentity(worker, listening, speaking)
                 if (uiState.voiceOnly) {
                     Text("Voice only — translation is off", fontSize = 14.sp, lineHeight = 20.sp,
                         color = VOnSurfaceSecondary, textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 20.dp).padding(top = 8.dp))
-                }
-                if (showTranscript) {
-                    Spacer(Modifier.height(24.dp))
-                    TranscriptCard(uiState.translation, uiState.transcript, uiState.isTranslating)
-                    Spacer(Modifier.height(48.dp))
                 } else {
                     Spacer(Modifier.height(16.dp))
+                    TranscriptCard(
+                        uiState,
+                        Modifier.height(minOf(220.dp, maxOf(112.dp, contentHeight - 132.dp)))
+                    )
                 }
-                MicButton(
-                    speaking = speaking,
-                    listening = listening,
-                    compact = showTranscript,
-                    enabled = worker.isOnline && !listening,
-                    onStart = onStartTalking, onStop = onStopTalking, onCancel = onCancelTalking
-                )
                 uiState.talkError?.let { error ->
                     Text(error, fontSize = 14.sp, lineHeight = 20.sp,
                         color = VWarning, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 24.dp))
+                        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp))
                 }
-                Spacer(Modifier.height(24.dp))
             }
         }
+        Spacer(Modifier.height(16.dp))
+        MicButton(
+            speaking = speaking,
+            listening = listening,
+            showBadgeLabel = uiState.voiceOnly,
+            enabled = worker.isOnline && !listening,
+            onStart = onStartTalking, onStop = onStopTalking
+        )
     }
 }
 
@@ -183,7 +177,8 @@ private fun CallerIdentity(worker: Worker, listening: Boolean, speaking: Boolean
             Text(buildAnnotatedString {
                 append("${worker.zone} • ")
                 withStyle(SpanStyle(color = statusColor, fontWeight = FontWeight.Bold)) { append(status) }
-            }, fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
+            }, fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary, textAlign = TextAlign.Center,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(12.dp))
             // Reserve the waveform slot in every state so the title and mic do not jump.
             Canvas(Modifier.size(52.dp, 20.dp).alpha(if (listening) 1f else 0f)) {
@@ -199,37 +194,50 @@ private fun CallerIdentity(worker: Worker, listening: Boolean, speaking: Boolean
 }
 
 @Composable
-private fun TranscriptCard(text: String?, source: String?, isTranslating: Boolean) {
-    Box(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(220.dp)
+private fun TranscriptCard(state: DirectCallUiState, modifier: Modifier = Modifier) {
+    val status = when {
+        state.isTranslating -> "Translating…"
+        state.translationProblem != null -> state.translationProblem
+        state.translation == null && state.transcript == null -> "Translations appear here"
+        state.translationFromManager -> "Korean → Vietnamese"
+        else -> "Vietnamese → Korean"
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp).then(modifier)
             .testTag("direct-call-transcript").clip(RoundedCornerShape(12.dp)).background(VSurface)
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (text != null) Text(text, fontSize = 16.sp, lineHeight = 24.sp, color = VOnSurface, textAlign = TextAlign.Center)
-            if (source != null) {
-                if (text != null) Spacer(Modifier.height(12.dp))
-                Text(source, fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
-            }
-            if (isTranslating) {
-                if (text != null || source != null) Spacer(Modifier.height(16.dp))
-                Text("Translating…", fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
+        Text(status, fontSize = 14.sp, lineHeight = 20.sp, color = VOnSurfaceSecondary,
+            textAlign = TextAlign.Center, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (state.translation != null || state.transcript != null) {
+            Spacer(Modifier.height(8.dp))
+            // Each result starts at the top, including repeated phrases with a new message ID.
+            key(state.translationMessageId) {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    state.translation?.let { Text(it, fontSize = 16.sp, lineHeight = 24.sp,
+                        color = VOnSurface, textAlign = TextAlign.Center) }
+                    state.transcript?.let {
+                        if (state.translation != null) Spacer(Modifier.height(8.dp))
+                        Text(it, fontSize = 14.sp, lineHeight = 20.sp,
+                            color = VOnSurfaceSecondary, textAlign = TextAlign.Center)
+                    }
+                }
             }
         }
     }
 }
 
-/** Press/release owns capture. Recomposition during a press must not restart the gesture. */
+/** A tap starts capture; the next tap submits the turn. Screen disposal cancels it. */
 @Composable
 private fun MicButton(
-    speaking: Boolean, listening: Boolean, compact: Boolean, enabled: Boolean,
-    onStart: () -> Unit, onStop: () -> Unit, onCancel: () -> Unit
+    speaking: Boolean, listening: Boolean, showBadgeLabel: Boolean, enabled: Boolean,
+    onStart: () -> Unit, onStop: () -> Unit
 ) {
-    val start by rememberUpdatedState(onStart)
-    val stop by rememberUpdatedState(onStop)
-    val cancel by rememberUpdatedState(onCancel)
-    Box(Modifier.size(if (compact) 88.dp else 168.dp).zIndex(-1f), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(120.dp).zIndex(-1f), contentAlignment = Alignment.Center) {
         if (speaking) {
             ExpandingVoicePulse(Modifier.matchParentSize().testTag("direct-call-speaking-pulse"), outerRadius = 210.dp)
         }
@@ -241,14 +249,19 @@ private fun MicButton(
         }
         Box(
             Modifier.matchParentSize().testTag("direct-call-mic").clip(CircleShape)
-                .background(when { listening -> VMemberSpeakingSurface; !enabled -> VSurface; speaking -> VMicBlue; else -> Color.White })
+                .background(when {
+                    listening -> VMemberSpeakingSurface
+                    !enabled -> VSurface
+                    speaking -> VMicBlue
+                    else -> Color.White
+                })
                 .then(if (listening) Modifier.border(2.dp, VMemberSpeaking, CircleShape) else Modifier)
                 .semantics {
-                    role = Role.Button
                     contentDescription = when {
                         listening -> "Badge microphone active"
                         !enabled -> "Microphone unavailable"
-                        else -> "Hold to speak"
+                        speaking -> "Tap to stop speaking"
+                        else -> "Tap to speak"
                     }
                     stateDescription = when {
                         listening -> "Listening to badge"
@@ -256,36 +269,26 @@ private fun MicButton(
                         !enabled -> "Unavailable"
                         else -> "Ready"
                     }
-                    if (!enabled) disabled()
-                    else onClick(label = if (speaking) "Stop speaking" else "Start speaking") {
-                        // Accessibility users can explicitly start and stop without holding a gesture.
-                        if (speaking) stop() else start()
-                        true
-                    }
                 }
-                .pointerInput(enabled) {
-                    if (enabled) detectTapGestures(onPress = {
-                        var finished = false
-                        try {
-                            start()
-                            val released = tryAwaitRelease()
-                            finished = true
-                            if (released) stop() else cancel()
-                        } finally {
-                            if (!finished) cancel()
-                        }
-                    })
+                .clickable(enabled = enabled, role = Role.Button,
+                    onClickLabel = if (speaking) "Stop speaking" else "Start speaking") {
+                    if (speaking) onStop() else onStart()
                 },
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(painterResource(R.drawable.ic_mic), contentDescription = null,
-                    tint = when { listening -> VMemberSpeakingText; !enabled -> VMicBlue.copy(alpha = .25f); speaking -> Color.White; else -> VMicBlue },
-                    modifier = Modifier.size(if (compact) 28.dp else 44.dp))
-                if (listening && !compact) {
+                    tint = when {
+                        listening -> VMemberSpeakingText
+                        !enabled -> VMicBlue.copy(alpha = .25f)
+                        speaking -> Color.White
+                        else -> VMicBlue
+                    },
+                    modifier = Modifier.size(36.dp))
+                if (listening && showBadgeLabel) {
                     Spacer(Modifier.height(8.dp))
-                    Text("BADGE SPEAKING", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                        color = VMemberSpeakingText, letterSpacing = 1.sp)
+                    Text("BADGE SPEAKING", fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        color = VMemberSpeakingText, letterSpacing = .5.sp)
                 }
             }
         }

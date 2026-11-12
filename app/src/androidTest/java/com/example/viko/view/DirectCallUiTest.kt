@@ -27,34 +27,36 @@ class DirectCallUiTest {
     private var stops = 0
     private var cancels = 0
 
-    @Test fun holdKeepsTheMicFixedAndReleaseStopsSpeaking() {
+    @Test fun tapStartsSpeakingAndSecondTapStopsWithTheMicFixed() {
         showCall()
         compose.onNodeWithText("DIRECT CALL").assertIsDisplayed()
-        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(168.dp)
+        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(120.dp)
         val identity = compose.onNodeWithTag("direct-call-identity").fetchSemanticsNode().boundsInRoot
         val microphone = compose.onNodeWithTag("direct-call-mic").fetchSemanticsNode().boundsInRoot
         capture("direct-call-idle.png")
         compose.mainClock.autoAdvance = false
-        compose.onNodeWithTag("direct-call-mic").performTouchInput { down(center) }
+        compose.onNodeWithTag("direct-call-mic").performTouchInput { click() }
         compose.mainClock.advanceTimeBy(700)
         compose.onNodeWithTag("direct-call-speaking-pulse").assertExists()
         compose.onNodeWithText("Central Building • Listening...").assertIsDisplayed()
         assertEquals(identity, compose.onNodeWithTag("direct-call-identity").fetchSemanticsNode().boundsInRoot)
         assertEquals(microphone, compose.onNodeWithTag("direct-call-mic").fetchSemanticsNode().boundsInRoot)
         capture("direct-call-speaking.png")
-        compose.onNodeWithTag("direct-call-mic").performTouchInput { up() }
+        compose.runOnIdle { assertEquals(1, starts); assertEquals(0, stops) }
+        compose.onNodeWithTag("direct-call-mic").performTouchInput { click() }
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("direct-call-speaking-pulse").assertDoesNotExist()
         compose.runOnIdle { assertEquals(1, starts); assertEquals(1, stops) }
     }
 
-    @Test fun listeningUsesCompactDisabledMicAndKeepsCompletedTranslation() {
+    @Test fun listeningDisablesTheFixedMicAndKeepsCompletedTranslation() {
         state = state.copy(callState = CallState.LISTENING,
             translation = "Yes boss, I think we’ve got them handled already now. So it’s fine now.")
         showCall()
         compose.onNodeWithTag("direct-call-listening-pulse").assertExists()
         compose.onNodeWithTag("direct-call-transcript").assertHeightIsEqualTo(220.dp)
-        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(88.dp).assertIsNotEnabled()
+        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(120.dp).assertIsNotEnabled()
+        val microphone = compose.onNodeWithTag("direct-call-mic").fetchSemanticsNode().boundsInRoot
         compose.mainClock.autoAdvance = false
         compose.mainClock.advanceTimeBy(900)
         capture("direct-call-listening.png")
@@ -64,12 +66,43 @@ class DirectCallUiTest {
         compose.onNodeWithTag("direct-call-listening-pulse").assertDoesNotExist()
         compose.onNodeWithTag("direct-call-transcript").assertIsDisplayed()
         compose.onNodeWithTag("direct-call-mic").assertIsEnabled()
+        assertEquals(microphone, compose.onNodeWithTag("direct-call-mic").fetchSemanticsNode().boundsInRoot)
     }
 
-    @Test fun badgeAudioHighlightsTheLargeMicInVoiceOnlyMode() {
+    @Test fun transcriptAndMicStayFixedWhileTranslationUpdates() {
+        showCall()
+        val mic = compose.onNodeWithTag("direct-call-mic")
+        val card = compose.onNodeWithTag("direct-call-transcript")
+        val micBounds = mic.fetchSemanticsNode().boundsInRoot
+        val cardBounds = card.fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithText("Translations appear here").assertIsDisplayed()
+
+        mic.performClick()
+        card.assertIsDisplayed()
+        assertEquals(micBounds, mic.fetchSemanticsNode().boundsInRoot)
+        mic.performClick()
+        compose.runOnIdle { state = state.copy(isTranslating = true) }
+        compose.onNodeWithText("Translating…").assertIsDisplayed()
+
+        compose.runOnIdle {
+            state = state.copy(isTranslating = false, translationMessageId = "worker-turn",
+                translation = "A long translated message. ".repeat(20))
+        }
+        compose.onNodeWithText("Vietnamese → Korean").assertIsDisplayed()
+        compose.runOnIdle {
+            state = state.copy(translationMessageId = "manager-turn", translationFromManager = true,
+                translation = "Tôi nghe rõ.")
+        }
+        compose.onNodeWithText("Korean → Vietnamese").assertIsDisplayed()
+        compose.onNodeWithText("Tôi nghe rõ.").assertIsDisplayed()
+        assertEquals(cardBounds, card.fetchSemanticsNode().boundsInRoot)
+        assertEquals(micBounds, mic.fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Test fun badgeAudioHighlightsTheFixedMicInVoiceOnlyMode() {
         state = state.copy(callState = CallState.LISTENING, voiceOnly = true)
         showCall()
-        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(168.dp).assertIsNotEnabled()
+        compose.onNodeWithTag("direct-call-mic").assertWidthIsEqualTo(120.dp).assertIsNotEnabled()
         compose.onNodeWithTag("direct-call-mic").assertContentDescriptionEquals("Badge microphone active")
         compose.onNodeWithTag("direct-call-badge-mic-pulse").assertExists()
         compose.onNodeWithText("BADGE SPEAKING").assertIsDisplayed()
@@ -79,17 +112,16 @@ class DirectCallUiTest {
         compose.onNodeWithTag("direct-call-mic").assertIsEnabled()
     }
 
-    @Test fun cancellationAndLeavingScreenDiscardTheHeldTurn() {
+    @Test fun cancelledGestureDoesNotOpenMicAndLeavingDiscardsActiveTurn() {
         showCall()
-        compose.onNodeWithTag("direct-call-mic").performTouchInput { down(center) }
-        compose.onNodeWithTag("direct-call-speaking-pulse").assertExists()
-        compose.onNodeWithTag("direct-call-mic").performTouchInput { cancel() }
+        compose.onNodeWithTag("direct-call-mic").performTouchInput { down(center); cancel() }
         compose.onNodeWithTag("direct-call-speaking-pulse").assertDoesNotExist()
-        compose.runOnIdle { assertEquals(0, stops); assertTrue(cancels > 0) }
-        compose.onNodeWithTag("direct-call-mic").performTouchInput { down(center) }
+        compose.runOnIdle { assertEquals(0, starts); assertEquals(0, stops) }
+        compose.onNodeWithTag("direct-call-mic").performTouchInput { click() }
+        compose.onNodeWithTag("direct-call-speaking-pulse").assertExists()
         compose.runOnIdle { visible = false }
         compose.waitForIdle()
-        compose.runOnIdle { assertEquals(CallState.IDLE, state.callState); assertEquals(0, stops) }
+        compose.runOnIdle { assertEquals(CallState.IDLE, state.callState); assertEquals(0, stops); assertTrue(cancels > 0) }
     }
 
     @Test fun shortScreenWithLargeTextKeepsTranscriptAndMicReachable() {
@@ -105,7 +137,7 @@ class DirectCallUiTest {
             }
         }
         compose.onNodeWithContentDescription("Close").assertIsDisplayed()
-        compose.onNodeWithTag("direct-call-mic").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("direct-call-mic").assertIsDisplayed()
         compose.onNodeWithText("Translating…").performScrollTo().assertIsDisplayed()
     }
 

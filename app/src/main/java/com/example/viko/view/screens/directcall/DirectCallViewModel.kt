@@ -11,7 +11,6 @@ import com.example.viko.domain.team.model.Worker
 import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.navigation.NavArgs
 import com.example.viko.type.CallState
-import com.example.viko.type.WorkerStatus
 import com.example.viko.utils.UI_STATE_TIMEOUT_MS
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,16 +22,14 @@ import kotlinx.coroutines.flow.stateIn
 data class DirectCallUiState(
     val worker: Worker? = null,
     val callState: CallState = CallState.IDLE,
-    /** What this member last said, in their own language. */
+    /** The latest completed turn, in its original language. */
     val transcript: String? = null,
-    /** [transcript] rendered in Korean for the supervisor. */
+    /** [transcript] rendered in the other person's language. */
     val translation: String? = null,
-    /**
-     * The cascade is running on this member's last turn. With live relay off
-     * there is otherwise nothing between the button being released and the
-     * Korean arriving, and silence reads as a broken link.
-     */
+    val translationMessageId: String? = null,
+    val translationFromManager: Boolean = false,
     val isTranslating: Boolean = false,
+    val translationProblem: String? = null,
     /**
      * Set when the supervisor pressed talk and nothing could be sent — no mic
      * permission, or the badge has never been heard from so we have no address
@@ -64,15 +61,16 @@ class DirectCallViewModel(
     private val talkError = MutableStateFlow<String?>(null)
 
     /**
-     * The last thing this member said. `observeMessagesFor` is newest-first, so the
-     * head is the current utterance — and it appears a few seconds *after* they
-     * release the button, since the cascade runs on the whole turn at once.
+     * Room emits the newest completed turn first, in either direction.
      */
     private val latestMessage = messageRepository.observeMessagesFor(workerId)
-        .map { rows -> rows.firstOrNull { it.originalLang == "vi" && it.targetLang == "ko" } }
+        .map { rows -> rows.firstOrNull {
+            (it.originalLang == "vi" && it.targetLang == "ko") ||
+                (it.originalLang == "ko" && it.targetLang == "vi")
+        } }
 
-    private val translationState = combine(badgeRegistry.translating, badgeRegistry.translationStatus) { active, status ->
-        (workerId in active) to (status == TranslationStatus.ACTIVE)
+    private val translationState = combine(badgeRegistry.translationProgress, badgeRegistry.translationStatus) { progress, status ->
+        progress[workerId] to (status == TranslationStatus.ACTIVE)
     }
 
     val uiState: StateFlow<DirectCallUiState> = combine(
@@ -81,22 +79,21 @@ class DirectCallViewModel(
         combine(talkError, audio.captureError) { requested, runtime -> runtime ?: requested },
         latestMessage,
         translationState
-    ) { worker, (isTalking, badgeAudioActive), error, message, (isTranslating, enabled) ->
+    ) { worker, (isTalking, badgeAudioActive), error, message, (progress, enabled) ->
         DirectCallUiState(
             worker = worker,
             // Keep Stop reachable even if both people press at once.
             callState = when {
                 isTalking -> CallState.SPEAKING
-                badgeAudioActive || worker?.status == WorkerStatus.SPEAKING -> CallState.LISTENING
+                badgeAudioActive -> CallState.LISTENING
                 else -> CallState.IDLE
             },
-            // Deliberately NOT gated on the member still holding the channel. The
-            // cascade takes a few seconds on the whole turn, so the transcript always
-            // lands after they have let go — gating on SPEAKING would mean it was
-            // never once visible.
             transcript = message?.originalText?.takeIf { enabled && it.isNotBlank() },
             translation = message?.translatedText?.takeIf { enabled && it.isNotBlank() },
-            isTranslating = isTranslating,
+            translationMessageId = message?.id,
+            translationFromManager = message?.originalLang == "ko",
+            isTranslating = enabled && (progress?.pending ?: 0) > 0,
+            translationProblem = progress?.problem?.takeIf { enabled },
             voiceOnly = !enabled,
             talkError = error
         )
@@ -106,13 +103,13 @@ class DirectCallViewModel(
         initialValue = DirectCallUiState()
     )
 
-    /** Press starts capture; member speech still owns the half-duplex channel. */
+    /** The first tap starts capture; member speech still owns the half-duplex channel. */
     fun startTalking() {
         if (talking.value || uiState.value.callState == CallState.LISTENING) return
         talkError.value = audio.startTalking(workerId, viewModelScope)
     }
 
-    /** A deliberate release submits the captured turn once. */
+    /** The second tap submits the captured turn once. */
     fun stopTalking() {
         if (talking.value) audio.stopTalking(workerId)
     }
