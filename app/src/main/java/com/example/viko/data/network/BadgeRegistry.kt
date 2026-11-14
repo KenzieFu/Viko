@@ -3,6 +3,7 @@ package com.example.viko.data.network
 import android.os.SystemClock
 import android.util.Log
 import com.example.viko.data.settings.TranslationPreferences
+import com.example.viko.data.team.repository.WorkerRepositoryImpl
 import com.example.viko.data.team.scanner.WifiDeviceScanner
 import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.data.ai.Speaker
@@ -17,7 +18,6 @@ import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.model.TranslationMessage
 import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.team.model.Worker
-import com.example.viko.domain.team.repository.WorkerRepository
 import com.example.viko.type.WorkerStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -65,7 +65,7 @@ class BadgeRegistry internal constructor(
     private val server: BadgeControlServer,
     private val discovery: WifiDeviceScanner,
     private val audio: BadgeAudioServer,
-    private val workers: WorkerRepository,
+    private val workers: WorkerRepositoryImpl,
     private val channels: ChannelRepository,
     private val alerts: AlertRepository,
     private val messages: MessageRepository,
@@ -125,11 +125,29 @@ class BadgeRegistry internal constructor(
         val queuedAt: Long = SystemClock.elapsedRealtime()
     )
     private val talkLock = Mutex()
+    private val telemetryReceivedAt = mutableMapOf<String, Long>()
 
     fun start(scope: CoroutineScope) {
         // Subscribe before accepting packets: SharedFlow has no replay.
         scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-            server.packets.collect { packet -> talkLock.withLock { apply(packet) } }
+            coroutineScope {
+                launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    server.packets.collect { packet -> talkLock.withLock { apply(packet) } }
+                }
+                talkLock.withLock { workers.clearStoredBadgeTelemetry() }
+                server.start(this)
+                while (true) {
+                    delay(5_000)
+                    talkLock.withLock {
+                        val now = SystemClock.elapsedRealtime()
+                        val expired = telemetryReceivedAt.filterValues { now - it >= TELEMETRY_TIMEOUT_MS }.keys
+                        if (expired.isNotEmpty()) {
+                            workers.clearBadgeTelemetry(expired.toList())
+                            telemetryReceivedAt.keys.removeAll(expired)
+                        }
+                    }
+                }
+            }
         }
         scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             var previous = emptySet<String>()
@@ -152,7 +170,6 @@ class BadgeRegistry internal constructor(
                 }
             }
         }
-        server.start(scope)
         audio.start(scope)
         scope.launch {
             workers.observeWorkers().collect { rows ->
@@ -459,13 +476,11 @@ class BadgeRegistry internal constructor(
                 discovery.record(NearbyDevice(packet.deviceId, "ViKo ${packet.deviceId}",
                     packet.source.hostAddress.orEmpty()))
                 // Discovery is not enrollment. Preserve the manager's name, zone and channel.
-                if (known != null) workers.updateWorker(known.copy(
-                    deviceAddress = packet.source.hostAddress.orEmpty(),
-                    macAddress = packet.macAddress,
-                    firmwareVersion = packet.firmwareVersion,
-                    isOnline = true,
-                    isPaired = true
-                ))
+                if (known != null) {
+                    workers.registerBadge(packet.deviceId, packet.source.hostAddress.orEmpty(),
+                        packet.macAddress, packet.firmwareVersion, packet.battery ?: -1, packet.rssi)
+                    telemetryReceivedAt[packet.deviceId] = SystemClock.elapsedRealtime()
+                }
             }
 
             is BadgePacket.Ptt -> {
@@ -475,8 +490,10 @@ class BadgeRegistry internal constructor(
             }
 
             is BadgePacket.Emergency -> {
-                if (known != null && packet.battery >= 0) {
-                    workers.updateWorker(known.copy(batteryLevel = packet.battery, isOnline = true))
+                if (known != null) {
+                    workers.updateBadgeTelemetry(packet.deviceId, packet.battery ?: known.batteryLevel,
+                        packet.rssi ?: known.wifiRssiDbm)
+                    telemetryReceivedAt[packet.deviceId] = SystemClock.elapsedRealtime()
                 }
                 alerts.addAlert(
                     EmergencyAlert(
@@ -497,5 +514,6 @@ class BadgeRegistry internal constructor(
     private companion object {
         const val TAG = "VikoAI"
         const val UNASSIGNED = "Unassigned"
+        const val TELEMETRY_TIMEOUT_MS = 45_000L
     }
 }

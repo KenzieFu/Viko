@@ -226,7 +226,6 @@ class AddMemberViewModel(
                 // The Wi-Fi MAC is not knowable over BLE; the badge reports it
                 // in device_register once it joins the network.
                 macAddress = "",
-                batteryLevel = FULL_BATTERY,
                 // The badge is rebooting into station mode right now. It flips
                 // online when it registers, which is the honest signal that the
                 // whole chain works — not this write succeeding.
@@ -290,7 +289,6 @@ class AddMemberViewModel(
 
     private companion object {
         const val DEFAULT_ZONE = "Unassigned Zone"
-        const val FULL_BATTERY = 100
     }
 }
 

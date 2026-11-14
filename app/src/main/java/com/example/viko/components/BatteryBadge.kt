@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Battery2Bar
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.BatteryUnknown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,19 +27,27 @@ import com.example.viko.view.theme.VikoTheme
  */
 @Composable
 fun BatteryBadge(level: Int, textColor: Color = VOnSurfaceSecondary) {
+    val available = level in 0..100
     val isLow = level <= LOW_BATTERY
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
         Icon(
-            imageVector = if (isLow) Icons.Default.Battery2Bar else Icons.Default.BatteryFull,
-            contentDescription = null,
-            tint = if (isLow) VLowBattery else VOnline,
+            imageVector = when {
+                !available -> Icons.Default.BatteryUnknown
+                isLow -> Icons.Default.Battery2Bar
+                else -> Icons.Default.BatteryFull
+            },
+            contentDescription = if (available) "Battery" else null,
+            tint = when {
+                !available -> VOnSurfaceSecondary
+                isLow -> VLowBattery
+                else -> VOnline
+            },
             modifier = Modifier.size(13.dp)
         )
-        Text(text = "$level%", fontSize = 12.sp, color = textColor)
+        Text(text = if (available) "$level%" else "Battery unavailable", fontSize = 12.sp, color = textColor)
     }
 }
 
-/** At or below this a badge shows red — about an hour of talk time left. */
 private const val LOW_BATTERY = 20
 
 @Preview(showBackground = true, backgroundColor = 0xFF1C1D20)

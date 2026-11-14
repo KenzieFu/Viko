@@ -43,6 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.ConfirmDeleteSheetContent
 import com.example.viko.components.DeviceIllustration
 import com.example.viko.components.DeviceInfoCard
+import com.example.viko.components.WifiSignalBadge
 import com.example.viko.components.LabeledSelectField
 import com.example.viko.components.LabeledTextField
 import com.example.viko.components.MissingWorker
@@ -156,7 +157,8 @@ fun MemberDetailScreen(
                 // The Wi-Fi MAC arrives with device_register; until the badge has
                 // joined the network the BLE address is the only one we have.
                 address = worker.macAddress.ifEmpty { worker.deviceAddress },
-                status = { MemberStatusLine(worker = worker) }
+                status = { MemberStatusLine(worker = worker, showWifi = false) },
+                wifiSignal = { WifiSignalBadge(worker.wifiRssiDbm.takeIf { worker.isOnline }, showDbm = true) }
             )
 
             Spacer(modifier = Modifier.height(24.dp))

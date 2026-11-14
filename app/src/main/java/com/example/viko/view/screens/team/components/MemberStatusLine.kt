@@ -10,6 +10,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.example.viko.components.BatteryBadge
+import com.example.viko.components.WifiSignalBadge
 import com.example.viko.domain.team.model.Worker
 import com.example.viko.type.WorkerStatus
 import com.example.viko.view.screens.previewWorker
@@ -24,7 +25,7 @@ import com.example.viko.view.theme.VikoTheme
  * - Member holding their button → a teal **Speaking** leads the line.
  */
 @Composable
-fun MemberStatusLine(worker: Worker, modifier: Modifier = Modifier) {
+fun MemberStatusLine(worker: Worker, modifier: Modifier = Modifier, showWifi: Boolean = true) {
     if (!worker.isOnline) {
         Text(text = "Not Available", fontSize = 12.sp, color = VOnSurfaceSecondary, modifier = modifier)
         return
@@ -34,15 +35,21 @@ fun MemberStatusLine(worker: Worker, modifier: Modifier = Modifier) {
             Text(text = "Speaking", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = VMemberSpeakingText)
             Text(text = SEPARATOR, fontSize = 12.sp, color = VOnSurfaceSecondary)
         }
-        Text(
-            text = worker.zone + SEPARATOR,
-            fontSize = 12.sp,
-            color = VOnSurfaceSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false)
-        )
+        if (worker.zone.isNotBlank()) {
+            Text(
+                text = worker.zone + SEPARATOR,
+                fontSize = 12.sp,
+                color = VOnSurfaceSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
         BatteryBadge(level = worker.batteryLevel)
+        if (showWifi && worker.wifiRssiDbm != null) {
+            Text(text = SEPARATOR, fontSize = 12.sp, color = VOnSurfaceSecondary)
+            WifiSignalBadge(worker.wifiRssiDbm)
+        }
     }
 }
 

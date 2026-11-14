@@ -18,7 +18,8 @@ data class WorkerEntity(
     val batteryLevel: Int,
     val isOnline: Boolean,
     val status: WorkerStatus,
-    val isPaired: Boolean
+    val isPaired: Boolean,
+    val wifiRssiDbm: Int? = null
 )
 
 fun WorkerEntity.toDomain() = Worker(
@@ -33,7 +34,8 @@ fun WorkerEntity.toDomain() = Worker(
     batteryLevel = batteryLevel,
     isOnline = isOnline,
     status = status,
-    isPaired = isPaired
+    isPaired = isPaired,
+    wifiRssiDbm = wifiRssiDbm
 )
 
 fun Worker.toEntity() = WorkerEntity(
@@ -48,5 +50,6 @@ fun Worker.toEntity() = WorkerEntity(
     batteryLevel = batteryLevel,
     isOnline = isOnline,
     status = status,
-    isPaired = isPaired
+    isPaired = isPaired,
+    wifiRssiDbm = wifiRssiDbm
 )

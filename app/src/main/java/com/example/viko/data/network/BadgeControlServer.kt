@@ -141,7 +141,9 @@ class BadgeControlServer(context: Context) {
                 targetLanguage = json.optString("target_language", "ko"),
                 factoryZone = json.optString("factory_zone"),
                 macAddress = json.optString("mac_address"),
-                firmwareVersion = json.optString("firmware_version")
+                firmwareVersion = json.optString("firmware_version"),
+                battery = json.optInt("battery", -1).takeIf { it in 0..100 },
+                rssi = json.optInt("rssi", 0).takeIf { it in -127..-1 }
             )
 
             "control" -> when (val event = json.optString("event")) {
@@ -159,8 +161,8 @@ class BadgeControlServer(context: Context) {
                 source = source,
                 workerName = json.optString("worker_name"),
                 zone = json.optString("zone"),
-                battery = json.optInt("battery", -1),
-                rssi = json.optInt("rssi", 0)
+                battery = json.optInt("battery", -1).takeIf { it in 0..100 },
+                rssi = json.optInt("rssi", 0).takeIf { it in -127..-1 }
             )
 
             else -> null
@@ -214,7 +216,9 @@ sealed interface BadgePacket {
         val targetLanguage: String,
         val factoryZone: String,
         val macAddress: String,
-        val firmwareVersion: String
+        val firmwareVersion: String,
+        val battery: Int?,
+        val rssi: Int?
     ) : BadgePacket
 
     /** `ptt_start` / `ptt_end` — push-to-talk held down and released. */
@@ -230,8 +234,7 @@ sealed interface BadgePacket {
         override val source: InetAddress,
         val workerName: String,
         val zone: String,
-        /** -1 when the badge didn't report one. */
-        val battery: Int,
-        val rssi: Int
+        val battery: Int?,
+        val rssi: Int?
     ) : BadgePacket
 }

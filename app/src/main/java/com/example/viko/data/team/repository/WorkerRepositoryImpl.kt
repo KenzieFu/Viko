@@ -23,6 +23,16 @@ class WorkerRepositoryImpl(private val dao: WorkerDao) : WorkerRepository {
 
     override suspend fun updateWorker(worker: Worker) = dao.update(worker.toEntity())
 
+    internal suspend fun registerBadge(id: String, address: String, mac: String, version: String, battery: Int, rssi: Int?) =
+        dao.registerBadge(id, address, mac, version, battery, rssi)
+
+    internal suspend fun updateBadgeTelemetry(id: String, battery: Int, rssi: Int?) =
+        dao.updateBadgeTelemetry(id, battery, rssi)
+
+    internal suspend fun clearStoredBadgeTelemetry() = dao.clearStoredBadgeTelemetry()
+
+    internal suspend fun clearBadgeTelemetry(ids: List<String>) = dao.clearBadgeTelemetry(ids)
+
     override suspend fun removeWorker(id: String) = dao.deleteById(id)
 
     override suspend fun assignToChannel(workerId: String, channelId: String) =

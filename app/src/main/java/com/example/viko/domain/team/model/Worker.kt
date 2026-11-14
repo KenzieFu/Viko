@@ -11,8 +11,9 @@ data class Worker(
     val deviceAddress: String,
     val macAddress: String,
     val firmwareVersion: String = "1.0.2",
-    val batteryLevel: Int,
+    val batteryLevel: Int = -1,
     val isOnline: Boolean,
     val status: WorkerStatus = WorkerStatus.AVAILABLE,
-    val isPaired: Boolean = true
+    val isPaired: Boolean = true,
+    val wifiRssiDbm: Int? = null
 )

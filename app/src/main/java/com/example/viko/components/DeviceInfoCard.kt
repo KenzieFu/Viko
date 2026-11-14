@@ -31,7 +31,8 @@ import com.example.viko.view.theme.VikoTheme
 fun DeviceInfoCard(
     address: String,
     status: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    wifiSignal: (@Composable () -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -51,6 +52,7 @@ fun DeviceInfoCard(
             )
         }
         DeviceInfoRow(label = "Device Status", value = status)
+        wifiSignal?.let { DeviceInfoRow(label = "Wi-Fi Signal", value = it) }
     }
 }
 

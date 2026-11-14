@@ -309,6 +309,38 @@ class LiveSpeakingIntegrationTest {
         }
     }
 
+    @Test fun badgeCheckInsUpdateTelemetryWithoutReplacingMemberDetails() = runBlocking {
+        withTestMember { app, id ->
+            val workers = app.container.workerRepository
+            register(id, "telemetry-v1", 64, -56)
+            val strong = withTimeout(3_000) {
+                workers.observeWorker(id).first { it?.firmwareVersion == "telemetry-v1" }
+            }!!
+            assertEquals(64, strong.batteryLevel)
+            assertEquals(-56, strong.wifiRssiDbm)
+            assertEquals("Status test", strong.name)
+
+            workers.renameWorker(id, "Manager edit")
+            register(id, "telemetry-v1", 0, -81)
+            val weak = withTimeout(3_000) { workers.observeWorker(id).first { it?.wifiRssiDbm == -81 } }!!
+            assertEquals(0, weak.batteryLevel)
+            assertEquals("Manager edit", weak.name)
+
+            register(id, "no-divider", rssi = -65)
+            val noDivider = withTimeout(3_000) {
+                workers.observeWorker(id).first { it?.firmwareVersion == "no-divider" }
+            }!!
+            assertEquals(-1, noDivider.batteryLevel)
+            assertEquals(-65, noDivider.wifiRssiDbm)
+
+            register(id, "legacy")
+            val legacy = withTimeout(3_000) { workers.observeWorker(id).first { it?.firmwareVersion == "legacy" } }!!
+            assertEquals(-1, legacy.batteryLevel)
+            assertNull(legacy.wifiRssiDbm)
+            assertTrue(legacy.isOnline)
+        }
+    }
+
     private suspend fun CoroutineScope.withTestMember(block: suspend CoroutineScope.(VikoApplication, String) -> Unit) {
         assumeTrue("Emulator only", Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as VikoApplication
@@ -348,8 +380,9 @@ class LiveSpeakingIntegrationTest {
     private suspend fun control(id: String, event: String) = sendTcp(JSONObject()
         .put("type", "control").put("device_id", id).put("event", event))
 
-    private suspend fun register(id: String, version: String) = sendTcp(JSONObject()
-        .put("type", "device_register").put("device_id", id).put("firmware_version", version))
+    private suspend fun register(id: String, version: String, battery: Int? = null, rssi: Int? = null) =
+        sendTcp(JSONObject().put("type", "device_register").put("device_id", id)
+            .put("firmware_version", version).put("battery", battery).put("rssi", rssi))
 
     private suspend fun sendTcp(json: JSONObject) = withContext(Dispatchers.IO) {
         Socket(InetAddress.getLoopbackAddress(), 5001).use { socket ->

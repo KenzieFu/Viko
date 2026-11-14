@@ -27,6 +27,30 @@ interface WorkerDao {
     @Update
     suspend fun update(worker: WorkerEntity)
 
+    @Query("""
+        UPDATE workers
+        SET deviceAddress = :address, macAddress = :mac, firmwareVersion = :version,
+            isOnline = 1, isPaired = 1, batteryLevel = :battery, wifiRssiDbm = :rssi
+        WHERE id = :id AND (deviceAddress != :address OR macAddress != :mac
+            OR firmwareVersion != :version OR isOnline != 1 OR isPaired != 1
+            OR batteryLevel != :battery OR wifiRssiDbm IS NOT :rssi)
+    """)
+    suspend fun registerBadge(id: String, address: String, mac: String, version: String, battery: Int, rssi: Int?)
+
+    @Query("""
+        UPDATE workers SET batteryLevel = :battery, wifiRssiDbm = :rssi, isOnline = 1 WHERE id = :id
+    """)
+    suspend fun updateBadgeTelemetry(id: String, battery: Int, rssi: Int?)
+
+    @Query("""
+        UPDATE workers SET batteryLevel = -1, wifiRssiDbm = NULL
+        WHERE id GLOB 'WR-*' AND (batteryLevel != -1 OR wifiRssiDbm IS NOT NULL)
+    """)
+    suspend fun clearStoredBadgeTelemetry()
+
+    @Query("UPDATE workers SET batteryLevel = -1, wifiRssiDbm = NULL WHERE id IN (:ids)")
+    suspend fun clearBadgeTelemetry(ids: List<String>)
+
     @Query("UPDATE workers SET channelId = :channelId WHERE id = :id")
     suspend fun updateChannel(id: String, channelId: String)
 

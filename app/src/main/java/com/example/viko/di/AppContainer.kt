@@ -26,7 +26,6 @@ import com.example.viko.domain.alert.repository.AlertRepository
 import com.example.viko.domain.channel.repository.ChannelRepository
 import com.example.viko.domain.message.repository.MessageRepository
 import com.example.viko.domain.settings.repository.FactoryWifiRepository
-import com.example.viko.domain.team.repository.WorkerRepository
 
 /**
  * Manual DI container: builds the Room database once and hands out repository
@@ -38,7 +37,7 @@ class AppContainer(context: Context) {
 
     private val database = AppDatabase.build(context)
 
-    val workerRepository: WorkerRepository = WorkerRepositoryImpl(database.workerDao())
+    val workerRepository = WorkerRepositoryImpl(database.workerDao())
     val channelRepository: ChannelRepository = ChannelRepositoryImpl(database.channelDao())
     val alertRepository: AlertRepository = AlertRepositoryImpl(database.alertDao())
     val messageRepository: MessageRepository = MessageRepositoryImpl(database.messageDao())
