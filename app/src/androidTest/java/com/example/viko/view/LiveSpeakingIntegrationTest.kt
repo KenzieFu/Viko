@@ -1,6 +1,7 @@
 package com.example.viko.view
 
 import android.os.Build
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -9,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.viko.VikoApplication
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
+import com.example.viko.data.ai.onevoice.TranslationDiagnostics
 import com.example.viko.data.network.BadgeAudioServer
 import com.example.viko.data.network.TranslationStatus
 import com.example.viko.domain.channel.model.Channel as TeamChannel
@@ -35,6 +37,7 @@ import java.net.InetAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.UUID
+import java.util.zip.ZipFile
 
 /** Real UDP/TCP -> registry -> Room tests. Never add test members to a real phone. */
 class LiveSpeakingIntegrationTest {
@@ -139,6 +142,16 @@ class LiveSpeakingIntegrationTest {
             val fixtures = File(OneVoicePipeline.directory(app).parentFile, "onevoice-test")
             val audio = container.badgeAudio
             val capture = checkNotNull(audio.translationCapture)
+            val recordings = File(app.noBackupFilesDir, "translation-diagnostics")
+            val previousDiagnostics = container.translationPreferences.diagnosticsEnabled.value
+            val workerPcm = File(fixtures, "vi_sample.pcm").readBytes()
+            val managerPcm = File(fixtures, "ko_sample.pcm").readBytes()
+            fun recordedTurns() = recordings.listFiles().orEmpty().mapNotNull { directory ->
+                val json = File(directory, "turn.json")
+                if (!json.isFile) return@mapNotNull null
+                val row = JSONObject(json.readText())
+                if (row.optString("badge_id") == id) directory to row else null
+            }
             val store = ViewModelStore()
             val model = withContext(Dispatchers.Main) {
                 ViewModelProvider.create(store, viewModelFactory {
@@ -152,11 +165,12 @@ class LiveSpeakingIntegrationTest {
                 })[DirectCallViewModel::class]
             }
             try {
+                container.translationPreferences.setDiagnosticsEnabled(true)
                 withTimeout(3_000) { model.uiState.first { it.worker?.id == id } }
                 val pending = async(start = CoroutineStart.UNDISPATCHED) {
                     withTimeout(5_000) { model.uiState.first { it.isTranslating } }
                 }
-                capture.worker(id, File(fixtures, "vi_sample.pcm").readBytes(), android.os.SystemClock.elapsedRealtime())
+                capture.worker(id, workerPcm, android.os.SystemClock.elapsedRealtime())
                 pending.await()
                 val workerTurn = withTimeout(25_000) {
                     model.uiState.first { it.translation != null && !it.isTranslating }
@@ -166,14 +180,44 @@ class LiveSpeakingIntegrationTest {
                 // Keep the reply from being interpreted as another worker turn.
                 audio.rememberBadge(id, InetAddress.getLoopbackAddress())
                 audio.translationCapture = capture.copy(worker = { _, _, _ -> })
-                capture.manager(id, File(fixtures, "ko_sample.pcm").readBytes(), android.os.SystemClock.elapsedRealtime())
+                capture.manager(id, managerPcm, android.os.SystemClock.elapsedRealtime())
                 val managerTurn = withTimeout(25_000) {
                     model.uiState.first { it.translation != null && it.translationFromManager && !it.isTranslating }
                 }
                 assertNotEquals(workerTurn.translationMessageId, managerTurn.translationMessageId)
                 withTimeout(15_000) { audio.activeBadges.first { id in it } }
                 withTimeout(12_000) { audio.activeBadges.first { id !in it } }
+                withTimeout(8_000) {
+                    while (recordedTurns().count { it.second.has("audio_status") } < 2) delay(20)
+                }
+                val archive = File.createTempFile("translation-test-", ".zip", app.cacheDir)
+                try {
+                    assertEquals(TranslationDiagnostics.ExportResult.Saved,
+                        container.translationDiagnostics.export(Uri.fromFile(archive)))
+                    ZipFile(archive).use { zip ->
+                        val entries = recordedTurns().associateBy { it.second.getString("source") }
+                        assertEquals(setOf("vi", "ko"), entries.keys)
+                        for ((source, pcm) in mapOf("vi" to workerPcm, "ko" to managerPcm)) {
+                            val directory = checkNotNull(entries[source]).first.name
+                            val row = JSONObject(zip.getInputStream(zip.getEntry("$directory/turn.json"))
+                                .bufferedReader().use { it.readText() })
+                            assertEquals("translated", row.getString("status"))
+                            assertEquals("translated_dispatched", row.getString("audio_status"))
+                            assertTrue(row.getString("transcript").isNotBlank())
+                            assertTrue(row.getString("translation").isNotBlank())
+                            assertTrue(row.getLong("end_to_first_dispatch_ms") >= row.getLong("end_to_text_ms"))
+                            val wav = zip.getInputStream(zip.getEntry("$directory/input.wav")).use { it.readBytes() }
+                            assertEquals("RIFF", wav.decodeToString(0, 4))
+                            assertEquals("WAVE", wav.decodeToString(8, 12))
+                            assertArrayEquals(pcm, wav.copyOfRange(44, wav.size))
+                        }
+                    }
+                } finally {
+                    archive.delete()
+                }
             } finally {
+                container.translationPreferences.setDiagnosticsEnabled(previousDiagnostics)
+                recordedTurns().forEach { it.first.deleteRecursively() }
                 audio.translationCapture = capture
                 withContext(Dispatchers.Main) { store.clear() }
             }

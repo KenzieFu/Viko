@@ -39,12 +39,23 @@ internal class VieNeuTurbo(private val directory: File, streamCodec: Boolean) : 
             IntArray(codebooks) { codes.getInt(it) }
         }
     }
-    private val weights = RandomAccessFile(File(directory, "embeddings.f32"), "r").use { file ->
-        require(file.length() == (textVocabulary + codebooks * audioRows + 1L) * hidden * 4)
-        file.channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length())
-            .order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+    private val embeddingRows = textVocabulary + codebooks * audioRows
+    private val weightCount = embeddingRows * hidden
+    private val quantized = File(directory, "embeddings.i8").takeIf(File::isFile)?.let { file ->
+        require(file.length() == weightCount.toLong() + (embeddingRows + hidden) * 4L)
+        mapEmbeddings(file)
     }
-    private val anchor = embedding(textVocabulary + codebooks * audioRows)
+    private val scales = quantized?.duplicate()?.order(ByteOrder.LITTLE_ENDIAN)?.apply {
+        position(weightCount)
+    }?.asFloatBuffer()
+    private val weights = if (quantized == null) {
+        val file = File(directory, "embeddings.f32")
+        require(file.length() == (weightCount + hidden) * 4L)
+        mapEmbeddings(file).asFloatBuffer()
+    } else null
+    private val anchor = FloatArray(hidden) { index ->
+        scales?.get(embeddingRows + index) ?: checkNotNull(weights)[weightCount + index]
+    }
     private val resources = mutableListOf<AutoCloseable>()
     private val phonemizer: SeaG2p
     private val tokenizer: HuggingFaceTokenizer
@@ -158,11 +169,11 @@ internal class VieNeuTurbo(private val directory: File, streamCodec: Boolean) : 
             runStep(acoustic, "token_emb", first, longArrayOf(0, 1), past)
         }
         try {
-            val eos = argmax(phonemizer.project(weights, 0, textVocabulary, hiddenRow(state, 0))) == endSpeech
+            val eos = argmax(project(0, textVocabulary, hiddenRow(state, 0))) == endSpeech
             val codes = IntArray(codebooks)
             for (channel in codes.indices) {
                 val result = hiddenRow(state, if (channel == 0) 1 else 0)
-                val logits = phonemizer.project(weights, audioRow(channel, 0) * hidden, audioVocabulary, result)
+                val logits = project(audioRow(channel, 0), audioVocabulary, result)
                 codes[channel] = sample(logits, history.map { it[channel] }.toSet())
                 if (channel == codes.lastIndex) break
                 val next = step(acoustic, "token_emb", embedding(audioRow(channel, codes[channel])),
@@ -210,17 +221,34 @@ internal class VieNeuTurbo(private val directory: File, streamCodec: Boolean) : 
 
     private fun audioRow(channel: Int, code: Int) = textVocabulary + channel * audioRows + code
 
-    private fun embedding(row: Int): FloatArray {
-        val view = weights.duplicate()
-        view.position(row * hidden)
-        return FloatArray(hidden).also { view.get(it) }
+    private fun mapEmbeddings(path: File) = RandomAccessFile(path, "r").use { file ->
+        file.channel.map(FileChannel.MapMode.READ_ONLY, 0, file.length()).order(ByteOrder.LITTLE_ENDIAN)
+    }
+
+    private fun project(row: Int, rows: Int, vector: FloatArray): FloatArray =
+        if (quantized != null) {
+            phonemizer.projectInt8(quantized, checkNotNull(scales), row, rows, vector)
+        } else {
+            phonemizer.project(checkNotNull(weights), row * hidden, rows, vector)
+        }
+
+    private fun embedding(row: Int) = FloatArray(hidden).also { addEmbedding(row, it) }
+
+    private fun addEmbedding(row: Int, values: FloatArray) {
+        val offset = row * hidden
+        if (quantized != null) {
+            val scale = checkNotNull(scales)[row]
+            for (i in values.indices) values[i] += quantized[offset + i] * scale
+        } else {
+            val floats = checkNotNull(weights)
+            for (i in values.indices) values[i] += floats[offset + i]
+        }
     }
 
     private fun row(id: Int, codes: IntArray? = null): FloatArray {
         val values = embedding(id)
         codes?.forEachIndexed { channel, code ->
-            val offset = audioRow(channel, code) * hidden
-            for (i in values.indices) values[i] += weights[offset + i]
+            addEmbedding(audioRow(channel, code), values)
         }
         for (i in values.indices) values[i] += anchor[i]
         return values

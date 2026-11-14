@@ -27,8 +27,10 @@ class SettingsTranslationUiTest {
         val container = app.container
         val preferences = container.translationPreferences
         val original = preferences.enabled.value
+        val originalDiagnostics = preferences.diagnosticsEnabled.value
         try {
             preferences.setEnabled(true)
+            preferences.setDiagnosticsEnabled(false)
             compose.setContent {
                 VikoTheme {
                     SettingsScreen(
@@ -63,8 +65,19 @@ class SettingsTranslationUiTest {
             toggle.assertIsOn()
             assertEquals(readyStatus == TranslationStatus.ACTIVE, container.badgeAudio.translationCapture != null)
             assertTrue(TranslationPreferences(app).enabled.value)
+
+            val diagnostics = compose.onNodeWithText("Translation diagnostics")
+            diagnostics.assertIsOff().performClick()
+            diagnostics.assertIsOn()
+            assertTrue(TranslationPreferences(app).diagnosticsEnabled.value)
+            assertEquals(readyStatus, registry.translationStatus.value)
+            diagnostics.performClick()
+            diagnostics.assertIsOff()
+            assertFalse(TranslationPreferences(app).diagnosticsEnabled.value)
+            compose.onNodeWithText("Export translation logs").assertExists()
         } finally {
             preferences.setEnabled(original)
+            preferences.setDiagnosticsEnabled(originalDiagnostics)
         }
     }
 }

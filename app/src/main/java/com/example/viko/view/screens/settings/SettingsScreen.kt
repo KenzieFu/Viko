@@ -1,5 +1,8 @@
 package com.example.viko.view.screens.settings
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.viko.components.ScreenHeader
 import com.example.viko.components.VikoDragHandle
+import com.example.viko.data.ai.onevoice.TranslationDiagnostics.ExportResult
 import com.example.viko.data.network.TranslationStatus
 import com.example.viko.di.AppViewModelProvider
 import com.example.viko.domain.settings.model.FactoryWifi
@@ -69,6 +74,17 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) viewModel.exportDiagnostics(uri) { result ->
+            val message = when (result) {
+                ExportResult.Saved -> "Translation logs exported"
+                ExportResult.Empty -> "No translation logs recorded"
+                ExportResult.Failed -> "Could not export translation logs"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
     SettingsScreen(
         uiState = uiState,
         onBack = onBack,
@@ -76,7 +92,9 @@ fun SettingsScreen(
         onOpenManageChannels = onOpenManageChannels,
         onReplayOnboarding = onReplayOnboarding,
         onSaveFactoryWifi = viewModel::saveFactoryWifi,
-        onAiTranslationChange = viewModel::setAiTranslation
+        onAiTranslationChange = viewModel::setAiTranslation,
+        onDiagnosticsChange = viewModel::setDiagnostics,
+        onExportDiagnostics = { export.launch("viko-translation-logs.zip") }
     )
 }
 
@@ -89,7 +107,9 @@ fun SettingsScreen(
     onOpenManageChannels: () -> Unit,
     onReplayOnboarding: () -> Unit,
     onSaveFactoryWifi: (FactoryWifi) -> Unit,
-    onAiTranslationChange: (Boolean) -> Unit
+    onAiTranslationChange: (Boolean) -> Unit,
+    onDiagnosticsChange: (Boolean) -> Unit = {},
+    onExportDiagnostics: () -> Unit = {}
 ) {
     var showWifiSheet by rememberSaveable { mutableStateOf(false) }
 
@@ -114,6 +134,13 @@ fun SettingsScreen(
             SettingsRow(title = "Manage Members", onClick = onOpenManageMembers)
             SettingsRow(title = "Manage Channels", onClick = onOpenManageChannels)
             AiTranslationRow(uiState, onAiTranslationChange)
+            SettingsToggleRow(
+                "Translation diagnostics",
+                "Save original audio and translation results on this phone",
+                uiState.diagnosticsEnabled,
+                onDiagnosticsChange
+            )
+            SettingsRow(title = "Export translation logs", onClick = onExportDiagnostics)
             SettingsRow(title = "Replay onboarding", value = "Keeps your data", onClick = onReplayOnboarding)
             // One network for the whole factory — every access point shares the
             // SSID and password — so it is a setting, not a field per member.
@@ -160,6 +187,11 @@ private fun AiTranslationRow(uiState: SettingsUiState, onChange: (Boolean) -> Un
         }
     }
 
+    SettingsToggleRow("AI translation", description, checked, onChange)
+}
+
+@Composable
+private fun SettingsToggleRow(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,7 +204,7 @@ private fun AiTranslationRow(uiState: SettingsUiState, onChange: (Boolean) -> Un
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = "AI translation",
+                text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = VOnSurface

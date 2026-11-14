@@ -69,6 +69,7 @@ object AppViewModelProvider {
             SettingsViewModel(
                 factoryWifiRepository = container().factoryWifiRepository,
                 translationPreferences = container().translationPreferences,
+                diagnostics = container().translationDiagnostics,
                 badgeRegistry = container().badgeRegistry
             )
         }

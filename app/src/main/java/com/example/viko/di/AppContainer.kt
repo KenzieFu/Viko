@@ -7,6 +7,7 @@ import android.os.SystemClock
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
+import com.example.viko.data.ai.onevoice.TranslationDiagnostics
 import com.example.viko.data.ai.onevoice.tts.OfflineNeuralVoices
 import com.example.viko.data.alert.repository.AlertRepositoryImpl
 import com.example.viko.data.channel.repository.ChannelRepositoryImpl
@@ -94,6 +95,7 @@ class AppContainer(context: Context) {
     }
 
     val translationPreferences = TranslationPreferences(context)
+    internal val translationDiagnostics = TranslationDiagnostics(context)
 
     val badgeRegistry = BadgeRegistry(
         server = BadgeControlServer(context),
@@ -105,6 +107,7 @@ class AppContainer(context: Context) {
         messages = messageRepository,
         modelDir = OneVoicePipeline.directory(context),
         translationPreferences = translationPreferences,
+        diagnostics = translationDiagnostics,
         keepBothRecognizers = { OneVoicePipeline.canKeepBoth(context) },
         neuralVoices = neuralVoices,
         speaker = { speaker },

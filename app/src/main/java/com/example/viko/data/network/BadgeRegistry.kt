@@ -8,6 +8,7 @@ import com.example.viko.domain.team.model.NearbyDevice
 import com.example.viko.data.ai.Speaker
 import com.example.viko.data.ai.VietnameseVoice
 import com.example.viko.data.ai.onevoice.OneVoicePipeline
+import com.example.viko.data.ai.onevoice.TranslationDiagnostics
 import com.example.viko.data.ai.onevoice.VoiceDirection
 import com.example.viko.data.ai.onevoice.tts.OfflineNeuralVoices
 import com.example.viko.domain.alert.model.EmergencyAlert
@@ -32,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +71,7 @@ class BadgeRegistry internal constructor(
     private val messages: MessageRepository,
     private val modelDir: File,
     private val translationPreferences: TranslationPreferences,
+    private val diagnostics: TranslationDiagnostics,
     private val keepBothRecognizers: () -> Boolean,
     private val neuralVoices: OfflineNeuralVoices,
     private val speaker: () -> Speaker,
@@ -115,9 +118,12 @@ class BadgeRegistry internal constructor(
 
     private data class Turn(
         val id: Long, val deviceId: String, val pcm: ByteArray, val direction: VoiceDirection,
-        val endedAt: Long, val queuedAt: Long = SystemClock.elapsedRealtime()
+        val endedAt: Long, val record: Boolean, val queuedAt: Long = SystemClock.elapsedRealtime()
     )
-    private data class Reply(val turn: Turn, val translation: String?)
+    private data class Reply(
+        val turn: Turn, val translation: String?, val diagnosticId: String?,
+        val queuedAt: Long = SystemClock.elapsedRealtime()
+    )
     private val talkLock = Mutex()
 
     fun start(scope: CoroutineScope) {
@@ -167,11 +173,15 @@ class BadgeRegistry internal constructor(
         scope.launch(Dispatchers.Default) {
             val turns = Channel<Turn>(2)
             fun enqueue(id: String, pcm: ByteArray, direction: VoiceDirection, endedAt: Long) {
-                val turn = Turn(turnIds.incrementAndGet(), id, pcm, direction, endedAt)
+                val turn = Turn(turnIds.incrementAndGet(), id, pcm, direction, endedAt,
+                    translationPreferences.diagnosticsEnabled.value)
                 startTurn(turn)
                 if (turns.trySend(turn).isFailure) {
                     finishTurn(turn, "Translation busy. Try speaking again.")
                     Log.w(TAG, "Translation busy; skipping turn")
+                    if (turn.record) launch {
+                        diagnostics.update(recordTurn(turn)) { put("status", "queue_full") }
+                    }
                 }
             }
             val capture = BadgeAudioServer.TranslationCapture(
@@ -275,6 +285,7 @@ class BadgeRegistry internal constructor(
     ) {
         val (_, deviceId, pcm, direction) = turn
         val startedAt = SystemClock.elapsedRealtime()
+        val diagnosticId = recordTurn(turn)
         var textFinished = false
         fun finishText(problem: String? = null) {
             if (textFinished) return
@@ -282,15 +293,23 @@ class BadgeRegistry internal constructor(
             finishTurn(turn, problem)
         }
         try {
-            val worker = workers.getWorker(deviceId) ?: return
+            val worker = workers.getWorker(deviceId)
+            if (worker == null) {
+                diagnostics.update(diagnosticId) { put("status", "badge_unavailable") }
+                return
+            }
             val waitingAt = SystemClock.elapsedRealtime()
             val (modelWait, result) = modelAccess.withLock {
                 val waited = SystemClock.elapsedRealtime() - waitingAt
                 waited to pipeline.process(pcm, direction)
             }
             if (result == null || result.translation.isBlank()) {
+                diagnostics.update(diagnosticId) {
+                    put("status", "no_translation")
+                    put("end_to_text_ms", SystemClock.elapsedRealtime() - turn.endedAt)
+                }
                 finishText("No translation for this turn. Try speaking again.")
-                replies.send(Reply(turn, null))
+                replies.send(Reply(turn, null, diagnosticId))
                 return
             }
             val translated = result.translation
@@ -308,17 +327,32 @@ class BadgeRegistry internal constructor(
                 )
             )
             finishText()
+            val endToText = SystemClock.elapsedRealtime() - turn.endedAt
+            diagnostics.update(diagnosticId) {
+                put("status", "translated")
+                put("transcript", result.transcript)
+                put("translation", translated)
+                put("context_tag", result.tag)
+                put("end_to_text_ms", endToText)
+                put("queue_ms", startedAt - turn.queuedAt)
+                put("model_wait_ms", modelWait)
+                put("recognition_ms", result.timings.recognitionMs)
+                put("context_ms", result.timings.contextMs)
+                put("translation_ms", result.timings.translationMs)
+                put("translation_cache_hit", result.timings.cacheHit)
+            }
             Log.i("VikoTurn", "turn=${turn.id} target=${direction.target} " +
-                "end_to_text_ms=${SystemClock.elapsedRealtime() - turn.endedAt} " +
+                "end_to_text_ms=$endToText " +
                 "finalize_ms=${turn.queuedAt - turn.endedAt} queue_ms=${startedAt - turn.queuedAt} " +
                 "model_wait_ms=$modelWait")
-            replies.send(Reply(turn, translated))
+            replies.send(Reply(turn, translated, diagnosticId))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "OneVoice turn failed", e)
+            diagnostics.update(diagnosticId) { put("status", "translation_failed") }
             finishText("Translation failed. Try speaking again.")
-            replies.send(Reply(turn, null))
+            replies.send(Reply(turn, null, diagnosticId))
         } catch (e: LinkageError) {
             Log.e(TAG, "OneVoice native library unavailable", e)
             // Missing ABI libraries cannot be repaired during this process.
@@ -326,16 +360,31 @@ class BadgeRegistry internal constructor(
             if (translationPreferences.enabled.value) {
                 _translationStatus.value = TranslationStatus.UNAVAILABLE
             }
+            diagnostics.update(diagnosticId) { put("status", "translation_unavailable") }
             finishText("Translation unavailable.")
-            replies.send(Reply(turn, null))
+            replies.send(Reply(turn, null, diagnosticId))
         } finally {
             finishText()
         }
     }
 
+    private suspend fun recordTurn(turn: Turn): String? =
+        if (turn.record) diagnostics.capture(
+            turn.id, turn.deviceId, turn.direction, turn.pcm, turn.queuedAt - turn.endedAt
+        ) else null
+
     private suspend fun playReply(reply: Reply) {
+        val turn = reply.turn
+        val started = SystemClock.elapsedRealtime()
+        var firstDispatch: Long? = null
+        val firstFrame = {
+            val elapsed = SystemClock.elapsedRealtime() - turn.endedAt
+            firstDispatch = elapsed
+            Log.i("VikoTurn", "turn=${turn.id} target=${turn.direction.target} end_to_first_dispatch_ms=$elapsed")
+            Unit
+        }
         val delivered = try {
-            reply.translation?.let { speakTranslation(reply.turn, it) } ?: false
+            reply.translation?.let { speakTranslation(turn, it, firstFrame) } ?: false
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -345,37 +394,50 @@ class BadgeRegistry internal constructor(
             Log.w(TAG, "Offline speech library unavailable", e)
             false
         }
-        if (!delivered) replayOriginal(reply.turn)
+        val audioStatus = if (delivered) {
+            if (firstDispatch == null) "interrupted" else "translated_dispatched"
+        } else {
+            val played = replayOriginal(turn, firstFrame)
+            when {
+                firstDispatch != null -> "original_fallback"
+                played -> "interrupted"
+                else -> "unavailable"
+            }
+        }
+        diagnostics.update(reply.diagnosticId) {
+            put("audio_status", audioStatus)
+            put("reply_queue_ms", started - reply.queuedAt)
+            firstDispatch?.let {
+                put("end_to_first_dispatch_ms", it)
+                put("reply_to_first_dispatch_ms", it - (started - turn.endedAt))
+            }
+        }
     }
 
-    private suspend fun speakTranslation(turn: Turn, text: String): Boolean {
+    private suspend fun speakTranslation(turn: Turn, text: String, firstFrame: () -> Unit): Boolean {
         val deviceId = turn.deviceId
         val direction = turn.direction
         if (direction == VoiceDirection.Worker && audio.isTalking.value) return false
         if (neuralVoices.installed()) {
             val chunks = neuralVoices.stream(text, direction)
-            val firstFrame = {
-                Log.i("VikoTurn", "turn=${turn.id} target=${direction.target} " +
-                    "end_to_first_dispatch_ms=${SystemClock.elapsedRealtime() - turn.endedAt}")
-                Unit
-            }
             return when (direction) {
                 VoiceDirection.Worker -> audio.playLocalPcm(deviceId, chunks, firstFrame)
                 VoiceDirection.Manager -> audio.sendPcm(deviceId, chunks, firstFrame)
             }
         }
         return when (direction) {
-            VoiceDirection.Worker -> speaker().speak(text)
-            VoiceDirection.Manager -> voice().synthesise(text)?.let { audio.sendPcm(deviceId, it) } ?: false
+            VoiceDirection.Worker -> speaker().speak(text).also { if (it) firstFrame() }
+            VoiceDirection.Manager -> voice().synthesise(text)?.let {
+                audio.sendPcm(deviceId, flowOf(it), firstFrame)
+            } ?: false
         }
     }
 
-    private suspend fun replayOriginal(turn: Turn) {
+    private suspend fun replayOriginal(turn: Turn, firstFrame: () -> Unit): Boolean =
         when (turn.direction) {
-            VoiceDirection.Worker -> audio.playLocalPcm(turn.deviceId, turn.pcm)
-            VoiceDirection.Manager -> audio.sendPcm(turn.deviceId, turn.pcm)
+            VoiceDirection.Worker -> audio.playLocalPcm(turn.deviceId, flowOf(turn.pcm), firstFrame)
+            VoiceDirection.Manager -> audio.sendPcm(turn.deviceId, flowOf(turn.pcm), firstFrame)
         }
-    }
 
     private suspend fun clearSpeaking(deviceId: String) {
         if (deviceId in audio.activeBadges.value) return

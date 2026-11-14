@@ -2,6 +2,7 @@ package com.example.viko.data.ai.onevoice.tts
 
 import java.io.Closeable
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.FloatBuffer
 
 internal class SeaG2p(dictionary: File) : Closeable {
@@ -15,6 +16,9 @@ internal class SeaG2p(dictionary: File) : Closeable {
         checkNotNull(convertNative(handle, text.toByteArray(Charsets.UTF_8))).toString(Charsets.UTF_8)
 
     external fun project(weights: FloatBuffer, offset: Int, rows: Int, vector: FloatArray): FloatArray
+    external fun projectInt8(
+        weights: ByteBuffer, scales: FloatBuffer, firstRow: Int, rows: Int, vector: FloatArray
+    ): FloatArray
     private external fun openNative(path: ByteArray): Long
     private external fun convertNative(handle: Long, input: ByteArray): ByteArray?
     private external fun closeNative(handle: Long)

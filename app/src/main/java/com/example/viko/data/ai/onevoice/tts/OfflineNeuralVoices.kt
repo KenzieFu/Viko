@@ -41,7 +41,8 @@ internal class OfflineNeuralVoices(
     fun installed(): Boolean = runCatching {
         val manifest = JSONObject(File(directory, "pack.json").readText())
         val files = manifest.getJSONObject("files")
-        manifest.getInt("version") == 1 && required.all { name ->
+        val embeddings = if (files.has("vieneu/embeddings.i8")) "vieneu/embeddings.i8" else "vieneu/embeddings.f32"
+        manifest.getInt("version") == 1 && (required + embeddings).all { name ->
             val file = File(directory, name)
             val expected = files.getLong(name)
             expected > 0 && file.isFile && file.length() == expected
@@ -159,7 +160,7 @@ internal class OfflineNeuralVoices(
             "supertonic/vector_estimator.int8.onnx", "supertonic/vocoder.int8.onnx",
             "supertonic/tts.json", "supertonic/unicode_indexer.bin", "supertonic/voice.bin",
             "vieneu/config.json", "vieneu/tokenizer.json", "vieneu/preset.json",
-            "vieneu/embeddings.f32", "vieneu/sea_g2p.bin", "vieneu/vieneu_prefill.onnx",
+            "vieneu/sea_g2p.bin", "vieneu/vieneu_prefill.onnx",
             "vieneu/vieneu_decode_step.onnx", "vieneu/vieneu_acoustic_cached.onnx",
             "vieneu/vieneu_backbone_shared.data", "vieneu/moss_audio_tokenizer_decode_full.onnx",
             "vieneu/moss_audio_tokenizer_decode_shared.data"

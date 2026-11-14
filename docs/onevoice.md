@@ -6,10 +6,19 @@ The phone uses the November OneVoice checkpoints: Vietnamese PhoWhisper, Korean 
 
 In **Settings → AI translation**, switch translation on for Vietnamese and Korean or off for original voice. The app saves the selection and applies it to the next push-to-talk turn without a restart. The row shows when models or offline voices are missing.
 
+## Record translation diagnostics
+
+Turn on **Settings → Translation diagnostics**, then make a translated Direct Call in either direction. Choose **Export translation logs** to save a ZIP. Each turn includes:
+
+- `input.wav` with the original 16 kHz mono PCM16 passed to speech recognition. Badge input includes the firmware’s audio processing and any packet-loss compensation.
+- `turn.json` with the direction, transcript, translation, result status, and available timings for recognition, context, translation, and first audio dispatch.
+
+Recording starts disabled. Viko keeps up to 50 turns in app-private storage excluded from Android backup. Turning diagnostics off stops new recordings. Previous turns remain available for export.
+
 ## Provision a manager phone
 
 1. Build and install the debug app on a 64-bit Android phone. Allow the microphone, local network and Bluetooth permissions when prompted, and pair the badge on the factory Wi-Fi.
-2. Install the approximately 2.3 GiB OneVoice model pack and the 420 MB neural voice pack using USB debugging. For a model update, allow enough free space for a second copy while the transfer completes.
+2. Install the approximately 2.3 GiB OneVoice model pack and the 359 MB neural voice pack using USB debugging. For a model update, allow enough free space for a second copy while the transfer completes.
 3. Open Viko and enable **Settings → AI translation**.
 
 With the November `onevoice_pipeline` folder, Python 3.12, and `adb` on PATH:
@@ -26,7 +35,9 @@ python scripts/onevoice/prepare-tts.py /tmp/viko-neural-voices
 bash scripts/onevoice/install-tts.sh /tmp/viko-neural-voices
 ```
 
-The exporter checks the release manifest before opening the local checkpoints. The voice preparation script verifies pinned downloads and prepares the Vietnamese preset embeddings. The packs are separate from the APK and Git. The installers stage files before activating them. Set `ANDROID_SERIAL` when multiple devices are connected or `ADB` if the executable is not on PATH.
+The exporter checks the release manifest before opening the local checkpoints. The voice preparation script verifies pinned downloads and builds the INT8 weights. The packs are separate from the APK and Git. The installers stage files before activating them. Set `ANDROID_SERIAL` when multiple devices are connected or `ADB` if the executable is not on PATH.
+
+The updated pack quantizes the pointwise and linear weights in Supertonic’s duration predictor and text encoder, plus VieNeu’s embedding and output projection weights. Other components retain their upstream precision, including the MOSS audio decoder. The current app supports the older voice pack. The compressed VieNeu tables require the updated app.
 
 The Korean pack uses Sherpa-ONNX’s int8 conversion of Supertonic 3 under the upstream OpenRAIL-M model license included in the pack. The Vietnamese int8 model, [MOSS codec](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX), and [SEA-G2P](https://github.com/pnnbao97/sea-g2p/tree/v0.10.0) use Apache 2.0. The bundled 64-bit SEA-G2P libraries can be rebuilt with Android NDK r28c, Rust 1.89, and the upstream v0.10.0 source using `bash scripts/onevoice/build-phonemizer.sh ANDROID_NDK_DIR SEA_G2P_SOURCE_DIR`.
 

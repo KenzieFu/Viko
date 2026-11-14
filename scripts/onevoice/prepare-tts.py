@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from quantize_tts import quantize_supertonic, write_embeddings
 
 
 HF = "https://huggingface.co"
@@ -19,6 +20,7 @@ PRESET = ("https://raw.githubusercontent.com/pnnbao97/VieNeu-TTS/"
           "22dd2ef2a89bba24a77da6dbc84c75f7f4fda05b/src/vieneu/assets/voices_v3_turbo.json")
 SEA = "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
 SUPER_LICENSE = f"{HF}/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/LICENSE"
+SUPER_QUANTIZE = {"duration_predictor.int8.onnx", "text_encoder.int8.onnx"}
 
 
 def digest(path):
@@ -49,7 +51,14 @@ def prepare(output, cache):
     for group, base in (("supertonic", SUPER), ("vieneu", VIENEU), ("codec", CODEC)):
         for file, sha in sources[group].items():
             folder = "supertonic" if group == "supertonic" else "vieneu"
-            download(f"{base}/{file}", stage / folder / file, sha)
+            destination = stage / folder / file
+            if group == "supertonic" and file in SUPER_QUANTIZE:
+                original = cache / folder / file
+                download(f"{base}/{file}", original, sha)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                quantize_supertonic(original, destination)
+            else:
+                download(f"{base}/{file}", destination, sha)
 
     download(SEA, stage / "vieneu/sea_g2p.bin", sources["dictionary"])
     download(SUPER_LICENSE, stage / "supertonic/LICENSE",
@@ -69,9 +78,8 @@ def prepare(output, cache):
         anchor = weights["xvec_w"] @ xvector + weights["xvec_b"]
         anchor = (anchor - anchor.mean()) / np.sqrt(anchor.var() + weights["xvec_ln_eps"])
         anchor = anchor * weights["xvec_ln_w"] + weights["xvec_ln_b"]
-        with (stage / "vieneu/embeddings.f32").open("wb") as destination:
-            for array in (text, audio, anchor):
-                array.astype("<f4").tofile(destination)
+        write_embeddings(stage / "vieneu/embeddings.i8", text, audio, anchor)
+        (stage / "vieneu/embeddings.f32").unlink(missing_ok=True)
         (stage / "vieneu/preset.json").write_text(json.dumps({
             "name": voices["default_voice"],
             "audioVocabularySize": audio.shape[1],

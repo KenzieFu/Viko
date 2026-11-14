@@ -41,7 +41,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -470,22 +469,10 @@ class BadgeAudioServer(context: Context) {
         runCatching {
             val dir = File(appContext.getExternalFilesDir(null), "captures").apply { mkdirs() }
             val file = File(dir, "$deviceId-${System.currentTimeMillis()}.wav")
-            file.outputStream().use { out ->
-                out.write(wavHeader(pcm.size))
-                out.write(pcm)
-            }
+            file.writeVoiceWav(pcm)
             Log.i(TAG, "wrote ${file.absolutePath}")
         }.onFailure { Log.w(TAG, "could not dump utterance", it) }
     }
-
-    /** Canonical 44-byte PCM16 mono header. */
-    private fun wavHeader(dataBytes: Int): ByteArray =
-        ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
-            put("RIFF".toByteArray()); putInt(36 + dataBytes); put("WAVE".toByteArray())
-            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1)
-            putInt(SAMPLE_RATE); putInt(SAMPLE_RATE * 2); putShort(2); putShort(16)
-            put("data".toByteArray()); putInt(dataBytes)
-        }.array()
 
     /**
      * Records the IP a badge was last seen at. Called with the source address of

@@ -41,18 +41,8 @@ JNIEXPORT void JNICALL JNI_NAME(closeNative)(JNIEnv *env, jobject instance, jlon
     sea_g2p_close((sea_g2p *)(intptr_t)handle);
 }
 
-JNIEXPORT jfloatArray JNICALL JNI_NAME(project)(
-        JNIEnv *env, jobject instance, jobject weights, jint offset, jint rows, jfloatArray input) {
-    const float *table = (*env)->GetDirectBufferAddress(env, weights);
-    const jlong capacity = (*env)->GetDirectBufferCapacity(env, weights);
-    const jsize columns = (*env)->GetArrayLength(env, input);
-    if (table == NULL || offset < 0 || rows < 1 || columns < 1 ||
-            (jlong)offset + (jlong)rows * columns > capacity) {
-        jclass error = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
-        (*env)->ThrowNew(env, error, "Invalid VieNeu embedding dimensions");
-        return NULL;
-    }
-
+static jfloatArray project_rows(JNIEnv *env, const float *table, const int8_t *packed,
+        const float *scales, jsize rows, jsize columns, jfloatArray input) {
     jfloatArray result = (*env)->NewFloatArray(env, rows);
     if (result == NULL) return NULL;
     jfloat *logits = (*env)->GetFloatArrayElements(env, result, NULL);
@@ -62,13 +52,51 @@ JNIEXPORT jfloatArray JNICALL JNI_NAME(project)(
         (*env)->ReleaseFloatArrayElements(env, result, logits, JNI_ABORT);
         return NULL;
     }
-    for (int row = 0; row < rows; ++row) {
-        const float *embedding = table + offset + (size_t)row * columns;
-        float sum = 0.0f;
-        for (int i = 0; i < columns; ++i) sum += embedding[i] * vector[i];
-        logits[row] = sum;
+    if (packed != NULL) {
+        for (int row = 0; row < rows; ++row) {
+            const int8_t *embedding = packed + (size_t)row * columns;
+            float sum = 0.0f;
+            for (int i = 0; i < columns; ++i) sum += embedding[i] * vector[i];
+            logits[row] = sum * scales[row];
+        }
+    } else {
+        for (int row = 0; row < rows; ++row) {
+            const float *embedding = table + (size_t)row * columns;
+            float sum = 0.0f;
+            for (int i = 0; i < columns; ++i) sum += embedding[i] * vector[i];
+            logits[row] = sum;
+        }
     }
     (*env)->ReleaseFloatArrayElements(env, input, vector, JNI_ABORT);
     (*env)->ReleaseFloatArrayElements(env, result, logits, 0);
     return result;
+}
+
+static jfloatArray invalid_dimensions(JNIEnv *env) {
+    jclass error = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+    (*env)->ThrowNew(env, error, "Invalid VieNeu embedding dimensions");
+    return NULL;
+}
+
+JNIEXPORT jfloatArray JNICALL JNI_NAME(project)(
+        JNIEnv *env, jobject instance, jobject weights, jint offset, jint rows, jfloatArray input) {
+    const float *table = (*env)->GetDirectBufferAddress(env, weights);
+    const jlong capacity = (*env)->GetDirectBufferCapacity(env, weights);
+    const jsize columns = (*env)->GetArrayLength(env, input);
+    if (table == NULL || offset < 0 || rows < 1 || columns < 1 ||
+            (jlong)offset + (jlong)rows * columns > capacity) return invalid_dimensions(env);
+    return project_rows(env, table + offset, NULL, NULL, rows, columns, input);
+}
+
+JNIEXPORT jfloatArray JNICALL JNI_NAME(projectInt8)(JNIEnv *env, jobject instance, jobject weights,
+        jobject row_scales, jint first_row, jint rows, jfloatArray input) {
+    const int8_t *table = (*env)->GetDirectBufferAddress(env, weights);
+    const float *scales = (*env)->GetDirectBufferAddress(env, row_scales);
+    const jsize columns = (*env)->GetArrayLength(env, input);
+    const jlong end = (jlong)first_row + rows;
+    if (table == NULL || scales == NULL || first_row < 0 || rows < 1 || columns < 1 ||
+            end > (*env)->GetDirectBufferCapacity(env, row_scales) ||
+            end * columns > (*env)->GetDirectBufferCapacity(env, weights)) return invalid_dimensions(env);
+    return project_rows(env, NULL, table + (size_t)first_row * columns, scales + first_row,
+                        rows, columns, input);
 }

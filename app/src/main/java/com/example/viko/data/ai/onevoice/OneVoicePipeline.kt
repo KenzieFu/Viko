@@ -30,7 +30,19 @@ enum class VoiceDirection(val source: String, val target: String) {
     Worker("vi", "ko"), Manager("ko", "vi")
 }
 
-data class OneVoiceResult(val transcript: String, val tag: String, val translation: String)
+data class OneVoiceResult(
+    val transcript: String,
+    val tag: String,
+    val translation: String,
+    val timings: OneVoiceTimings
+)
+
+data class OneVoiceTimings(
+    val recognitionMs: Long,
+    val contextMs: Long = 0,
+    val translationMs: Long = 0,
+    val cacheHit: Boolean = false
+)
 
 /** Runs on the registry's single inference worker. All models are local files. */
 class OneVoicePipeline(
@@ -63,15 +75,16 @@ class OneVoicePipeline(
         recentTranslations.get(key)?.let { cached ->
             Log.i("OneVoice", "${direction.source}->${direction.target} " +
                 "asr=${afterAsr - start}ms reused translation")
-            return cached
+            return cached.copy(timings = OneVoiceTimings(afterAsr - start, cacheHit = true))
         }
         val tag = tagger().classify(text)
         val afterTag = SystemClock.elapsedRealtime()
         val translated = translator().translate(text, tag, direction)
+        val timings = OneVoiceTimings(afterAsr - start, afterTag - afterAsr,
+            SystemClock.elapsedRealtime() - afterTag)
         Log.i("OneVoice", "${direction.source}->${direction.target} " +
-            "asr=${afterAsr - start}ms tag=${afterTag - afterAsr}ms " +
-            "mt=${SystemClock.elapsedRealtime() - afterTag}ms")
-        return OneVoiceResult(text, tag, translated).also { result ->
+            "asr=${timings.recognitionMs}ms tag=${timings.contextMs}ms mt=${timings.translationMs}ms")
+        return OneVoiceResult(text, tag, translated, timings).also { result ->
             if (result.translation.isNotBlank()) recentTranslations.put(key, result)
         }
     }
